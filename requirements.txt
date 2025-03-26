@@ -1,3 +1,13 @@
 asgiref==3.8.1
 Django==5.1.7
+django-cors-headers==4.7.0
+django-environ==0.12.0
+djangorestframework==3.15.2
+nulltype==2.3.1
+plaid-python==29.1.0
+psycopg2-binary==2.9.10
+python-dateutil==2.9.0.post0
+python-dotenv==1.1.0
+six==1.17.0
 sqlparse==0.5.3
+urllib3==2.3.0
