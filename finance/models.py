@@ -52,7 +52,34 @@ class Account(models.Model):
     
     def __str__(self):
         return f"{self.name} ({self.mask or 'xxxx'})"
+
+class Category(models.Model):
+    """
+    Represents a transaction category
+    """
+    name = models.CharField(max_length=255)
+    plaid_category_id = models.CharField(max_length=255, null=True, blank=True)
+    parent_category = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='subcategories')
     
+    # For custom user categories
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='custom_categories')
+    is_custom = models.BooleanField(default=False)
+    
+    # For budget tracking
+    budget_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    
+    # System fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'categories'
+        verbose_name_plural = 'categories'
+        unique_together = [['name', 'user']]
+    
+    def __str__(self):
+        return self.name
+
 class Transaction(models.Model):
     """
     Represents a financial transaction from Plaid
@@ -65,9 +92,12 @@ class Transaction(models.Model):
     name = models.CharField(max_length=255)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     
+    # Category information
+    category_string = models.CharField(max_length=255, null=True, blank=True)  # Original category string from Plaid
+    category_id = models.CharField(max_length=255, null=True, blank=True)  # Original category ID from Plaid
+    categories = models.ManyToManyField(Category, related_name='transactions', blank=True)  # Linked categories
+    
     # Additional transaction data
-    category = models.CharField(max_length=255, null=True, blank=True)
-    category_id = models.CharField(max_length=255, null=True, blank=True)
     pending = models.BooleanField(default=False)
     payment_channel = models.CharField(max_length=50, null=True, blank=True)
     

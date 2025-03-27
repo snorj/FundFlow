@@ -5,9 +5,11 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from .services.plaid_service import PlaidService
 from django.db import transaction as db_transaction
-from .models import PlaidItem, Account, Transaction
-from .serializers import PlaidItemSerializer, AccountSerializer, TransactionSerializer
+from .models import PlaidItem, Account, Transaction, Category
+from .serializers import PlaidItemSerializer, AccountSerializer, TransactionSerializer, CategorySerializer
 from rest_framework.pagination import PageNumberPagination
+from django.db import models
+from django.http import Http404
 
 class LinkTokenView(APIView):
     """
@@ -256,3 +258,75 @@ class TransactionsView(APIView):
         
         serializer = TransactionSerializer(paginated_transactions, many=True)
         return paginator.get_paginated_response(serializer.data)
+    
+class CategoryListCreateView(APIView):
+    """
+    List all categories or create a new category
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        # Get system categories and user's custom categories
+        categories = Category.objects.filter(
+            models.Q(user=request.user) | models.Q(user__isnull=True)
+        )
+        serializer = CategorySerializer(categories, many=True)
+        return Response(serializer.data)
+    
+    def post(self, request):
+        # Create a new custom category for the user
+        serializer = CategorySerializer(data=request.data)
+        if serializer.is_valid():
+            category = serializer.save(user=request.user, is_custom=True)
+            return Response(CategorySerializer(category).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class CategoryDetailView(APIView):
+    """
+    Retrieve, update or delete a category
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get_object(self, pk, user):
+        try:
+            # Can only access system categories or own custom categories
+            return Category.objects.get(
+                models.Q(id=pk),
+                models.Q(user=user) | models.Q(user__isnull=True)
+            )
+        except Category.DoesNotExist:
+            raise Http404
+    
+    def get(self, request, pk):
+        category = self.get_object(pk, request.user)
+        serializer = CategorySerializer(category)
+        return Response(serializer.data)
+    
+    def put(self, request, pk):
+        category = self.get_object(pk, request.user)
+        
+        # Only allow updates to custom categories owned by the user
+        if not category.is_custom or category.user != request.user:
+            return Response(
+                {"error": "Cannot modify system categories or categories owned by other users"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = CategorySerializer(category, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, pk):
+        category = self.get_object(pk, request.user)
+        
+        # Only allow deletion of custom categories owned by the user
+        if not category.is_custom or category.user != request.user:
+            return Response(
+                {"error": "Cannot delete system categories or categories owned by other users"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        category.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
