@@ -226,6 +226,6 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Plaid settings
-PLAID_CLIENT_ID = os.getenv('PLAID_CLIENT_ID', '')
-PLAID_SECRET = os.getenv('PLAID_SECRET', '')
+PLAID_CLIENT_ID = os.getenv('PLAID_CLIENT_ID')
+PLAID_SECRET = os.getenv('PLAID_SECRET')
 PLAID_ENV = os.getenv('PLAID_ENV', 'sandbox')
