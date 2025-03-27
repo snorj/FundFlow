@@ -28,4 +28,5 @@ urlpatterns = [
     path('api/auth/', include(accounts_api_urls)),  # JWT Authentication API
     
     # Add other app URLs here
+    path('api/finance/', include('finance.urls')),
 ]

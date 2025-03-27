@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Financial Dashboard</h1>
+    <p>Welcome to your Fund Flow dashboard.</p>
+    
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    Account Summary
+                </div>
+                <div class="card-body">
+                    <!-- Account summary content will go here -->
+                    <p>Connect your accounts to see your financial overview.</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    Recent Transactions
+                </div>
+                <div class="card-body">
+                    <!-- Transactions will go here -->
+                    <p>No recent transactions to display.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
