@@ -44,7 +44,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     # Add your apps here as you create them
-    # 'accounts',
+    'accounts',
     # 'finances',
     # Third-party apps
     'rest_framework',
