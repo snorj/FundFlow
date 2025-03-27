@@ -1,7 +1,13 @@
 from django.urls import path
 from django.contrib.auth import views as auth_views
 from . import views
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
+from . import api_views  # Import the new API views you created
 
+# Original template-based URL patterns
 urlpatterns = [
     # Registration and login/logout
     path('register/', views.register_view, name='register'),
@@ -36,4 +42,13 @@ urlpatterns = [
     path('password_change/done/', auth_views.PasswordChangeDoneView.as_view(
         template_name='accounts/password_change_done.html'
     ), name='password_change_done'),
+]
+
+# API endpoints for JWT authentication
+api_urlpatterns = [
+    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('register/', api_views.RegisterAPIView.as_view(), name='api_register'),
+    path('me/', api_views.UserInfoAPIView.as_view(), name='api_user_info'),
+    path('logout/', api_views.LogoutAPIView.as_view(), name='api_logout'),
 ]

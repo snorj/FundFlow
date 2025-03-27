@@ -17,10 +17,15 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from finance.views import dashboard_view
+from accounts.urls import api_urlpatterns as accounts_api_urls
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('accounts/', include('accounts.urls')),
+    path('accounts/', include('accounts.urls')),  # Template-based views
     path('', dashboard_view, name='dashboard'),
+    
+    # API endpoints
+    path('api/auth/', include(accounts_api_urls)),  # JWT Authentication API
+    
     # Add other app URLs here
 ]

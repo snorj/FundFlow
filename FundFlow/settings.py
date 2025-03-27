@@ -167,10 +167,12 @@ AUTH_PASSWORD_VALIDATORS = [
 # Django REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        # TODO: Comment out these vv ?
         'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.BasicAuthentication',
         # You'll likely add token authentication later:
         # 'rest_framework.authentication.TokenAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -179,6 +181,26 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 10,  # Number of items per page in paginated responses
 }
 
+# JWT settings
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),  # Token expiration time
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # Refresh token expiration
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': False,
+    
+    'ALGORITHM': 'HS256',  # Algorithm used to sign the token
+    'SIGNING_KEY': SECRET_KEY,  # Use your Django secret key
+    'VERIFYING_KEY': None,
+    'AUDIENCE': None,
+    'ISSUER': None,
+    
+    'AUTH_HEADER_TYPES': ('Bearer',),  # Authorization: Bearer <token>
+    'USER_ID_FIELD': 'id',  # Field from User model used for token subject
+    'USER_ID_CLAIM': 'user_id',
+}
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
