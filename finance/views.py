@@ -4,8 +4,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from .services.plaid_service import PlaidService
-from .models import PlaidItem, Account
-from .serializers import PlaidItemSerializer, AccountSerializer
+from django.db import transaction as db_transaction
+from .models import PlaidItem, Account, Transaction
+from .serializers import PlaidItemSerializer, AccountSerializer, TransactionSerializer
+from rest_framework.pagination import PageNumberPagination
 
 class LinkTokenView(APIView):
     """
@@ -116,3 +118,141 @@ def dashboard_view(request):
     return render(request, 'finance/dashboard.html', {
         'title': 'Dashboard',
     })
+
+class TransactionFetchView(APIView):
+    """
+    Fetch and store transactions for a Plaid item
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        item_id = request.data.get('item_id')
+        
+        if not item_id:
+            return Response({'error': 'Item ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Get the Plaid item
+            plaid_item = PlaidItem.objects.get(item_id=item_id, user=request.user)
+            
+            # Initialize the Plaid service
+            plaid_service = PlaidService()
+            
+            # Get transactions for the last 30 days by default
+            # You can customize this by passing start_date and end_date to process_transactions
+            processed_data = plaid_service.process_transactions(
+                plaid_item.access_token,
+                item_id=item_id
+            )
+            
+            if not processed_data:
+                return Response(
+                    {'error': 'Failed to fetch transactions'}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            # Update account balances
+            with db_transaction.atomic():
+                # Store the transactions
+                transactions_created = 0
+                
+                for transaction_data in processed_data['transactions']:
+                    account_id = transaction_data.pop('account_id')
+                    
+                    try:
+                        # Get the account
+                        account = Account.objects.get(account_id=account_id, plaid_item=plaid_item)
+                        
+                        # Check if transaction already exists
+                        transaction_id = transaction_data['transaction_id']
+                        transaction, created = Transaction.objects.update_or_create(
+                            transaction_id=transaction_id,
+                            defaults={
+                                'account': account,
+                                **transaction_data
+                            }
+                        )
+                        
+                        if created:
+                            transactions_created += 1
+                    
+                    except Account.DoesNotExist:
+                        # Log this error but continue processing other transactions
+                        print(f"Account with ID {account_id} not found for item {item_id}")
+                
+                # Update account balances
+                for account_id, account_data in processed_data['accounts'].items():
+                    try:
+                        account = Account.objects.get(account_id=account_id, plaid_item=plaid_item)
+                        account.current_balance = account_data['balances']['current']
+                        account.available_balance = account_data['balances']['available']
+                        account.save()
+                    except Account.DoesNotExist:
+                        # Log this error but continue processing other accounts
+                        print(f"Account with ID {account_id} not found for item {item_id}")
+            
+            return Response({
+                'success': True,
+                'message': f'Successfully fetched transactions. {transactions_created} new transactions.',
+                'transactions_count': transactions_created
+            })
+            
+        except PlaidItem.DoesNotExist:
+            return Response(
+                {'error': 'Plaid item not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            # Log the error
+            print(f"Error fetching transactions: {str(e)}")
+            return Response(
+                {'error': 'An error occurred while fetching transactions'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class TransactionsView(APIView):
+    """
+    List transactions for the authenticated user with filtering options
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        # Get query parameters for filtering
+        account_id = request.query_params.get('account_id')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        category = request.query_params.get('category')
+        amount_min = request.query_params.get('amount_min')
+        amount_max = request.query_params.get('amount_max')
+        
+        # Base queryset - all transactions from user's accounts
+        transactions = Transaction.objects.filter(
+            account__plaid_item__user=request.user
+        )
+        
+        # Apply filters if provided
+        if account_id:
+            transactions = transactions.filter(account__account_id=account_id)
+        
+        if start_date:
+            transactions = transactions.filter(date__gte=start_date)
+        
+        if end_date:
+            transactions = transactions.filter(date__lte=end_date)
+        
+        if category:
+            transactions = transactions.filter(category__icontains=category)
+        
+        if amount_min:
+            transactions = transactions.filter(amount__gte=float(amount_min))
+        
+        if amount_max:
+            transactions = transactions.filter(amount__lte=float(amount_max))
+        
+        # Paginate results
+        paginator = PageNumberPagination()
+        paginator.page_size = 25  # Adjust as needed
+        paginated_transactions = paginator.paginate_queryset(transactions, request)
+        
+        serializer = TransactionSerializer(paginated_transactions, many=True)
+        return paginator.get_paginated_response(serializer.data)

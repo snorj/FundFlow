@@ -52,3 +52,42 @@ class Account(models.Model):
     
     def __str__(self):
         return f"{self.name} ({self.mask or 'xxxx'})"
+    
+class Transaction(models.Model):
+    """
+    Represents a financial transaction from Plaid
+    """
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='transactions')
+    transaction_id = models.CharField(max_length=255, unique=True)
+    
+    # Basic transaction details
+    date = models.DateField()
+    name = models.CharField(max_length=255)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    
+    # Additional transaction data
+    category = models.CharField(max_length=255, null=True, blank=True)
+    category_id = models.CharField(max_length=255, null=True, blank=True)
+    pending = models.BooleanField(default=False)
+    payment_channel = models.CharField(max_length=50, null=True, blank=True)
+    
+    # Location data
+    address = models.CharField(max_length=255, null=True, blank=True)
+    city = models.CharField(max_length=100, null=True, blank=True)
+    country = models.CharField(max_length=100, null=True, blank=True)
+    postal_code = models.CharField(max_length=20, null=True, blank=True)
+    region = models.CharField(max_length=100, null=True, blank=True)
+    
+    # Merchant data
+    merchant_name = models.CharField(max_length=255, null=True, blank=True)
+    
+    # System fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'transactions'
+        ordering = ['-date', '-created_at']
+    
+    def __str__(self):
+        return f"{self.name} - ${self.amount} on {self.date}"

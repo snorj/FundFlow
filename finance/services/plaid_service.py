@@ -158,3 +158,76 @@ class PlaidService:
         # For MVP, you can start with the get_transactions method above
         # and implement this later when needed
         pass
+
+    def process_transactions(self, access_token, start_date=None, end_date=None, item_id=None):
+        """
+        Fetch transactions and format them for storage
+        
+        Args:
+            access_token: The access token for the item
+            start_date: The start date for transactions (defaults to 30 days ago)
+            end_date: The end date for transactions (defaults to today)
+            item_id: The ID of the Plaid item (for reference)
+            
+        Returns:
+            Processed transaction data ready for database storage
+        """
+        # Get raw transactions from Plaid
+        transaction_data = self.get_transactions(access_token, start_date, end_date)
+        
+        if not transaction_data:
+            return None
+        
+        # Extract data
+        transactions = transaction_data['transactions']
+        accounts = transaction_data['accounts']
+        
+        # Create a mapping of account_id to Account object
+        account_mapping = {}
+        for account in accounts:
+            account_mapping[account.account_id] = {
+                'account_id': account.account_id,
+                'name': account.name,
+                'mask': account.mask,
+                'official_name': account.official_name,
+                'type': account.type,
+                'subtype': account.subtype,
+                'balances': {
+                    'current': account.balances.current,
+                    'available': account.balances.available,
+                    'limit': getattr(account.balances, 'limit', None)
+                }
+            }
+        
+        # Process transactions
+        processed_transactions = []
+        for transaction in transactions:
+            # Extract location data if available
+            location = getattr(transaction, 'location', {})
+            
+            # Format the transaction for our database
+            processed_transaction = {
+                'transaction_id': transaction.transaction_id,
+                'account_id': transaction.account_id,
+                'date': transaction.date,
+                'name': transaction.name,
+                'amount': abs(transaction.amount),  # Store as positive amount
+                'is_expense': transaction.amount > 0,  # Flag for expense vs. income
+                'category': ', '.join(transaction.category) if hasattr(transaction, 'category') and transaction.category else None,
+                'category_id': transaction.category_id,
+                'pending': transaction.pending,
+                'payment_channel': transaction.payment_channel,
+                'address': getattr(location, 'address', None),
+                'city': getattr(location, 'city', None),
+                'country': getattr(location, 'country', None),
+                'postal_code': getattr(location, 'postal_code', None),
+                'region': getattr(location, 'region', None),
+                'merchant_name': transaction.merchant_name if hasattr(transaction, 'merchant_name') else None,
+            }
+            
+            processed_transactions.append(processed_transaction)
+        
+        return {
+            'transactions': processed_transactions,
+            'accounts': account_mapping
+        }
