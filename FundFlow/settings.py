@@ -63,6 +63,9 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# Custom User model
+AUTH_USER_MODEL = 'accounts.User'
+
 # CORS settings
 # For development (allows all origins):
 CORS_ALLOW_ALL_ORIGINS = True
