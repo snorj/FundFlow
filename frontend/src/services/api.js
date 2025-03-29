@@ -1,68 +1,49 @@
 // src/services/api.js
 import axios from 'axios';
 
-// Create axios instance for API requests
+const getCsrfToken = () => {
+  // Try to get CSRF token from cookie
+  const name = 'csrftoken=';
+  const decodedCookie = decodeURIComponent(document.cookie);
+  const cookieArray = decodedCookie.split(';');
+  
+  for (let i = 0; i < cookieArray.length; i++) {
+    let cookie = cookieArray[i].trim();
+    if (cookie.indexOf(name) === 0) {
+      return cookie.substring(name.length, cookie.length);
+    }
+  }
+  return '';
+};
+
 const api = axios.create({
-  baseURL: '/api',  // This will use the proxy configuration
+  baseURL: '/api',
+  withCredentials: true,  // Important for sending cookies with requests
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Add request interceptor to include JWT token in requests
+// Add request interceptor for auth and CSRF
 api.interceptors.request.use(
   (config) => {
+    // Add auth token if available
     const token = localStorage.getItem('access_token');
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
     }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
-// Add response interceptor to handle token refresh
-api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
-  async (error) => {
-    const originalRequest = error.config;
     
-    // If the error is 401 and we haven't tried refreshing the token yet
-    if (error.response.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      
-      try {
-        // Try to refresh the token (you'll implement auth.refreshToken later)
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (!refreshToken) {
-          throw new Error('No refresh token available');
-        }
-        
-        // Call your auth service to refresh token
-        const auth = await import('./auth');
-        const response = await auth.default.refreshToken(refreshToken);
-        
-        // Store the new tokens
-        localStorage.setItem('access_token', response.access);
-        
-        // Update the Authorization header
-        originalRequest.headers['Authorization'] = `Bearer ${response.access}`;
-        
-        // Retry the original request
-        return api(originalRequest);
-      } catch (refreshError) {
-        // If refresh fails, redirect to login
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        window.location.href = '/login';
-        return Promise.reject(refreshError);
+    // Add CSRF token for non-GET requests
+    if (config.method !== 'get') {
+      const csrfToken = getCsrfToken();
+      if (csrfToken) {
+        config.headers['X-CSRFToken'] = csrfToken;
       }
     }
     
+    return config;
+  },
+  (error) => {
     return Promise.reject(error);
   }
 );
