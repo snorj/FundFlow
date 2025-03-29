@@ -1,5 +1,8 @@
+// src/App.js
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { AuthProvider } from './utils/AuthContext';
+import PrivateRoute from "frontend/src/utils/PrivateRoute.js";
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -8,13 +11,20 @@ import Register from './pages/Register';
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/" element={<Dashboard />} />
-      </Routes>
-    </Router>
+    <AuthProvider>
+      <Router>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          
+          {/* Protected routes */}
+          <Route element={<PrivateRoute />}>
+            <Route path="/" element={<Dashboard />} />
+          </Route>
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 }
 
