@@ -1,11 +1,13 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './utils/AuthContext';
-import PrivateRoute from './utils/privateRoute';
+import PrivateRoute from './utils/PrivateRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import MainLayout from './components/layout/MainLayout';
+import Transactions from './pages/Transactions';
+import Accounts from './pages/Accounts';
 
 import './App.css';
 
@@ -22,7 +24,9 @@ function App() {
           <Route element={<PrivateRoute />}>
             <Route element={<MainLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
-              {/* Add more protected routes here */}
+              <Route path="/transactions" element={<Transactions />} />
+              <Route path="/accounts" element={<Accounts />} />
+              {/* Add more routes as needed */}
             </Route>
           </Route>
           
