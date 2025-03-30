@@ -1,126 +1,116 @@
+tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist|venv" --dirsfirst
+
 .
 ├── FundFlow
-│   ├── __init__.py
-│   ├── asgi.py
-│   ├── settings.py
-│   ├── urls.py
-│   └── wsgi.py
+│   ├── __init__.py
+│   ├── asgi.py
+│   ├── settings.py
+│   ├── urls.py
+│   └── wsgi.py
 ├── accounts
-│   ├── __init__.py
-│   ├── admin.py
-│   ├── api_views.py
-│   ├── apps.py
-│   ├── forms.py
-│   ├── migrations
-│   │   ├── 0001_initial.py
-│   │   └── __init__.py
-│   ├── models.py
-│   ├── serializers.py
-│   ├── tests.py
-│   ├── urls.py
-│   └── views.py
+│   ├── migrations
+│   │   ├── 0001_initial.py
+│   │   └── __init__.py
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── api_views.py
+│   ├── apps.py
+│   ├── forms.py
+│   ├── models.py
+│   ├── serializers.py
+│   ├── tests.py
+│   ├── urls.py
+│   └── views.py
 ├── finance
-│   ├── __init__.py
-│   ├── admin.py
-│   ├── apps.py
-│   ├── management
-│   │   └── commands
-│   │       └── test_plaid.py
-│   ├── migrations
-│   │   ├── 0001_initial.py
-│   │   ├── 0002_transaction.py
-│   │   ├── 0003_rename_category_transaction_category_string_category_and_more.py
-│   │   └── __init__.py
-│   ├── models.py
-│   ├── serializers.py
-│   ├── services
-│   │   ├── __init__.py
-│   │   └── plaid_service.py
-│   ├── templates
-│   │   └── finance
-│   │       └── dashboard.html
-│   ├── tests.py
-│   ├── urls.py
-│   └── views.py
+│   ├── management
+│   │   └── commands
+│   │       └── test_plaid.py
+│   ├── migrations
+│   │   ├── 0001_initial.py
+│   │   ├── 0002_transaction.py
+│   │   ├── 0003_rename_category_transaction_category_string_category_and_more.py
+│   │   └── __init__.py
+│   ├── services
+│   │   ├── __init__.py
+│   │   └── plaid_service.py
+│   ├── templates
+│   │   └── finance
+│   │       └── dashboard.html
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   ├── serializers.py
+│   ├── tests.py
+│   ├── urls.py
+│   └── views.py
 ├── frontend
-│   ├── README.md
-│   ├── package-lock.json
-│   ├── package.json
-│   ├── public
-│   │   ├── favicon.ico
-│   │   ├── index.html
-│   │   ├── logo192.png
-│   │   ├── logo512.png
-│   │   ├── manifest.json
-│   │   └── robots.txt
-│   └── src
-│       ├── App.css
-│       ├── App.js
-│       ├── App.test.js
-│       ├── assets
-│       ├── components
-│       │   ├── ApiTester.js
-│       │   ├── auth
-│       │   ├── dashboard
-│       │   ├── layout
-│       │   └── plaid
-│       ├── index.css
-│       ├── index.js
-│       ├── pages
-│       │   ├── Dashboard.js
-│       │   ├── Login.js
-│       │   └── Register.js
-│       ├── reportWebVitals.js
-│       ├── services
-│       │   ├── api.js
-│       │   ├── auth.js
-│       │   └── plaid.js
-│       ├── setupTests.js
-│       ├── styles
-│       │   └── auth.css
-│       └── utils
-│           ├── AuthContext.js
-│           ├── PrivateRoute.js
-│           └── apiTester.js
+│   ├── public
+│   │   ├── favicon.ico
+│   │   ├── index.html
+│   │   ├── logo192.png
+│   │   ├── logo512.png
+│   │   ├── manifest.json
+│   │   └── robots.txt
+│   ├── src
+│   │   ├── assets
+│   │   ├── components
+│   │   │   ├── auth
+│   │   │   │   ├── LoginForm.js
+│   │   │   │   └── RegisterForm.js
+│   │   │   ├── dashboard
+│   │   │   │   ├── AccountSummary.js
+│   │   │   │   ├── SpendingChart.js
+│   │   │   │   └── TransactionList.js
+│   │   │   ├── layout
+│   │   │   │   ├── Header.js
+│   │   │   │   ├── MainLayout.js
+│   │   │   │   └── Sidebar.js
+│   │   │   ├── plaid
+│   │   │   │   └── PlaidLink.js
+│   │   │   └── ApiTester.js
+│   │   ├── pages
+│   │   │   ├── Dashboard.js
+│   │   │   ├── Login.js
+│   │   │   └── Register.js
+│   │   ├── services
+│   │   │   ├── api.js
+│   │   │   ├── auth.js
+│   │   │   └── plaid.js
+│   │   ├── styles
+│   │   │   └── auth.css
+│   │   ├── utils
+│   │   │   ├── AuthContext.js
+│   │   │   ├── PrivateRoute.js
+│   │   │   └── apiTester.js
+│   │   ├── App.css
+│   │   ├── App.js
+│   │   ├── App.test.js
+│   │   ├── index.css
+│   │   ├── index.js
+│   │   ├── reportWebVitals.js
+│   │   └── setupTests.js
+│   ├── README.md
+│   ├── package-lock.json
+│   └── package.json
+├── templates
+│   ├── accounts
+│   │   ├── login.html
+│   │   ├── password_change.html
+│   │   ├── password_change_done.html
+│   │   ├── password_reset.html
+│   │   ├── password_reset_complete.html
+│   │   ├── password_reset_confirm.html
+│   │   ├── password_reset_done.html
+│   │   ├── password_reset_email.html
+│   │   ├── password_reset_subject.txt
+│   │   ├── profile.html
+│   │   └── register.html
+│   ├── finance
+│   │   └── dashboard.html
+│   └── base.html
 ├── manage.py
 ├── requirements.txt
-├── structure.txt
-├── templates
-│   ├── accounts
-│   │   ├── login.html
-│   │   ├── password_change.html
-│   │   ├── password_change_done.html
-│   │   ├── password_reset.html
-│   │   ├── password_reset_complete.html
-│   │   ├── password_reset_confirm.html
-│   │   ├── password_reset_done.html
-│   │   ├── password_reset_email.html
-│   │   ├── password_reset_subject.txt
-│   │   ├── profile.html
-│   │   └── register.html
-│   ├── base.html
-│   └── finance
-│       └── dashboard.html
-└── venv
-    ├── bin
-    │   ├── Activate.ps1
-    │   ├── activate
-    │   ├── activate.csh
-    │   ├── activate.fish
-    │   ├── django-admin
-    │   ├── dotenv
-    │   ├── pip
-    │   ├── pip3
-    │   ├── pip3.13
-    │   ├── python -> python3.13
-    │   ├── python3 -> python3.13
-    │   ├── python3.13 -> /opt/homebrew/opt/python@3.13/bin/python3.13
-    │   └── sqlformat
-    ├── include
-    │   └── python3.13
-    ├── lib
-    │   └── python3.13
-    │       └── site-packages
-    └── pyvenv.cfg
+└── structure.txt
 
-34 directories, 90 files
+27 directories, 85 files

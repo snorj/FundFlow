@@ -1,70 +1,113 @@
-// src/utils/AuthContext.js
 import React, { createContext, useState, useEffect } from 'react';
-import authService from '../services/auth';
+import AuthService from '../services/auth';
 
-export const AuthContext = createContext(null);
+export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [authState, setAuthState] = useState({
+    isAuthenticated: false,
+    isLoading: true,
+    user: null,
+    accessToken: localStorage.getItem('access_token') || null,
+    refreshToken: localStorage.getItem('refresh_token') || null,
+  });
 
-  // Load user on initial render
   useEffect(() => {
-    const loadUser = async () => {
+    const initializeAuth = async () => {
+      // Check if tokens exist in localStorage
+      const accessToken = localStorage.getItem('access_token');
+      const refreshTokenValue = localStorage.getItem('refresh_token');
+      
+      if (!accessToken || !refreshTokenValue) {
+        setAuthState({
+          isAuthenticated: false,
+          isLoading: false,
+          user: null,
+          accessToken: null,
+          refreshToken: null,
+        });
+        return;
+      }
+      
       try {
-        if (authService.isAuthenticated()) {
-          const userData = await authService.getCurrentUser();
-          setUser(userData);
-        }
+        // Try to get user info with current access token
+        const userInfo = await AuthService.getCurrentUser();
+        
+        setAuthState({
+          isAuthenticated: true,
+          isLoading: false,
+          user: userInfo,
+          accessToken,
+          refreshToken: refreshTokenValue,
+        });
       } catch (error) {
-        console.error('Failed to load user:', error);
-        authService.logout();
-      } finally {
-        setLoading(false);
+        // If access token is expired, try to refresh it
+        if (error.response && error.response.status === 401) {
+          try {
+            const response = await AuthService.refreshToken(refreshTokenValue);
+            localStorage.setItem('access_token', response.access);
+            
+            // Get user info with new access token
+            const userInfo = await AuthService.getCurrentUser();
+            
+            setAuthState({
+              isAuthenticated: true,
+              isLoading: false,
+              user: userInfo,
+              accessToken: response.access,
+              refreshToken: refreshTokenValue,
+            });
+          } catch (refreshError) {
+            // If refresh token is also invalid, log the user out
+            AuthService.logout();
+            
+            setAuthState({
+              isAuthenticated: false,
+              isLoading: false,
+              user: null,
+              accessToken: null,
+              refreshToken: null,
+            });
+          }
+        } else {
+          // For other types of errors
+          setAuthState({
+            isAuthenticated: false,
+            isLoading: false,
+            user: null,
+            accessToken,
+            refreshToken: refreshTokenValue,
+          });
+        }
       }
     };
 
-    loadUser();
+    initializeAuth();
   }, []);
 
-  const login = async (credentials) => {
-    try {
-      await authService.login(credentials);
-      const userData = await authService.getCurrentUser();
-      setUser(userData);
-      return true;
-    } catch (error) {
-      console.error('Login failed:', error);
-      return false;
-    }
-  };
-
-  const register = async (userData) => {
-    try {
-      await authService.register(userData);
-      return true;
-    } catch (error) {
-      console.error('Registration failed:', error);
-      return false;
-    }
-  };
-
   const logout = () => {
-    authService.logout();
-    setUser(null);
+    AuthService.logout();
+    
+    setAuthState({
+      isAuthenticated: false,
+      isLoading: false,
+      user: null,
+      accessToken: null,
+      refreshToken: null,
+    });
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider 
+      value={{ 
+        ...authState, 
+        setAuthState, 
+        logout 
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
-  const context = React.useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+export default AuthProvider;

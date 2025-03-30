@@ -1,18 +1,25 @@
-// src/utils/PrivateRoute.js
-import React from 'react';
+import React, { useContext } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
-import { useAuth } from './AuthContext';
+import { AuthContext } from './AuthContext';
+
+// Loading spinner component
+const LoadingSpinner = () => (
+  <div className="loading-container">
+    <div className="loading-spinner"></div>
+    <p>Loading...</p>
+  </div>
+);
 
 const PrivateRoute = () => {
-  const { user, loading } = useAuth();
+  const { isAuthenticated, isLoading } = useContext(AuthContext);
 
-  // Show loading indicator while checking authentication
-  if (loading) {
-    return <div>Loading...</div>;
+  // Show loading spinner while checking authentication
+  if (isLoading) {
+    return <LoadingSpinner />;
   }
 
   // Redirect to login if not authenticated
-  return user ? <Outlet /> : <Navigate to="/login" />;
+  return isAuthenticated ? <Outlet /> : <Navigate to="/login" />;
 };
 
 export default PrivateRoute;

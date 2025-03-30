@@ -1,16 +1,13 @@
-// src/App.js
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './utils/AuthContext';
-import PrivateRoute from './utils/PrivateRoute.js';
-
-// Pages
-import Dashboard from './pages/Dashboard';
+import PrivateRoute from './utils/privateRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Dashboard from './pages/Dashboard';
+import MainLayout from './components/layout/MainLayout';
 
-// Testing component
-import ApiTester from './components/ApiTester';
+import './App.css';
 
 function App() {
   return (
@@ -20,12 +17,20 @@ function App() {
           {/* Public routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route path="/api-test" element={<ApiTester />} />
           
-          {/* Protected routes */}
+          {/* Protected routes with MainLayout */}
           <Route element={<PrivateRoute />}>
-            <Route path="/" element={<Dashboard />} />
+            <Route element={<MainLayout />}>
+              <Route path="/dashboard" element={<Dashboard />} />
+              {/* Add more protected routes here */}
+            </Route>
           </Route>
+          
+          {/* Redirect root to dashboard or login depending on auth state */}
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          
+          {/* Catch all - redirect to dashboard */}
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Router>
     </AuthProvider>
