@@ -39,7 +39,7 @@ class AuthService {
   // Get current user
   async getCurrentUser() {
     try {
-      const response = await api.get('/auth/user/');
+      const response = await api.get('/auth/me/');
       return response.data;
     } catch (error) {
       return null;
