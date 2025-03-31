@@ -1,112 +1,93 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { usePlaidLink } from 'react-plaid-link';
-import plaidService from '../../services/plaid';
+import React, { useEffect, useId } from 'react';
+import { usePlaidLink } from '../../utils/PlaidLinkContext';
+import ScriptManager from '../../utils/ScriptManager';
 import './PlaidLink.css';
 
-// Create a global script loader flag
-let plaidScriptLoaded = false;
+// Global variable for Plaid Link instance
+let plaidLinkInstance = null;
 
-const PlaidLinkButton = ({ onSuccess, onExit, linkToken }) => {
-  const config = {
-    token: linkToken,
-    onSuccess: (public_token, metadata) => {
-      console.log('Link success:', metadata);
-      onSuccess(public_token, metadata);
-    },
-    onExit: (err, metadata) => {
-      console.log('Link exit:', err, metadata);
-      if (onExit) onExit(err, metadata);
-    },
-  };
-
-  const { open, ready } = usePlaidLink(config);
-
-  return (
-    <button 
-      onClick={() => open()} 
-      disabled={!ready} 
-      className="plaid-link-button"
-    >
-      Connect a bank account
-    </button>
-  );
+// Script configuration
+const PLAID_SCRIPT = {
+  id: 'plaid-link-script',
+  src: 'https://cdn.plaid.com/link/v2/stable/link-initialize.js'
 };
 
 const PlaidLink = ({ onAccountConnected, className }) => {
-  const [linkToken, setLinkToken] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const scriptLoadedInThisInstance = useRef(false);
-
-  // Get a link token when the component mounts
+  const { 
+    linkToken,
+    isLoading, 
+    error,
+    registerCallback,
+    handleSuccess,
+    handleExit
+  } = usePlaidLink();
+  
+  // Generate a unique ID for this component instance
+  const id = useId();
+  
+  // Register callback on mount
   useEffect(() => {
-    const getLinkToken = async () => {
+    return registerCallback(id, onAccountConnected);
+  }, [id, onAccountConnected, registerCallback]);
+  
+  // Function to open Plaid Link
+  const openPlaidLink = async () => {
+    // Load script if needed
+    if (!ScriptManager.isScriptLoaded(PLAID_SCRIPT.id)) {
       try {
-        setIsLoading(true);
-        setError(null);
-        const response = await plaidService.getLinkToken();
-        setLinkToken(response.link_token);
-      } catch (err) {
-        console.error('Error getting link token:', err);
-        setError('Failed to initialize bank connection. Please try again later.');
-      } finally {
-        setIsLoading(false);
+        await ScriptManager.loadScript(PLAID_SCRIPT.src, PLAID_SCRIPT.id);
+      } catch (error) {
+        console.error('Failed to load Plaid script:', error);
+        return;
       }
-    };
-
-    // Only load the Plaid script once across all instances
-    if (!plaidScriptLoaded) {
-      plaidScriptLoaded = true;
-      scriptLoadedInThisInstance.current = true;
     }
-
-    getLinkToken();
-
-    // Cleanup
-    return () => {
-      // Only remove the script if this instance loaded it and component is unmounting
-      if (scriptLoadedInThisInstance.current) {
-        // Reset the flag if this component loaded the script and is being unmounted
-        // This allows the script to be loaded again if needed
-        plaidScriptLoaded = false;
-      }
-    };
-  }, []);
-
-  // Handle successful Plaid Link connection
-  const handleSuccess = useCallback(async (public_token, metadata) => {
+    
+    // Check if window.Plaid is available
+    if (!window.Plaid) {
+      console.error('Plaid is not available');
+      return;
+    }
+    
+    // Only initialize if we have a link token
+    if (!linkToken) {
+      console.error('Cannot open Plaid Link: missing token');
+      return;
+    }
+    
     try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Exchange the public token for an access token
-      const exchangeResponse = await plaidService.exchangePublicToken(
-        public_token,
-        metadata.institution.institution_id,
-        metadata.institution.name
-      );
-      
-      console.log('Exchange success:', exchangeResponse);
-      
-      // Notify the parent component
-      if (onAccountConnected) {
-        onAccountConnected(exchangeResponse);
+      // Destroy existing instance if any
+      if (plaidLinkInstance) {
+        try {
+          plaidLinkInstance.destroy();
+        } catch (e) {
+          console.error('Error destroying Plaid Link:', e);
+        }
+        plaidLinkInstance = null;
       }
+      
+      // Create new instance
+      plaidLinkInstance = window.Plaid.create({
+        token: linkToken,
+        onSuccess: (public_token, metadata) => {
+          handleSuccess(public_token, metadata);
+        },
+        onExit: (err, metadata) => {
+          handleExit(err, metadata);
+        },
+        onLoad: () => {
+          console.log('Plaid Link loaded');
+        },
+        onEvent: (eventName, metadata) => {
+          console.log('Plaid Link event:', eventName, metadata);
+        }
+      });
+      
+      // Open Plaid Link
+      plaidLinkInstance.open();
     } catch (err) {
-      console.error('Error exchanging token:', err);
-      setError('Failed to complete bank connection. Please try again later.');
-    } finally {
-      setIsLoading(false);
+      console.error('Error creating Plaid Link:', err);
     }
-  }, [onAccountConnected]);
-
-  // Handle Plaid Link exit
-  const handleExit = useCallback((err, metadata) => {
-    if (err != null) {
-      console.error('Link error:', err, metadata);
-      setError('There was a problem connecting to your bank. Please try again.');
-    }
-  }, []);
+  };
 
   return (
     <div className={`plaid-link-container ${className || ''}`}>
@@ -118,11 +99,12 @@ const PlaidLink = ({ onAccountConnected, className }) => {
           <span>Connecting to your bank...</span>
         </div>
       ) : (
-        linkToken && <PlaidLinkButton 
-          linkToken={linkToken} 
-          onSuccess={handleSuccess} 
-          onExit={handleExit} 
-        />
+        <button 
+          onClick={openPlaidLink} 
+          className="plaid-link-button"
+        >
+          Connect a bank account
+        </button>
       )}
     </div>
   );

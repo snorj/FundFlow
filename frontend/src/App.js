@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './utils/AuthContext';
+import { PlaidLinkProvider } from './utils/PlaidLinkContext';
 import PrivateRoute from './utils/PrivateRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -22,7 +23,11 @@ function App() {
           
           {/* Protected routes with MainLayout */}
           <Route element={<PrivateRoute />}>
-            <Route element={<MainLayout />}>
+            <Route element={
+              <PlaidLinkProvider>
+                <MainLayout />
+              </PlaidLinkProvider>
+            }>
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/accounts" element={<Accounts />} />

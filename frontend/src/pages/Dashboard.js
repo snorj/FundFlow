@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { usePlaidLink } from '../utils/PlaidLinkContext';
 import AccountSummary from '../components/dashboard/AccountSummary';
 import SpendingChart from '../components/dashboard/SpendingChart';
 import TransactionList from '../components/dashboard/TransactionList';
@@ -8,15 +9,26 @@ import plaidService from '../services/plaid';
 import './Dashboard.css';
 
 const Dashboard = () => {
-  console.log('Dashboard component rendering!'); // Add this to check if the component is rendering
+  // Use a ref to prevent multiple fetches
+  const hasFetchedData = useRef(false);
   
   const [accounts, setAccounts] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [accountLinkSuccess, setAccountLinkSuccess] = useState(null);
+  
+  // Get the account link success state from context
+  const { accountLinkSuccess } = usePlaidLink();
 
-  const fetchData = useCallback(async () => {
+  // Define fetchData outside of any effects
+  const fetchData = async () => {
+    if (hasFetchedData.current) {
+      console.log("Data already fetched, skipping");
+      return;
+    }
+    
+    console.log("Fetching dashboard data");
+    
     try {
       setIsLoading(true);
       setError(null);
@@ -36,31 +48,24 @@ const Dashboard = () => {
       });
       
       setTransactions(transactionsData.results || []);
+      hasFetchedData.current = true;
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
       setError('Failed to load your financial data. Please try again later.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  };
 
+  // Fetch data on mount only
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+  }, []); // Empty dependency array means this runs once on mount
 
-  // Handle successful account connection
-  const handleAccountConnected = (response) => {
-    setAccountLinkSuccess({
-      message: `Successfully connected to ${response.institution_name}`,
-      timestamp: new Date()
-    });
-    
-    // Clear success message after 5 seconds
-    setTimeout(() => {
-      setAccountLinkSuccess(null);
-    }, 5000);
-    
-    // Refresh data
+  // Handle successful account connection - resets the fetch flag and fetches data again
+  const handleAccountConnected = () => {
+    console.log("Account connected, refreshing data");
+    hasFetchedData.current = false; // Reset so we can fetch again
     fetchData();
   };
 
@@ -107,6 +112,12 @@ const Dashboard = () => {
       .sort((a, b) => b.amount - a.amount);
   };
 
+  // Manual retry function (no dependency on fetchData)
+  const handleRetry = () => {
+    hasFetchedData.current = false;
+    fetchData();
+  };
+
   return (
     <div className="dashboard-container">
       {isLoading ? (
@@ -117,7 +128,7 @@ const Dashboard = () => {
       ) : error ? (
         <div className="dashboard-error">
           <p>{error}</p>
-          <button onClick={fetchData} className="retry-button">Try Again</button>
+          <button onClick={handleRetry} className="retry-button">Try Again</button>
         </div>
       ) : (
         <>
