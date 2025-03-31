@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useCallback, useContext, useRef } from 'react';
 import plaidService from '../services/plaid';
+import { stateResetManager } from './StateResetUtil';
 
 // Create the context
 const PlaidLinkContext = createContext(null);
@@ -13,6 +14,25 @@ export const PlaidLinkProvider = ({ children }) => {
   
   // Use refs to store callbacks to avoid re-renders
   const callbacksRef = useRef({});
+  
+  // Function to reset all state in this context
+  const resetState = useCallback(() => {
+    console.log('Resetting PlaidLinkContext state');
+    setLinkToken(null);
+    setIsLoading(false);
+    setError(null);
+    setAccountLinkSuccess(null);
+    callbacksRef.current = {};
+    
+    // Get a fresh link token after reset
+    getLinkToken();
+  }, []);
+  
+  // Register with the state reset manager
+  useEffect(() => {
+    const unregister = stateResetManager.addResetListener(resetState);
+    return unregister;
+  }, [resetState]);
   
   // Get a link token when the provider mounts
   useEffect(() => {
@@ -120,7 +140,7 @@ export const PlaidLinkProvider = ({ children }) => {
     }
   }, []);
 
-  // Create context value
+  // Add resetState to context value
   const contextValue = {
     linkToken,
     isLoading,
@@ -131,6 +151,7 @@ export const PlaidLinkProvider = ({ children }) => {
     registerCallback,
     openPlaidLink,
     refreshLinkToken: getLinkToken,
+    resetState, // Add reset function to context
   };
 
   return (

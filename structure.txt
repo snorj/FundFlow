@@ -1,4 +1,4 @@
-tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist|venv" --dirsfirst
+tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist|venv" --dirsfirst 
 .
 ├── FundFlow
 │   ├── __init__.py
@@ -28,6 +28,7 @@ tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist
 │   │   ├── 0001_initial.py
 │   │   ├── 0002_transaction.py
 │   │   ├── 0003_rename_category_transaction_category_string_category_and_more.py
+│   │   ├── 0004_remove_account_id_uniqueness.py
 │   │   └── __init__.py
 │   ├── services
 │   │   ├── __init__.py
@@ -58,8 +59,11 @@ tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist
 │   │   │   │   ├── LoginForm.js
 │   │   │   │   └── RegisterForm.js
 │   │   │   ├── dashboard
+│   │   │   │   ├── AccountSummary.css
 │   │   │   │   ├── AccountSummary.js
+│   │   │   │   ├── SpendingChart.css
 │   │   │   │   ├── SpendingChart.js
+│   │   │   │   ├── TransactionList.css
 │   │   │   │   └── TransactionList.js
 │   │   │   ├── layout
 │   │   │   │   ├── Header.js
@@ -67,6 +71,9 @@ tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist
 │   │   │   │   ├── MainLayout.js
 │   │   │   │   └── Sidebar.js
 │   │   │   ├── plaid
+│   │   │   │   ├── ConnectedAccounts.css
+│   │   │   │   ├── ConnectedAccounts.js
+│   │   │   │   ├── PlaidLink.css
 │   │   │   │   └── PlaidLink.js
 │   │   │   └── ApiTester.js
 │   │   ├── pages
@@ -86,7 +93,9 @@ tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist
 │   │   │   └── auth.css
 │   │   ├── utils
 │   │   │   ├── AuthContext.js
+│   │   │   ├── PlaidLinkContext.js
 │   │   │   ├── PrivateRoute.js
+│   │   │   ├── ScriptManager.js
 │   │   │   └── apiTester.js
 │   │   ├── App.css
 │   │   ├── App.js
@@ -118,4 +127,4 @@ tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist
 ├── requirements.txt
 └── structure.txt
 
-27 directories, 91 files
+27 directories, 100 files

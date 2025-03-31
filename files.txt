@@ -1,386 +1,616 @@
-Here is frontend/src/components/plaid/PlaidLink.js:
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { usePlaidLink } from 'react-plaid-link';
-import plaidService from '../../services/plaid';
-import './PlaidLink.css';
+Here is finance/models.py:
 
-// Create a global script loader flag
-let plaidScriptLoaded = false;
+from django.db import models
+from django.conf import settings
+from django.contrib.auth import get_user_model
 
-const PlaidLinkButton = ({ onSuccess, onExit, linkToken }) => {
-  const config = {
-    token: linkToken,
-    onSuccess: (public_token, metadata) => {
-      console.log('Link success:', metadata);
-      onSuccess(public_token, metadata);
-    },
-    onExit: (err, metadata) => {
-      console.log('Link exit:', err, metadata);
-      if (onExit) onExit(err, metadata);
-    },
-  };
+User = get_user_model()
 
-  const { open, ready } = usePlaidLink(config);
-
-  return (
-    <button 
-      onClick={() => open()} 
-      disabled={!ready} 
-      className="plaid-link-button"
-    >
-      Connect a bank account
-    </button>
-  );
-};
-
-const PlaidLink = ({ onAccountConnected, className }) => {
-  const [linkToken, setLinkToken] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const scriptLoadedInThisInstance = useRef(false);
-
-  // Get a link token when the component mounts
-  useEffect(() => {
-    const getLinkToken = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const response = await plaidService.getLinkToken();
-        setLinkToken(response.link_token);
-      } catch (err) {
-        console.error('Error getting link token:', err);
-        setError('Failed to initialize bank connection. Please try again later.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    // Only load the Plaid script once across all instances
-    if (!plaidScriptLoaded) {
-      plaidScriptLoaded = true;
-      scriptLoadedInThisInstance.current = true;
-    }
-
-    getLinkToken();
-
-    // Cleanup
-    return () => {
-      // Only remove the script if this instance loaded it and component is unmounting
-      if (scriptLoadedInThisInstance.current) {
-        // Reset the flag if this component loaded the script and is being unmounted
-        // This allows the script to be loaded again if needed
-        plaidScriptLoaded = false;
-      }
-    };
-  }, []);
-
-  // Handle successful Plaid Link connection
-  const handleSuccess = useCallback(async (public_token, metadata) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Exchange the public token for an access token
-      const exchangeResponse = await plaidService.exchangePublicToken(
-        public_token,
-        metadata.institution.institution_id,
-        metadata.institution.name
-      );
-      
-      console.log('Exchange success:', exchangeResponse);
-      
-      // Notify the parent component
-      if (onAccountConnected) {
-        onAccountConnected(exchangeResponse);
-      }
-    } catch (err) {
-      console.error('Error exchanging token:', err);
-      setError('Failed to complete bank connection. Please try again later.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [onAccountConnected]);
-
-  // Handle Plaid Link exit
-  const handleExit = useCallback((err, metadata) => {
-    if (err != null) {
-      console.error('Link error:', err, metadata);
-      setError('There was a problem connecting to your bank. Please try again.');
-    }
-  }, []);
-
-  return (
-    <div className={`plaid-link-container ${className || ''}`}>
-      {error && <div className="plaid-link-error">{error}</div>}
-      
-      {isLoading ? (
-        <div className="plaid-link-loading">
-          <div className="spinner"></div>
-          <span>Connecting to your bank...</span>
-        </div>
-      ) : (
-        linkToken && <PlaidLinkButton 
-          linkToken={linkToken} 
-          onSuccess={handleSuccess} 
-          onExit={handleExit} 
-        />
-      )}
-    </div>
-  );
-};
-
-export default PlaidLink;
-
-Here is frontend/src/pages/Dashboard.js:
-import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import AccountSummary from '../components/dashboard/AccountSummary';
-import SpendingChart from '../components/dashboard/SpendingChart';
-import TransactionList from '../components/dashboard/TransactionList';
-import PlaidLink from '../components/plaid/PlaidLink';
-import plaidService from '../services/plaid';
-import './Dashboard.css';
-
-const Dashboard = () => {
-  console.log('Dashboard component rendering!'); // Add this to check if the component is rendering
-  
-  const [accounts, setAccounts] = useState([]);
-  const [transactions, setTransactions] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [accountLinkSuccess, setAccountLinkSuccess] = useState(null);
-
-  const fetchData = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Fetch accounts
-      const accountsData = await plaidService.getAccounts();
-      setAccounts(accountsData);
-      
-      // Fetch recent transactions (last 30 days)
-      const today = new Date();
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(today.getDate() - 30);
-      
-      const transactionsData = await plaidService.getTransactions({
-        start_date: thirtyDaysAgo.toISOString().split('T')[0],
-        end_date: today.toISOString().split('T')[0],
-      });
-      
-      setTransactions(transactionsData.results || []);
-    } catch (err) {
-      console.error('Error fetching dashboard data:', err);
-      setError('Failed to load your financial data. Please try again later.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  // Handle successful account connection
-  const handleAccountConnected = (response) => {
-    setAccountLinkSuccess({
-      message: `Successfully connected to ${response.institution_name}`,
-      timestamp: new Date()
-    });
+class PlaidItem(models.Model):
+    """
+    Represents a Plaid Item - an item is a connection to a financial institution
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='plaid_items')
+    item_id = models.CharField(max_length=255, unique=True)
+    access_token = models.CharField(max_length=255)
+    institution_id = models.CharField(max_length=255, null=True, blank=True)
+    institution_name = models.CharField(max_length=255, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
-    // Clear success message after 5 seconds
-    setTimeout(() => {
-      setAccountLinkSuccess(null);
-    }, 5000);
-    
-    // Refresh data
-    fetchData();
-  };
+    class Meta:
+        db_table = 'plaid_items'
 
-  // Calculate total balances
-  const calculateTotalBalance = () => {
-    if (!accounts || accounts.length === 0) return 0;
+    def belongs_to_user(self, user):
+        """Check if this item belongs to the given user"""
+        return self.user_id == user.id
     
-    return accounts.reduce((total, account) => {
-      // For deposit accounts, use available balance, or current balance if available balance is null
-      if (account.account_type === 'depository') {
-        return total + (account.available_balance !== null ? account.available_balance : account.current_balance || 0);
-      }
-      // For credit accounts, subtract the balance
-      else if (account.account_type === 'credit') {
-        return total - (account.current_balance || 0);
-      }
-      // For other types, just use current balance
-      return total + (account.current_balance || 0);
-    }, 0);
-  };
+    def __str__(self):
+        return f"Plaid Item: {self.institution_name or 'Unknown'} for {self.user.username}"
 
-  // Group transactions by category for chart
-  const getCategoryData = () => {
-    if (!transactions || transactions.length === 0) return [];
+class Account(models.Model):
+    """
+    Represents a financial account from Plaid
+    """
+    ACCOUNT_TYPES = (
+        ('depository', 'Depository'),
+        ('credit', 'Credit'),
+        ('loan', 'Loan'),
+        ('investment', 'Investment'),
+        ('other', 'Other'),
+    )
     
-    const categories = {};
+    plaid_item = models.ForeignKey(PlaidItem, on_delete=models.CASCADE, related_name='accounts')
+    account_id = models.CharField(max_length=255)
+    name = models.CharField(max_length=255)
+    official_name = models.CharField(max_length=255, null=True, blank=True)
+    account_type = models.CharField(max_length=50, choices=ACCOUNT_TYPES)
+    account_subtype = models.CharField(max_length=50, blank=True, null=True)
+    current_balance = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    available_balance = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    mask = models.CharField(max_length=4, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
-    transactions.forEach(transaction => {
-      // Skip pending transactions and income (negative amounts in Plaid)
-      if (transaction.pending || transaction.amount <= 0) return;
-      
-      const category = transaction.category_string || 'Uncategorized';
-      
-      if (!categories[category]) {
-        categories[category] = 0;
-      }
-      
-      categories[category] += transaction.amount;
-    });
+    class Meta:
+        db_table = 'accounts'
+        unique_together = [['plaid_item', 'account_id']]
     
-    // Convert to array and sort by amount
-    return Object.entries(categories)
-      .map(([name, amount]) => ({ name, amount }))
-      .sort((a, b) => b.amount - a.amount);
-  };
+    def __str__(self):
+        return f"{self.name} ({self.mask or 'xxxx'})"
+    
+    def belongs_to_user(self, user):
+        """Check if this account belongs to the given user"""
+        return self.plaid_item.user_id == user.id
 
-  return (
-    <div className="dashboard-container">
-      {isLoading ? (
-        <div className="dashboard-loading">
-          <div className="spinner-large"></div>
-          <p>Loading your financial dashboard...</p>
-        </div>
-      ) : error ? (
-        <div className="dashboard-error">
-          <p>{error}</p>
-          <button onClick={fetchData} className="retry-button">Try Again</button>
-        </div>
-      ) : (
-        <>
-          {accountLinkSuccess && (
-            <div className="account-link-success">
-              <span>{accountLinkSuccess.message}</span>
-            </div>
-          )}
-          
-          {accounts.length === 0 ? (
-            <div className="no-accounts-container">
-              <h2>Welcome to Fund Flow!</h2>
-              <p>To get started, connect your bank accounts using Plaid's secure connection.</p>
-              <div className="plaid-link-container-centered">
-                <PlaidLink onAccountConnected={handleAccountConnected} />
-              </div>
-              <p className="plaid-security-note">
-                <strong>Your security is our priority:</strong> Fund Flow uses Plaid's secure API to connect to your financial institutions. Your credentials are never stored on our servers.
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="dashboard-header">
-                <div className="welcome-section">
-                  <h1 className="dashboard-title">Your Financial Overview</h1>
-                  <p className="dashboard-subtitle">
-                    Here's a snapshot of your finances as of {new Date().toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="dashboard-actions">
-                  <PlaidLink 
-                    onAccountConnected={handleAccountConnected} 
-                    className="dashboard-plaid-link"
-                  />
-                </div>
-              </div>
-              
-              <div className="dashboard-summary">
-                <AccountSummary 
-                  accounts={accounts}
-                  totalBalance={calculateTotalBalance()}
-                />
-              </div>
-              
-              <div className="dashboard-content">
-                <div className="dashboard-left">
-                  <div className="dashboard-section">
-                    <div className="section-header">
-                      <h2 className="section-title">Recent Transactions</h2>
-                      <Link to="/transactions" className="section-link">View All</Link>
-                    </div>
-                    <div className="section-content">
-                      <TransactionList 
-                        transactions={transactions.slice(0, 5)} 
-                        isLoading={false}
-                      />
-                    </div>
-                  </div>
-                </div>
+class Category(models.Model):
+    """
+    Represents a transaction category
+    """
+    name = models.CharField(max_length=255)
+    plaid_category_id = models.CharField(max_length=255, null=True, blank=True)
+    parent_category = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='subcategories')
+    
+    # For custom user categories
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='custom_categories')
+    is_custom = models.BooleanField(default=False)
+    
+    # For budget tracking
+    budget_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    
+    # System fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'categories'
+        verbose_name_plural = 'categories'
+        unique_together = [['name', 'user']]
+    
+    def __str__(self):
+        return self.name
+
+class Transaction(models.Model):
+    """
+    Represents a financial transaction from Plaid
+    """
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='transactions')
+    transaction_id = models.CharField(max_length=255, unique=True)
+    
+    # Basic transaction details
+    date = models.DateField()
+    name = models.CharField(max_length=255)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    
+    # Category information
+    category_string = models.CharField(max_length=255, null=True, blank=True)  # Original category string from Plaid
+    category_id = models.CharField(max_length=255, null=True, blank=True)  # Original category ID from Plaid
+    categories = models.ManyToManyField(Category, related_name='transactions', blank=True)  # Linked categories
+    
+    # Additional transaction data
+    pending = models.BooleanField(default=False)
+    payment_channel = models.CharField(max_length=50, null=True, blank=True)
+    
+    # Location data
+    address = models.CharField(max_length=255, null=True, blank=True)
+    city = models.CharField(max_length=100, null=True, blank=True)
+    country = models.CharField(max_length=100, null=True, blank=True)
+    postal_code = models.CharField(max_length=20, null=True, blank=True)
+    region = models.CharField(max_length=100, null=True, blank=True)
+    
+    # Merchant data
+    merchant_name = models.CharField(max_length=255, null=True, blank=True)
+    
+    # System fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'transactions'
+        ordering = ['-date', '-created_at']
+    
+    def __str__(self):
+        return f"{self.name} - ${self.amount} on {self.date}"
+
+
+Here is finance/views.py:
+from django.shortcuts import render
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from .services.plaid_service import PlaidService
+from django.db import transaction as db_transaction
+from .models import PlaidItem, Account, Transaction, Category
+from .serializers import PlaidItemSerializer, AccountSerializer, TransactionSerializer, CategorySerializer
+from rest_framework.pagination import PageNumberPagination
+from django.db import models
+from django.http import Http404
+import logging
+logger = logging.getLogger(__name__)
+
+class LinkTokenView(APIView):
+    """
+    Create a link token for initializing Plaid Link
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        # Initialize the Plaid service
+        plaid_service = PlaidService()
+        
+        # Create a link token for the user
+        link_token = plaid_service.create_link_token(request.user.id)
+        
+        if link_token:
+            return Response({'link_token': link_token}, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'Failed to create link token'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class AccessTokenExchangeView(APIView):
+    """
+    Exchange a public token for an access token and save the Plaid item
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        logger.info(f"User {request.user.id} ({request.user.username}) is connecting an account")
+        
+        # Get the public token from the request
+        public_token = request.data.get('public_token')
+        institution_id = request.data.get('institution_id')
+        institution_name = request.data.get('institution_name')
+        
+        logger.info(f"Institution: {institution_name} ({institution_id})")
+        
+        if not public_token:
+            logger.warning("Missing public token in request")
+            return Response({'error': 'Public token is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Initialize the Plaid service
+        plaid_service = PlaidService()
+        
+        # Exchange the public token for an access token
+        exchange_result = plaid_service.exchange_public_token(public_token)
+        
+        if not exchange_result:
+            logger.error("Failed to exchange public token")
+            return Response({'error': 'Failed to exchange public token'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # Get the access token and item ID
+        access_token = exchange_result['access_token']
+        item_id = exchange_result['item_id']
+        
+        logger.info(f"Successfully exchanged public token for item_id: {item_id}")
+        
+        # Save the Plaid item
+        plaid_item = PlaidItem.objects.create(
+            user=request.user,
+            item_id=item_id,
+            access_token=access_token,
+            institution_id=institution_id,
+            institution_name=institution_name
+        )
+        
+        logger.info(f"Created PlaidItem with ID: {plaid_item.id}")
+        
+        # Fetch accounts associated with this item
+        accounts_data = plaid_service.get_accounts(access_token)
+        
+        if accounts_data:
+            logger.info(f"Found {len(accounts_data)} accounts for item {item_id}")
+            # Create Account objects for each account
+            for account_data in accounts_data:
+                Account.objects.create(
+                    plaid_item=plaid_item,
+                    account_id=account_data.account_id,
+                    name=account_data.name,
+                    official_name=account_data.official_name,
+                    account_type=account_data.type,
+                    account_subtype=account_data.subtype,
+                    current_balance=account_data.balances.current if hasattr(account_data.balances, 'current') else None,
+                    available_balance=account_data.balances.available if hasattr(account_data.balances, 'available') else None,
+                    mask=account_data.mask
+                )
+        else:
+            logger.warning(f"No accounts found for item {item_id}")
+        
+        # Log all PlaidItems after creation
+        all_items = PlaidItem.objects.all()
+        user_item_mapping = {}
+        for item in all_items:
+            if item.user_id not in user_item_mapping:
+                user_item_mapping[item.user_id] = []
+            user_item_mapping[item.user_id].append(f"{item.id}: {item.institution_name}")
+        
+        logger.info(f"Current PlaidItem distribution: {user_item_mapping}")
+
+        # Return success response
+        logger.info(f"Account connection completed successfully for user {request.user.id}")
+        return Response({
+            'success': True,
+            'message': 'Account successfully connected',
+            'institution_name': institution_name
+        }, status=status.HTTP_201_CREATED)
+
+class PlaidItemsView(APIView):
+    """
+    List all Plaid items for the authenticated user
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        plaid_items = PlaidItem.objects.filter(user=request.user)
+        serializer = PlaidItemSerializer(plaid_items, many=True)
+        return Response(serializer.data)
+
+class AccountsView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        logger.info(f"User {request.user.id} ({request.user.username}) is requesting accounts")
+        
+        # Use direct user_id comparison 
+        accounts = Account.objects.filter(plaid_item__user_id=request.user.id)
+        
+        # Log each account being returned
+        for account in accounts:
+            logger.info(f"Returning account {account.id} ({account.name}) from item {account.plaid_item_id} to user {request.user.id}")
+        
+        logger.info(f"Found {accounts.count()} accounts for user {request.user.id}")
+        
+        serializer = AccountSerializer(accounts, many=True)
+        return Response(serializer.data)
+    
+def dashboard_view(request):
+    """
+    Render the main dashboard view
+    """
+    return render(request, 'finance/dashboard.html', {
+        'title': 'Dashboard',
+    })
+
+class TransactionFetchView(APIView):
+    """
+    Fetch and store transactions for a Plaid item
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        logger.info(f"User {request.user.id} ({request.user.username}) is requesting transaction fetch")
+        item_id = request.data.get('item_id')
+        
+        if not item_id:
+            logger.warning("Missing item_id in request")
+            return Response({'error': 'Item ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Get the Plaid item - explicitly filter by the current user
+            plaid_item = PlaidItem.objects.get(item_id=item_id, user=request.user)
+            
+            # Verify ownership (additional security check)
+            if not plaid_item.user_id == request.user.id:
+                logger.warning(f"User {request.user.id} attempted to access item {item_id} owned by user {plaid_item.user_id}")
+                return Response(
+                    {'error': 'You do not have permission to access this item'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            logger.info(f"Fetching transactions for item {item_id} (institution: {plaid_item.institution_name})")
+            
+            # Initialize the Plaid service
+            plaid_service = PlaidService()
+            
+            # Get transactions for the last 30 days by default
+            processed_data = plaid_service.process_transactions(
+                plaid_item.access_token,
+                item_id=item_id
+            )
+            
+            if not processed_data:
+                logger.error(f"Failed to fetch transactions for item {item_id}")
+                return Response(
+                    {'error': 'Failed to fetch transactions'}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            # Update account balances
+            with db_transaction.atomic():
+                # Store the transactions
+                transactions_created = 0
                 
-                <div className="dashboard-right">
-                  <div className="dashboard-section">
-                    <div className="section-header">
-                      <h2 className="section-title">Spending by Category</h2>
-                    </div>
-                    <div className="section-content">
-                      <SpendingChart data={getCategoryData()} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </>
-      )}
-    </div>
-  );
+                for transaction_data in processed_data['transactions']:
+                    account_id = transaction_data.pop('account_id')
+                    
+                    try:
+                        # Get the account - ensure it belongs to this plaid_item
+                        account = Account.objects.get(account_id=account_id, plaid_item=plaid_item)
+                        
+                        # Check if transaction already exists
+                        transaction_id = transaction_data['transaction_id']
+                        transaction, created = Transaction.objects.update_or_create(
+                            transaction_id=transaction_id,
+                            defaults={
+                                'account': account,
+                                **transaction_data
+                            }
+                        )
+                        
+                        if created:
+                            transactions_created += 1
+                    
+                    except Account.DoesNotExist:
+                        # Log this error but continue processing other transactions
+                        logger.warning(f"Account with ID {account_id} not found for item {item_id}")
+                
+                # Update account balances
+                for account_id, account_data in processed_data['accounts'].items():
+                    try:
+                        account = Account.objects.get(account_id=account_id, plaid_item=plaid_item)
+                        account.current_balance = account_data['balances']['current']
+                        account.available_balance = account_data['balances']['available']
+                        account.save()
+                    except Account.DoesNotExist:
+                        # Log this error but continue processing other accounts
+                        logger.warning(f"Account with ID {account_id} not found for item {item_id} during balance update")
+            
+            logger.info(f"Successfully fetched {transactions_created} new transactions for item {item_id}")
+            return Response({
+                'success': True,
+                'message': f'Successfully fetched transactions. {transactions_created} new transactions.',
+                'transactions_count': transactions_created
+            })
+            
+        except PlaidItem.DoesNotExist:
+            logger.warning(f"Item {item_id} not found or does not belong to user {request.user.id}")
+            return Response(
+                {'error': 'Plaid item not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            # Log the error
+            logger.error(f"Error fetching transactions for item {item_id}: {str(e)}")
+            return Response(
+                {'error': 'An error occurred while fetching transactions'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class TransactionsView(APIView):
+    """
+    List transactions for the authenticated user with filtering options
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        logger.info(f"User {request.user.id} ({request.user.username}) is requesting transactions")
+
+        # Get query parameters for filtering
+        account_id = request.query_params.get('account_id')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        category = request.query_params.get('category')
+        amount_min = request.query_params.get('amount_min')
+        amount_max = request.query_params.get('amount_max')
+
+        # Log the filters being applied
+        logger.info(f"Filters: account_id={account_id}, ...")
+        
+        # Base queryset - all transactions from user's accounts (use direct user_id comparison)
+        transactions = Transaction.objects.filter(
+            account__plaid_item__user_id=request.user.id
+        )
+        
+        # Apply filters if provided
+        if account_id:
+            transactions = transactions.filter(account__account_id=account_id)
+        
+        if start_date:
+            transactions = transactions.filter(date__gte=start_date)
+        
+        if end_date:
+            transactions = transactions.filter(date__lte=end_date)
+        
+        if category:
+            transactions = transactions.filter(category__icontains=category)
+        
+        if amount_min:
+            transactions = transactions.filter(amount__gte=float(amount_min))
+        
+        if amount_max:
+            transactions = transactions.filter(amount__lte=float(amount_max))
+        
+        # Log the result
+        logger.info(f"Found {transactions.count()} transactions for user {request.user.id}")
+
+        # Paginate results
+        paginator = PageNumberPagination()
+        paginator.page_size = 25  # Adjust as needed
+        paginated_transactions = paginator.paginate_queryset(transactions, request)
+        
+        serializer = TransactionSerializer(paginated_transactions, many=True)
+        return paginator.get_paginated_response(serializer.data)
+    
+class CategoryListCreateView(APIView):
+    """
+    List all categories or create a new category
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        # Get system categories and user's custom categories
+        categories = Category.objects.filter(
+            models.Q(user=request.user) | models.Q(user__isnull=True)
+        )
+        serializer = CategorySerializer(categories, many=True)
+        return Response(serializer.data)
+    
+    def post(self, request):
+        # Create a new custom category for the user
+        serializer = CategorySerializer(data=request.data)
+        if serializer.is_valid():
+            category = serializer.save(user=request.user, is_custom=True)
+            return Response(CategorySerializer(category).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class CategoryDetailView(APIView):
+    """
+    Retrieve, update or delete a category
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get_object(self, pk, user):
+        try:
+            # Can only access system categories or own custom categories
+            return Category.objects.get(
+                models.Q(id=pk),
+                models.Q(user=user) | models.Q(user__isnull=True)
+            )
+        except Category.DoesNotExist:
+            raise Http404
+    
+    def get(self, request, pk):
+        category = self.get_object(pk, request.user)
+        serializer = CategorySerializer(category)
+        return Response(serializer.data)
+    
+    def put(self, request, pk):
+        category = self.get_object(pk, request.user)
+        
+        # Only allow updates to custom categories owned by the user
+        if not category.is_custom or category.user != request.user:
+            return Response(
+                {"error": "Cannot modify system categories or categories owned by other users"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = CategorySerializer(category, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, pk):
+        category = self.get_object(pk, request.user)
+        
+        # Only allow deletion of custom categories owned by the user
+        if not category.is_custom or category.user != request.user:
+            return Response(
+                {"error": "Cannot delete system categories or categories owned by other users"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        category.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+Here is finance/serializers.py:
+from rest_framework import serializers
+from .models import PlaidItem, Account, Transaction, Category
+
+class PlaidItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlaidItem
+        fields = ['id', 'institution_name', 'is_active', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+class AccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Account
+        fields = ['id', 'name', 'official_name', 'account_type', 'account_subtype', 
+                 'current_balance', 'available_balance', 'mask', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ['id', 'name', 'plaid_category_id', 'parent_category', 'is_custom', 'budget_amount']
+        read_only_fields = ['id']
+
+class TransactionSerializer(serializers.ModelSerializer):
+    account_name = serializers.CharField(source='account.name', read_only=True)
+    
+    class Meta:
+        model = Transaction
+        fields = [
+            'id', 'transaction_id', 'date', 'name', 'amount', 'category',
+            'pending', 'payment_channel', 'merchant_name', 'account_name'
+        ]
+        read_only_fields = ['id', 'transaction_id']
+
+Here is frontend/src/services/api.js:
+// src/services/api.js
+import axios from 'axios';
+
+const getCsrfToken = () => {
+  // Try to get CSRF token from cookie
+  const name = 'csrftoken=';
+  const decodedCookie = decodeURIComponent(document.cookie);
+  const cookieArray = decodedCookie.split(';');
+  
+  for (let i = 0; i < cookieArray.length; i++) {
+    let cookie = cookieArray[i].trim();
+    if (cookie.indexOf(name) === 0) {
+      return cookie.substring(name.length, cookie.length);
+    }
+  }
+  return '';
 };
 
-export default Dashboard;
+const api = axios.create({
+  baseURL: '/api',
+  withCredentials: true,  // Important for sending cookies with requests
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
 
-Here is frontend/src/App.js:
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './utils/AuthContext';
-import PrivateRoute from './utils/PrivateRoute';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import MainLayout from './components/layout/MainLayout';
-import Transactions from './pages/Transactions';
-import Accounts from './pages/Accounts';
+// Add request interceptor for auth and CSRF
+api.interceptors.request.use(
+  (config) => {
+    // Add auth token if available
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    // Add CSRF token for non-GET requests
+    if (config.method !== 'get') {
+      const csrfToken = getCsrfToken();
+      if (csrfToken) {
+        config.headers['X-CSRFToken'] = csrfToken;
+      }
+    }
+    
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
-import './App.css';
+export default api;
 
-function App() {
-  return (
-    <AuthProvider>
-      <Router>
-        <Routes>
-          {/* Public routes */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          
-          {/* Protected routes with MainLayout */}
-          <Route element={<PrivateRoute />}>
-            <Route element={<MainLayout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/transactions" element={<Transactions />} />
-              <Route path="/accounts" element={<Accounts />} />
-              {/* Add more routes as needed */}
-            </Route>
-          </Route>
-          
-          {/* Redirect root to dashboard or login depending on auth state */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          
-          {/* Catch all - redirect to dashboard */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </Router>
-    </AuthProvider>
-  );
-}
-
-export default App;
-
-
-Here is services/plaid.js:
+Here is frontend/src/services/plaid.js:
 import api from './api';
 
 /**

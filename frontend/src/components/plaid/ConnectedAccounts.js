@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import plaidService from '../../services/plaid';
 import './ConnectedAccounts.css';
+import { stateResetManager } from '../../utils/StateResetUtil'; // Add this import
 
 const ConnectedAccounts = ({ onRefreshComplete }) => {
   const [plaidItems, setPlaidItems] = useState([]);
@@ -8,9 +9,34 @@ const ConnectedAccounts = ({ onRefreshComplete }) => {
   const [error, setError] = useState(null);
   const [refreshStatus, setRefreshStatus] = useState({});
 
+  // Reset function to clear component state
+  const resetComponentState = () => {
+    setPlaidItems([]);
+    setIsLoading(false);
+    setError(null);
+    setRefreshStatus({});
+  };
+
+  // Register reset handler with the state reset manager
+  useEffect(() => {
+    // Register this component for global state resets
+    const unregister = stateResetManager.addResetListener(resetComponentState);
+    
+    // Return cleanup function
+    return () => {
+      unregister(); // Remove the listener when component unmounts
+      resetComponentState(); // Also reset state on unmount
+    };
+  }, []);
+
   // Fetch connected institutions when the component mounts
   useEffect(() => {
     fetchPlaidItems();
+    
+    // Clean up when component unmounts
+    return () => {
+      setPlaidItems([]);
+    };
   }, []);
 
   const fetchPlaidItems = async () => {

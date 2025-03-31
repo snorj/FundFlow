@@ -1,5 +1,6 @@
 // src/services/auth.js
 import api from './api';
+import { resetAllState } from '../utils/StateResetUtil'; // Add this import
 
 class AuthService {
   // Register a new user
@@ -21,11 +22,40 @@ class AuthService {
     return response.data;
   }
 
-  // Logout user
+  // Logout user - UPDATED to clear all data and trigger state reset
   logout() {
+    // Trigger global state reset first
+    resetAllState();
+    
+    // Then clear localStorage
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
+    
+    // Clear any other cached finance data
+    this.clearCachedData();
+  }
+  
+  // Clear cached data
+  clearCachedData() {
+    // Find and remove all finance-related items in localStorage
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      
+      // Remove any keys that might contain financial data
+      if (key && (
+          key.includes('account') || 
+          key.includes('transaction') || 
+          key.includes('plaid') || 
+          key.includes('balance') ||
+          key.includes('finance')
+      )) {
+        localStorage.removeItem(key);
+      }
+    }
+    
+    // Also clear session storage
+    sessionStorage.clear();
   }
 
   // Refresh access token

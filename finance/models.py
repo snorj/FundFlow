@@ -57,6 +57,10 @@ class Account(models.Model):
     
     def __str__(self):
         return f"{self.name} ({self.mask or 'xxxx'})"
+    
+    def belongs_to_user(self, user):
+        """Check if this account belongs to the given user"""
+        return self.plaid_item.user_id == user.id
 
 class Category(models.Model):
     """

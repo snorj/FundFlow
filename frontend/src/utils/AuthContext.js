@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect } from 'react';
 import AuthService from '../services/auth';
+import { resetAllState } from './StateResetUtil';
 
 export const AuthContext = createContext();
 
@@ -59,15 +60,7 @@ export const AuthProvider = ({ children }) => {
             });
           } catch (refreshError) {
             // If refresh token is also invalid, log the user out
-            AuthService.logout();
-            
-            setAuthState({
-              isAuthenticated: false,
-              isLoading: false,
-              user: null,
-              accessToken: null,
-              refreshToken: null,
-            });
+            handleLogout();
           }
         } else {
           // For other types of errors
@@ -85,9 +78,15 @@ export const AuthProvider = ({ children }) => {
     initializeAuth();
   }, []);
 
-  const logout = () => {
+  // Updated logout function to trigger global state reset
+  const handleLogout = () => {
+    // First trigger the global state reset
+    resetAllState();
+    
+    // Then call AuthService logout to clear localStorage
     AuthService.logout();
     
+    // Finally, update the auth state
     setAuthState({
       isAuthenticated: false,
       isLoading: false,
@@ -102,7 +101,7 @@ export const AuthProvider = ({ children }) => {
       value={{ 
         ...authState, 
         setAuthState, 
-        logout 
+        logout: handleLogout 
       }}
     >
       {children}

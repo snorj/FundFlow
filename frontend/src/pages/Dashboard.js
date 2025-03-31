@@ -7,6 +7,7 @@ import TransactionList from '../components/dashboard/TransactionList';
 import PlaidLink from '../components/plaid/PlaidLink';
 import plaidService from '../services/plaid';
 import './Dashboard.css';
+import { stateResetManager } from '../utils/StateResetUtil'; // Add this import
 
 const Dashboard = () => {
   // Use a ref to prevent multiple fetches
@@ -19,6 +20,26 @@ const Dashboard = () => {
   
   // Get the account link success state from context
   const { accountLinkSuccess } = usePlaidLink();
+  
+  // Function to reset component state
+  const resetComponentState = () => {
+    setAccounts([]);
+    setTransactions([]);
+    setIsLoading(true);
+    setError(null);
+    hasFetchedData.current = false; // Reset the fetch flag
+  };
+
+  // Register with state reset manager
+  useEffect(() => {
+    const unregister = stateResetManager.addResetListener(resetComponentState);
+    
+    // Clean up when component unmounts
+    return () => {
+      unregister();
+      resetComponentState();
+    };
+  }, []);
 
   // Define fetchData outside of any effects
   const fetchData = async () => {
@@ -57,10 +78,17 @@ const Dashboard = () => {
     }
   };
 
-  // Fetch data on mount only
+  // Fetch data on mount
   useEffect(() => {
     fetchData();
-  }, []); // Empty dependency array means this runs once on mount
+    
+    // Clean up when component unmounts
+    return () => {
+      setAccounts([]);
+      setTransactions([]);
+      hasFetchedData.current = false;
+    };
+  }, []);
 
   // Handle successful account connection - resets the fetch flag and fetches data again
   const handleAccountConnected = () => {

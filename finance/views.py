@@ -129,16 +129,17 @@ class PlaidItemsView(APIView):
         return Response(serializer.data)
 
 class AccountsView(APIView):
-    """
-    List all accounts for the authenticated user
-    """
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
         logger.info(f"User {request.user.id} ({request.user.username}) is requesting accounts")
         
-        # Filter accounts by the current user
-        accounts = Account.objects.filter(plaid_item__user=request.user)
+        # Use direct user_id comparison 
+        accounts = Account.objects.filter(plaid_item__user_id=request.user.id)
+        
+        # Log each account being returned
+        for account in accounts:
+            logger.info(f"Returning account {account.id} ({account.name}) from item {account.plaid_item_id} to user {request.user.id}")
         
         logger.info(f"Found {accounts.count()} accounts for user {request.user.id}")
         
@@ -278,9 +279,9 @@ class TransactionsView(APIView):
         # Log the filters being applied
         logger.info(f"Filters: account_id={account_id}, ...")
         
-        # Base queryset - all transactions from user's accounts
+        # Base queryset - all transactions from user's accounts (use direct user_id comparison)
         transactions = Transaction.objects.filter(
-            account__plaid_item__user=request.user
+            account__plaid_item__user_id=request.user.id
         )
         
         # Apply filters if provided

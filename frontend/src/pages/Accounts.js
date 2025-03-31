@@ -4,6 +4,7 @@ import PlaidLink from '../components/plaid/PlaidLink';
 import ConnectedAccounts from '../components/plaid/ConnectedAccounts';
 import plaidService from '../services/plaid';
 import './Accounts.css';
+import { stateResetManager } from '../utils/StateResetUtil'; // Add this import
 
 const Accounts = () => {
   const [accounts, setAccounts] = useState([]);
@@ -12,9 +13,35 @@ const Accounts = () => {
   const [error, setError] = useState(null);
   const [accountLinkSuccess, setAccountLinkSuccess] = useState(null);
 
+  // Function to reset component state
+  const resetComponentState = useCallback(() => {
+    setAccounts([]);
+    setSelectedAccount(null);
+    setIsLoading(false);
+    setError(null);
+    setAccountLinkSuccess(null);
+  }, []);
+
+  // Register with state reset manager
+  useEffect(() => {
+    const unregister = stateResetManager.addResetListener(resetComponentState);
+    
+    // Clean up when component unmounts
+    return () => {
+      unregister();
+      resetComponentState();
+    };
+  }, [resetComponentState]);
+
   // Fetch accounts when the component mounts
   useEffect(() => {
     fetchAccounts();
+    
+    // Clean up when component unmounts
+    return () => {
+      setAccounts([]);
+      setSelectedAccount(null);
+    };
   }, []);
 
   const fetchAccounts = useCallback(async () => {
