@@ -1,87 +1,58 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import MainLayout from '../components/layout/MainLayout';
+import PlaidLink from '../components/plaid/PlaidLink';
+import ConnectedAccounts from '../components/plaid/ConnectedAccounts';
+import plaidService from '../services/plaid';
 import './Accounts.css';
 
-// Placeholder for API data fetching
-const fetchAccounts = () => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        accounts: [
-          { 
-            id: 1, 
-            name: 'Primary Checking', 
-            type: 'checking',
-            accountNumber: 'xxxx1234',
-            institution: 'Chase Bank',
-            currentBalance: 2543.87,
-            availableBalance: 2343.87,
-            transactions: [
-              { date: '2025-03-28', description: 'Grocery Store', amount: -85.45 },
-              { date: '2025-03-27', description: 'Salary Deposit', amount: 3200.00 },
-              { date: '2025-03-26', description: 'Electric Bill', amount: -142.33 }
-            ]
-          },
-          { 
-            id: 2, 
-            name: 'Savings Account', 
-            type: 'savings',
-            accountNumber: 'xxxx5678',
-            institution: 'Chase Bank',
-            currentBalance: 12750.52,
-            availableBalance: 12750.52,
-            transactions: [
-              { date: '2025-03-15', description: 'Interest Payment', amount: 5.23 },
-              { date: '2025-03-10', description: 'Transfer from Checking', amount: 500.00 },
-              { date: '2025-02-15', description: 'Interest Payment', amount: 4.95 }
-            ]
-          },
-          { 
-            id: 3, 
-            name: 'Visa Credit Card', 
-            type: 'credit',
-            accountNumber: 'xxxx9012',
-            institution: 'Capital One',
-            currentBalance: -430.21,
-            availableCredit: 4569.79,
-            creditLimit: 5000.00,
-            dueDate: '2025-04-15',
-            minimumPayment: 25.00,
-            transactions: [
-              { date: '2025-03-24', description: 'Restaurant', amount: -56.22 },
-              { date: '2025-03-22', description: 'Gas Station', amount: -48.15 },
-              { date: '2025-03-20', description: 'Online Shopping', amount: -95.99 }
-            ]
-          }
-        ]
-      });
-    }, 800);
-  });
-};
-
 const Accounts = () => {
-  const [accountsData, setAccountsData] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [accounts, setAccounts] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [activeAccount, setActiveAccount] = useState(null);
-  
-  useEffect(() => {
-    const loadAccounts = async () => {
-      try {
-        setIsLoading(true);
-        const data = await fetchAccounts();
-        setAccountsData(data);
-        setActiveAccount(data.accounts[0].id);
-        setIsLoading(false);
-      } catch (err) {
-        setError('Failed to load account data. Please try again later.');
-        setIsLoading(false);
-      }
-    };
+  const [accountLinkSuccess, setAccountLinkSuccess] = useState(null);
 
-    loadAccounts();
+  // Fetch accounts when the component mounts
+  useEffect(() => {
+    fetchAccounts();
   }, []);
 
-  // Format currency
+  const fetchAccounts = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const data = await plaidService.getAccounts();
+      setAccounts(data);
+      
+      // Select the first account by default if none is selected
+      if (data.length > 0 && !selectedAccount) {
+        setSelectedAccount(data[0]);
+      }
+    } catch (err) {
+      console.error('Error fetching accounts:', err);
+      setError('Failed to load accounts. Please try again later.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedAccount]);
+
+  // Handle a new account connection
+  const handleAccountConnected = useCallback((response) => {
+    setAccountLinkSuccess({
+      message: `Successfully connected to ${response.institution_name}`,
+      timestamp: new Date()
+    });
+    
+    // Clear success message after 5 seconds
+    setTimeout(() => {
+      setAccountLinkSuccess(null);
+    }, 5000);
+    
+    // Refresh accounts list
+    fetchAccounts();
+  }, [fetchAccounts]);
+
+  // Format currency amount
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -89,142 +60,129 @@ const Accounts = () => {
     }).format(amount);
   };
 
-  // Format date
-  const formatDate = (dateString) => {
-    const options = { month: 'short', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString('en-US', options);
+  // Get CSS class for account type
+  const getAccountTypeClass = (type) => {
+    switch (type) {
+      case 'credit': return 'account-type-credit';
+      case 'loan': return 'account-type-loan';
+      case 'investment': return 'account-type-investment';
+      case 'depository': 
+      default: return 'account-type-depository';
+    }
   };
-
-  // Handle account selection
-  const handleAccountSelect = (accountId) => {
-    setActiveAccount(accountId);
-  };
-
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="accounts-loading">
-        <div className="loading-spinner"></div>
-        <p>Loading your accounts...</p>
-      </div>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="accounts-error">
-        <h2>Oops!</h2>
-        <p>{error}</p>
-        <button onClick={() => window.location.reload()}>Try Again</button>
-      </div>
-    );
-  }
-
-  // Get the selected account
-  const selectedAccount = accountsData.accounts.find(account => account.id === activeAccount);
 
   return (
-    <div className="accounts-page">
-      <h1 className="page-title">Your Accounts</h1>
-
-      {/* Connect Account Button */}
-      <div className="connect-account-section">
-        <button className="connect-account-btn">
-          <span className="connect-icon">+</span>
-          Connect a New Account
-        </button>
-      </div>
-      
-      <div className="accounts-content">
-        {/* Accounts Sidebar */}
-        <div className="accounts-sidebar">
-          <h2 className="sidebar-title">Your Accounts</h2>
-          <ul className="accounts-list">
-            {accountsData.accounts.map(account => (
-              <li 
-                key={account.id} 
-                className={activeAccount === account.id ? 'active' : ''}
-                onClick={() => handleAccountSelect(account.id)}
-              >
-                <div className="account-icon">
-                  {account.type === 'checking' ? 'C' : 
-                   account.type === 'savings' ? 'S' : 'CC'}
-                </div>
-                <div className="sidebar-account-info">
-                  <h3>{account.name}</h3>
-                  <p>{account.institution}</p>
-                  <p className={`balance ${account.currentBalance >= 0 ? 'positive' : 'negative'}`}>
-                    {formatCurrency(account.currentBalance)}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
+    <MainLayout title="Accounts">
+      <div className="accounts-page-container">
+        <div className="accounts-header">
+          <h1 className="accounts-title">Your Financial Accounts</h1>
+          <PlaidLink 
+            onAccountConnected={handleAccountConnected} 
+            className="account-link-wrapper"
+          />
         </div>
         
-        {/* Account Details */}
-        <div className="account-details">
-          <div className="account-header">
-            <h2>{selectedAccount.name}</h2>
-            <p className="institution">{selectedAccount.institution}</p>
-            <p className="account-number">Account: {selectedAccount.accountNumber}</p>
+        {accountLinkSuccess && (
+          <div className="account-link-success">
+            <span>{accountLinkSuccess.message}</span>
           </div>
-          
-          <div className="account-balance-cards">
-            <div className="balance-card">
-              <h3>Current Balance</h3>
-              <p className={`amount ${selectedAccount.currentBalance >= 0 ? 'positive' : 'negative'}`}>
-                {formatCurrency(selectedAccount.currentBalance)}
-              </p>
+        )}
+        
+        <ConnectedAccounts onRefreshComplete={fetchAccounts} />
+        
+        {isLoading && accounts.length === 0 ? (
+          <div className="accounts-loading">Loading your accounts...</div>
+        ) : error ? (
+          <div className="accounts-error">{error}</div>
+        ) : accounts.length === 0 ? (
+          <div className="accounts-empty">
+            <p>You don't have any connected accounts yet.</p>
+            <p>Click "Connect a bank account" to add your first account.</p>
+          </div>
+        ) : (
+          <div className="accounts-content">
+            <div className="accounts-sidebar">
+              <h3 className="accounts-sidebar-title">Your Accounts</h3>
+              <ul className="accounts-list">
+                {accounts.map(account => (
+                  <li 
+                    key={account.id} 
+                    className={`account-item ${selectedAccount && selectedAccount.id === account.id ? 'account-item-selected' : ''}`}
+                    onClick={() => setSelectedAccount(account)}
+                  >
+                    <div className="account-item-content">
+                      <div className="account-item-type">
+                        <span className={`account-type-indicator ${getAccountTypeClass(account.account_type)}`}></span>
+                      </div>
+                      <div className="account-item-details">
+                        <div className="account-item-name">{account.name}</div>
+                        <div className="account-item-mask">
+                          {account.mask ? `•••• ${account.mask}` : ''}
+                        </div>
+                      </div>
+                      <div className="account-item-balance">
+                        {account.available_balance !== null
+                          ? formatCurrency(account.available_balance)
+                          : formatCurrency(account.current_balance || 0)}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </div>
             
-            {selectedAccount.type === 'credit' ? (
-              <>
-                <div className="balance-card">
-                  <h3>Available Credit</h3>
-                  <p className="amount">{formatCurrency(selectedAccount.availableCredit)}</p>
+            <div className="account-details">
+              {selectedAccount ? (
+                <>
+                  <div className="account-details-header">
+                    <h2 className="account-details-name">
+                      {selectedAccount.name}
+                      {selectedAccount.official_name && selectedAccount.official_name !== selectedAccount.name && (
+                        <span className="account-details-official-name">
+                          {selectedAccount.official_name}
+                        </span>
+                      )}
+                    </h2>
+                    <div className={`account-details-type ${getAccountTypeClass(selectedAccount.account_type)}`}>
+                      {selectedAccount.account_type}
+                      {selectedAccount.account_subtype && ` - ${selectedAccount.account_subtype}`}
+                    </div>
+                  </div>
+                  
+                  <div className="account-details-balances">
+                    <div className="balance-item">
+                      <div className="balance-label">Current Balance</div>
+                      <div className="balance-value">
+                        {formatCurrency(selectedAccount.current_balance || 0)}
+                      </div>
+                    </div>
+                    
+                    {selectedAccount.available_balance !== null && (
+                      <div className="balance-item">
+                        <div className="balance-label">Available Balance</div>
+                        <div className="balance-value">
+                          {formatCurrency(selectedAccount.available_balance)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="account-details-actions">
+                    <button className="account-action-button">
+                      View Transactions
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="no-account-selected">
+                  Select an account to view details
                 </div>
-                <div className="balance-card">
-                  <h3>Payment Due</h3>
-                  <div>
-                    <p className="amount negative">{formatCurrency(selectedAccount.minimumPayment)}</p>
-                    <p className="due-date">Due on {selectedAccount.dueDate}</p>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="balance-card">
-                <h3>Available Balance</h3>
-                <p className="amount">{formatCurrency(selectedAccount.availableBalance)}</p>
-              </div>
-            )}
-          </div>
-          
-          <div className="account-transactions">
-            <h3>Recent Transactions</h3>
-            <div className="transactions-list">
-              {selectedAccount.transactions.map((transaction, index) => (
-                <div key={index} className="transaction-item">
-                  <div className="transaction-date">
-                    {formatDate(transaction.date)}
-                  </div>
-                  <div className="transaction-description">
-                    {transaction.description}
-                  </div>
-                  <div className={`transaction-amount ${transaction.amount >= 0 ? 'positive' : 'negative'}`}>
-                    {formatCurrency(transaction.amount)}
-                  </div>
-                </div>
-              ))}
+              )}
             </div>
-            <div className="view-all">
-              <a href="/transactions">View All Transactions</a>
-            </div>
           </div>
-        </div>
+        )}
       </div>
-    </div>
+    </MainLayout>
   );
 };
 

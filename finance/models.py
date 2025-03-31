@@ -19,6 +19,10 @@ class PlaidItem(models.Model):
     
     class Meta:
         db_table = 'plaid_items'
+
+    def belongs_to_user(self, user):
+        """Check if this item belongs to the given user"""
+        return self.user_id == user.id
     
     def __str__(self):
         return f"Plaid Item: {self.institution_name or 'Unknown'} for {self.user.username}"
@@ -36,7 +40,7 @@ class Account(models.Model):
     )
     
     plaid_item = models.ForeignKey(PlaidItem, on_delete=models.CASCADE, related_name='accounts')
-    account_id = models.CharField(max_length=255, unique=True)
+    account_id = models.CharField(max_length=255)
     name = models.CharField(max_length=255)
     official_name = models.CharField(max_length=255, null=True, blank=True)
     account_type = models.CharField(max_length=50, choices=ACCOUNT_TYPES)
@@ -49,6 +53,7 @@ class Account(models.Model):
     
     class Meta:
         db_table = 'accounts'
+        unique_together = [['plaid_item', 'account_id']]
     
     def __str__(self):
         return f"{self.name} ({self.mask or 'xxxx'})"

@@ -1,0 +1,112 @@
+.transaction-list {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .transaction-item {
+    display: flex;
+    align-items: center;
+    padding: 1rem 0;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  
+  .transaction-item:last-child {
+    border-bottom: none;
+  }
+  
+  .transaction-icon {
+    font-size: 1.5rem;
+    margin-right: 1rem;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #ebf8ff;
+    border-radius: 50%;
+  }
+  
+  .transaction-item.income .transaction-icon {
+    background-color: #f0fff4;
+  }
+  
+  .transaction-details {
+    flex: 1;
+    min-width: 0; /* Allows text truncation */
+  }
+  
+  .transaction-name {
+    font-weight: 500;
+    color: #2d3748;
+    margin-bottom: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .transaction-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: #718096;
+  }
+  
+  .transaction-date {
+    color: #a0aec0;
+  }
+  
+  .transaction-category {
+    background-color: #f7fafc;
+    padding: 0.125rem 0.375rem;
+    border-radius: 9999px;
+    white-space: nowrap;
+  }
+  
+  .transaction-amount {
+    font-weight: 600;
+    color: #2d3748;
+    margin-left: 1rem;
+    text-align: right;
+    white-space: nowrap;
+  }
+  
+  .income-amount {
+    color: #48bb78;
+  }
+  
+  .transaction-list-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    color: #718096;
+  }
+  
+  .spinner {
+    border: 3px solid rgba(0, 0, 0, 0.1);
+    border-radius: 50%;
+    border-top: 3px solid #4299e1;
+    width: 24px;
+    height: 24px;
+    animation: spin 1s linear infinite;
+    margin-bottom: 1rem;
+  }
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  .no-transactions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 150px;
+    color: #718096;
+    background-color: #f7fafc;
+    border-radius: 8px;
+    text-align: center;
+    padding: 1rem;
+  }

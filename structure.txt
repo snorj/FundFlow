@@ -1,5 +1,4 @@
 tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist|venv" --dirsfirst
-
 .
 ├── FundFlow
 │   ├── __init__.py
@@ -64,15 +63,21 @@ tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist
 │   │   │   │   └── TransactionList.js
 │   │   │   ├── layout
 │   │   │   │   ├── Header.js
+│   │   │   │   ├── MainLayout.css
 │   │   │   │   ├── MainLayout.js
 │   │   │   │   └── Sidebar.js
 │   │   │   ├── plaid
 │   │   │   │   └── PlaidLink.js
 │   │   │   └── ApiTester.js
 │   │   ├── pages
+│   │   │   ├── Accounts.css
+│   │   │   ├── Accounts.js
+│   │   │   ├── Dashboard.css
 │   │   │   ├── Dashboard.js
 │   │   │   ├── Login.js
-│   │   │   └── Register.js
+│   │   │   ├── Register.js
+│   │   │   ├── Transactions.css
+│   │   │   └── Transactions.js
 │   │   ├── services
 │   │   │   ├── api.js
 │   │   │   ├── auth.js
@@ -113,4 +118,4 @@ tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist
 ├── requirements.txt
 └── structure.txt
 
-27 directories, 85 files
+27 directories, 91 files

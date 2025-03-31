@@ -1,338 +1,185 @@
-/* Dashboard.css */
-.dashboard {
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-  
-  .dashboard-title {
-    font-size: 24px;
-    font-weight: 700;
-    color: #2d3748;
-    margin-bottom: 24px;
-  }
-  
-  /* Connect account section */
-  .connect-account-section {
-    margin-bottom: 24px;
-  }
-  
-  .connect-account-btn {
-    display: flex;
-    align-items: center;
-    background-color: #ebf8ff;
-    color: #3182ce;
-    border: 1px dashed #90cdf4;
-    border-radius: 8px;
-    padding: 12px 16px;
-    font-size: 16px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  
-  .connect-account-btn:hover {
-    background-color: #bee3f8;
-    border-color: #3182ce;
-  }
-  
-  .connect-icon {
-    margin-right: 8px;
-    font-size: 18px;
-    font-weight: bold;
-  }
-  
-  /* Dashboard sections */
-  .dashboard-section {
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    padding: 24px;
-    margin-bottom: 24px;
-  }
-  
-  .section-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: #2d3748;
-    margin-top: 0;
-    margin-bottom: 20px;
-  }
-  
-  .section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-  }
-  
-  .view-all-link {
-    color: #3182ce;
-    font-size: 14px;
-    font-weight: 500;
-    text-decoration: none;
-  }
-  
-  .view-all-link:hover {
-    text-decoration: underline;
-  }
-  
-  /* Account summary */
-  .account-summary {
-    display: flex;
+.dashboard-container {
+  padding: 1.5rem;
+  width: 100%;
+}
+
+.dashboard-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  width: 100%;
+}
+
+.spinner-large {
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top: 4px solid #4299e1;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.dashboard-error {
+  background-color: #fed7d7;
+  color: #c53030;
+  padding: 1.5rem;
+  border-radius: 8px;
+  text-align: center;
+  margin: 1rem 0;
+}
+
+.retry-button {
+  background-color: #4299e1;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  margin-top: 1rem;
+}
+
+.retry-button:hover {
+  background-color: #3182ce;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.dashboard-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2d3748;
+  margin: 0;
+}
+
+.dashboard-subtitle {
+  color: #718096;
+  margin: 0.25rem 0 0 0;
+}
+
+.dashboard-content {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.dashboard-left {
+  flex: 2;
+}
+
+.dashboard-right {
+  flex: 1;
+}
+
+.dashboard-section {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.section-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0;
+  color: #2d3748;
+}
+
+.section-link {
+  color: #4299e1;
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.section-link:hover {
+  text-decoration: underline;
+}
+
+.section-content {
+  padding: 1.5rem;
+}
+
+.account-link-success {
+  background-color: #c6f6d5;
+  color: #2f855a;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.no-accounts-container {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 2rem;
+  text-align: center;
+  max-width: 600px;
+  margin: 2rem auto;
+}
+
+.no-accounts-container h2 {
+  color: #2d3748;
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.no-accounts-container p {
+  color: #4a5568;
+  margin-bottom: 1.5rem;
+}
+
+.plaid-link-container-centered {
+  margin: 2rem 0;
+}
+
+.plaid-security-note {
+  font-size: 0.875rem;
+  color: #718096;
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background-color: #f7fafc;
+  border-radius: 6px;
+  text-align: left;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .dashboard-content {
     flex-direction: column;
-    gap: 20px;
   }
   
-  .account-total {
-    background-color: #f7fafc;
-    padding: 16px;
-    border-radius: 8px;
-  }
-  
-  .account-total h3 {
-    font-size: 16px;
-    color: #4a5568;
-    margin: 0 0 8px 0;
-    font-weight: 500;
-  }
-  
-  .total-amount {
-    font-size: 26px;
-    font-weight: 700;
-    margin: 0;
-  }
-  
-  .accounts-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 16px;
-  }
-  
-  .account-card {
-    display: flex;
-    align-items: center;
-    padding: 16px;
-    background-color: #f7fafc;
-    border-radius: 8px;
-    transition: all 0.2s;
-  }
-  
-  .account-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-  }
-  
-  .account-icon {
-    width: 40px;
-    height: 40px;
-    background-color: #e2e8f0;
-    color: #4a5568;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    margin-right: 16px;
-  }
-  
-  .account-details h4 {
-    font-size: 16px;
-    font-weight: 500;
-    color: #2d3748;
-    margin: 0 0 4px 0;
-  }
-  
-  .account-balance {
-    font-size: 18px;
-    font-weight: 600;
-    margin: 0;
-  }
-  
-  /* Transaction list */
-  .transactions-list {
-    display: flex;
+  .dashboard-header {
     flex-direction: column;
+    align-items: flex-start;
   }
-  
-  .transaction-item {
-    display: flex;
-    align-items: center;
-    padding: 16px 0;
-    border-bottom: 1px solid #e2e8f0;
-  }
-  
-  .transaction-item:last-child {
-    border-bottom: none;
-  }
-  
-  .transaction-date {
-    min-width: 80px;
-    color: #718096;
-    font-size: 14px;
-  }
-  
-  .transaction-details {
-    flex: 1;
-  }
-  
-  .transaction-details h4 {
-    font-size: 16px;
-    color: #2d3748;
-    margin: 0 0 4px 0;
-    font-weight: 500;
-  }
-  
-  .transaction-category {
-    font-size: 14px;
-    color: #718096;
-    margin: 0;
-  }
-  
-  .transaction-amount {
-    font-size: 16px;
-    font-weight: 600;
-    text-align: right;
-    min-width: 100px;
-  }
-  
-  /* Spending by Category */
-  .spending-categories {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  
-  .category-item {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  
-  .category-details {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  
-  .category-details h4 {
-    font-size: 15px;
-    color: #2d3748;
-    margin: 0;
-    font-weight: 500;
-  }
-  
-  .category-details p {
-    font-size: 15px;
-    color: #4a5568;
-    margin: 0;
-    font-weight: 500;
-  }
-  
-  .category-bar-container {
-    width: 100%;
-    height: 8px;
-    background-color: #edf2f7;
-    border-radius: 4px;
-    overflow: hidden;
-  }
-  
-  .category-bar {
-    height: 100%;
-    background-color: #4299e1;
-    border-radius: 4px;
-  }
-  
-  /* Colors for positive/negative amounts */
-  .positive {
-    color: #38a169;
-  }
-  
-  .negative {
-    color: #e53e3e;
-  }
-  
-  /* Loading state */
-  .dashboard-loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 400px;
-  }
-  
-  .loading-spinner {
-    width: 40px;
-    height: 40px;
-    border: 4px solid rgba(49, 130, 206, 0.2);
-    border-radius: 50%;
-    border-top-color: #3182ce;
-    animation: spin 1s ease-in-out infinite;
-    margin-bottom: 16px;
-  }
-  
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  
-  .dashboard-loading p {
-    color: #4a5568;
-    font-size: 16px;
-  }
-  
-  /* Error state */
-  .dashboard-error {
-    text-align: center;
-    padding: 40px;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-  
-  .dashboard-error h2 {
-    color: #e53e3e;
-    font-size: 24px;
-    margin-bottom: 12px;
-  }
-  
-  .dashboard-error p {
-    color: #4a5568;
-    margin-bottom: 20px;
-  }
-  
-  .dashboard-error button {
-    background-color: #3182ce;
-    color: white;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 5px;
-    font-weight: 500;
-    cursor: pointer;
-  }
-  
-  .dashboard-error button:hover {
-    background-color: #2c5282;
-  }
-  
-  /* Responsive styles */
-  @media (max-width: 768px) {
-    .accounts-list {
-      grid-template-columns: 1fr;
-    }
-    
-    .transaction-item {
-      flex-direction: column;
-      align-items: flex-start;
-      padding: 12px 0;
-    }
-    
-    .transaction-date {
-      margin-bottom: 4px;
-    }
-    
-    .transaction-amount {
-      align-self: flex-end;
-      margin-top: 8px;
-    }
-  }
+}

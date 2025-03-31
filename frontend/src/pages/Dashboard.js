@@ -1,185 +1,198 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import AccountSummary from '../components/dashboard/AccountSummary';
+import SpendingChart from '../components/dashboard/SpendingChart';
+import TransactionList from '../components/dashboard/TransactionList';
+import PlaidLink from '../components/plaid/PlaidLink';
+import plaidService from '../services/plaid';
 import './Dashboard.css';
 
-// Placeholder for actual API data fetching
-const fetchDashboardData = () => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        accountSummary: [
-          { id: 1, name: 'Checking', balance: 2543.87, type: 'bank' },
-          { id: 2, name: 'Savings', balance: 12750.52, type: 'bank' },
-          { id: 3, name: 'Credit Card', balance: -430.21, type: 'credit' },
-        ],
-        recentTransactions: [
-          { id: 101, date: '2025-03-28', description: 'Grocery Store', amount: -85.45, category: 'Groceries' },
-          { id: 102, date: '2025-03-27', description: 'Salary Deposit', amount: 3200.00, category: 'Income' },
-          { id: 103, date: '2025-03-26', description: 'Electric Bill', amount: -142.33, category: 'Utilities' },
-          { id: 104, date: '2025-03-24', description: 'Restaurant', amount: -56.22, category: 'Dining' },
-          { id: 105, date: '2025-03-22', description: 'Gas Station', amount: -48.15, category: 'Transportation' },
-        ],
-        spendingByCategory: [
-          { category: 'Housing', amount: 1250.00 },
-          { category: 'Food', amount: 650.75 },
-          { category: 'Transportation', amount: 325.45 },
-          { category: 'Utilities', amount: 280.33 },
-          { category: 'Entertainment', amount: 225.50 },
-          { category: 'Healthcare', amount: 175.20 },
-          { category: 'Shopping', amount: 320.10 },
-        ]
-      });
-    }, 1000);
-  });
-};
-
-// Dashboard Component
 const Dashboard = () => {
-  const [dashboardData, setDashboardData] = useState(null);
+  console.log('Dashboard component rendering!'); // Add this to check if the component is rendering
+  
+  const [accounts, setAccounts] = useState([]);
+  const [transactions, setTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [accountLinkSuccess, setAccountLinkSuccess] = useState(null);
 
-  useEffect(() => {
-    const loadDashboardData = async () => {
-      try {
-        setIsLoading(true);
-        const data = await fetchDashboardData();
-        setDashboardData(data);
-        setIsLoading(false);
-      } catch (err) {
-        setError('Failed to load dashboard data. Please try again later.');
-        setIsLoading(false);
-      }
-    };
-
-    loadDashboardData();
+  const fetchData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Fetch accounts
+      const accountsData = await plaidService.getAccounts();
+      setAccounts(accountsData);
+      
+      // Fetch recent transactions (last 30 days)
+      const today = new Date();
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(today.getDate() - 30);
+      
+      const transactionsData = await plaidService.getTransactions({
+        start_date: thirtyDaysAgo.toISOString().split('T')[0],
+        end_date: today.toISOString().split('T')[0],
+      });
+      
+      setTransactions(transactionsData.results || []);
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError('Failed to load your financial data. Please try again later.');
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  // Format currency
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Handle successful account connection
+  const handleAccountConnected = (response) => {
+    setAccountLinkSuccess({
+      message: `Successfully connected to ${response.institution_name}`,
+      timestamp: new Date()
+    });
+    
+    // Clear success message after 5 seconds
+    setTimeout(() => {
+      setAccountLinkSuccess(null);
+    }, 5000);
+    
+    // Refresh data
+    fetchData();
   };
 
-  // Format date
-  const formatDate = (dateString) => {
-    const options = { month: 'short', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString('en-US', options);
+  // Calculate total balances
+  const calculateTotalBalance = () => {
+    if (!accounts || accounts.length === 0) return 0;
+    
+    return accounts.reduce((total, account) => {
+      // For deposit accounts, use available balance, or current balance if available balance is null
+      if (account.account_type === 'depository') {
+        return total + (account.available_balance !== null ? account.available_balance : account.current_balance || 0);
+      }
+      // For credit accounts, subtract the balance
+      else if (account.account_type === 'credit') {
+        return total - (account.current_balance || 0);
+      }
+      // For other types, just use current balance
+      return total + (account.current_balance || 0);
+    }, 0);
   };
 
-  // Calculate total balance
-  const calculateTotalBalance = (accounts) => {
-    return accounts.reduce((total, account) => total + account.balance, 0);
+  // Group transactions by category for chart
+  const getCategoryData = () => {
+    if (!transactions || transactions.length === 0) return [];
+    
+    const categories = {};
+    
+    transactions.forEach(transaction => {
+      // Skip pending transactions and income (negative amounts in Plaid)
+      if (transaction.pending || transaction.amount <= 0) return;
+      
+      const category = transaction.category_string || 'Uncategorized';
+      
+      if (!categories[category]) {
+        categories[category] = 0;
+      }
+      
+      categories[category] += transaction.amount;
+    });
+    
+    // Convert to array and sort by amount
+    return Object.entries(categories)
+      .map(([name, amount]) => ({ name, amount }))
+      .sort((a, b) => b.amount - a.amount);
   };
-
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="dashboard-loading">
-        <div className="loading-spinner"></div>
-        <p>Loading your financial overview...</p>
-      </div>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="dashboard-error">
-        <h2>Oops!</h2>
-        <p>{error}</p>
-        <button onClick={() => window.location.reload()}>Try Again</button>
-      </div>
-    );
-  }
 
   return (
-    <div className="dashboard">
-      <h1 className="dashboard-title">Financial Overview</h1>
-
-      {/* Connect Account Button */}
-      <div className="connect-account-section">
-        <button className="connect-account-btn">
-          <span className="connect-icon">+</span>
-          Connect a New Account
-        </button>
-      </div>
-
-      {/* Account Summary Section */}
-      <section className="dashboard-section">
-        <h2 className="section-title">Account Summary</h2>
-        <div className="account-summary">
-          <div className="account-total">
-            <h3>Total Balance</h3>
-            <p className={`total-amount ${calculateTotalBalance(dashboardData.accountSummary) >= 0 ? 'positive' : 'negative'}`}>
-              {formatCurrency(calculateTotalBalance(dashboardData.accountSummary))}
-            </p>
-          </div>
-          <div className="accounts-list">
-            {dashboardData.accountSummary.map((account) => (
-              <div key={account.id} className="account-card">
-                <div className="account-icon">
-                  {account.type === 'bank' ? '$' : 'CC'}
-                </div>
-                <div className="account-details">
-                  <h4>{account.name}</h4>
-                  <p className={`account-balance ${account.balance >= 0 ? 'positive' : 'negative'}`}>
-                    {formatCurrency(account.balance)}
+    <div className="dashboard-container">
+      {isLoading ? (
+        <div className="dashboard-loading">
+          <div className="spinner-large"></div>
+          <p>Loading your financial dashboard...</p>
+        </div>
+      ) : error ? (
+        <div className="dashboard-error">
+          <p>{error}</p>
+          <button onClick={fetchData} className="retry-button">Try Again</button>
+        </div>
+      ) : (
+        <>
+          {accountLinkSuccess && (
+            <div className="account-link-success">
+              <span>{accountLinkSuccess.message}</span>
+            </div>
+          )}
+          
+          {accounts.length === 0 ? (
+            <div className="no-accounts-container">
+              <h2>Welcome to Fund Flow!</h2>
+              <p>To get started, connect your bank accounts using Plaid's secure connection.</p>
+              <div className="plaid-link-container-centered">
+                <PlaidLink onAccountConnected={handleAccountConnected} />
+              </div>
+              <p className="plaid-security-note">
+                <strong>Your security is our priority:</strong> Fund Flow uses Plaid's secure API to connect to your financial institutions. Your credentials are never stored on our servers.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="dashboard-header">
+                <div className="welcome-section">
+                  <h1 className="dashboard-title">Your Financial Overview</h1>
+                  <p className="dashboard-subtitle">
+                    Here's a snapshot of your finances as of {new Date().toLocaleDateString()}
                   </p>
                 </div>
+                <div className="dashboard-actions">
+                  <PlaidLink 
+                    onAccountConnected={handleAccountConnected} 
+                    className="dashboard-plaid-link"
+                  />
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Recent Transactions Section */}
-      <section className="dashboard-section">
-        <div className="section-header">
-          <h2 className="section-title">Recent Transactions</h2>
-          <a href="/transactions" className="view-all-link">View All</a>
-        </div>
-        <div className="transactions-list">
-          {dashboardData.recentTransactions.map((transaction) => (
-            <div key={transaction.id} className="transaction-item">
-              <div className="transaction-date">
-                {formatDate(transaction.date)}
+              
+              <div className="dashboard-summary">
+                <AccountSummary 
+                  accounts={accounts}
+                  totalBalance={calculateTotalBalance()}
+                />
               </div>
-              <div className="transaction-details">
-                <h4>{transaction.description}</h4>
-                <p className="transaction-category">{transaction.category}</p>
+              
+              <div className="dashboard-content">
+                <div className="dashboard-left">
+                  <div className="dashboard-section">
+                    <div className="section-header">
+                      <h2 className="section-title">Recent Transactions</h2>
+                      <Link to="/transactions" className="section-link">View All</Link>
+                    </div>
+                    <div className="section-content">
+                      <TransactionList 
+                        transactions={transactions.slice(0, 5)} 
+                        isLoading={false}
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="dashboard-right">
+                  <div className="dashboard-section">
+                    <div className="section-header">
+                      <h2 className="section-title">Spending by Category</h2>
+                    </div>
+                    <div className="section-content">
+                      <SpendingChart data={getCategoryData()} />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className={`transaction-amount ${transaction.amount >= 0 ? 'positive' : 'negative'}`}>
-                {formatCurrency(transaction.amount)}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Spending by Category Section */}
-      <section className="dashboard-section">
-        <h2 className="section-title">Spending by Category</h2>
-        <div className="spending-categories">
-          {dashboardData.spendingByCategory.map((item, index) => (
-            <div key={index} className="category-item">
-              <div className="category-details">
-                <h4>{item.category}</h4>
-                <p>{formatCurrency(item.amount)}</p>
-              </div>
-              <div className="category-bar-container">
-                <div 
-                  className="category-bar" 
-                  style={{ 
-                    width: `${(item.amount / Math.max(...dashboardData.spendingByCategory.map(c => c.amount))) * 100}%` 
-                  }}
-                ></div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 };

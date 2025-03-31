@@ -10,6 +10,8 @@ from .serializers import PlaidItemSerializer, AccountSerializer, TransactionSeri
 from rest_framework.pagination import PageNumberPagination
 from django.db import models
 from django.http import Http404
+import logging
+logger = logging.getLogger(__name__)
 
 class LinkTokenView(APIView):
     """
@@ -36,12 +38,17 @@ class AccessTokenExchangeView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
+        logger.info(f"User {request.user.id} ({request.user.username}) is connecting an account")
+        
         # Get the public token from the request
         public_token = request.data.get('public_token')
         institution_id = request.data.get('institution_id')
         institution_name = request.data.get('institution_name')
         
+        logger.info(f"Institution: {institution_name} ({institution_id})")
+        
         if not public_token:
+            logger.warning("Missing public token in request")
             return Response({'error': 'Public token is required'}, status=status.HTTP_400_BAD_REQUEST)
         
         # Initialize the Plaid service
@@ -51,11 +58,14 @@ class AccessTokenExchangeView(APIView):
         exchange_result = plaid_service.exchange_public_token(public_token)
         
         if not exchange_result:
+            logger.error("Failed to exchange public token")
             return Response({'error': 'Failed to exchange public token'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         # Get the access token and item ID
         access_token = exchange_result['access_token']
         item_id = exchange_result['item_id']
+        
+        logger.info(f"Successfully exchanged public token for item_id: {item_id}")
         
         # Save the Plaid item
         plaid_item = PlaidItem.objects.create(
@@ -66,10 +76,13 @@ class AccessTokenExchangeView(APIView):
             institution_name=institution_name
         )
         
+        logger.info(f"Created PlaidItem with ID: {plaid_item.id}")
+        
         # Fetch accounts associated with this item
         accounts_data = plaid_service.get_accounts(access_token)
         
         if accounts_data:
+            logger.info(f"Found {len(accounts_data)} accounts for item {item_id}")
             # Create Account objects for each account
             for account_data in accounts_data:
                 Account.objects.create(
@@ -83,8 +96,21 @@ class AccessTokenExchangeView(APIView):
                     available_balance=account_data.balances.available if hasattr(account_data.balances, 'available') else None,
                     mask=account_data.mask
                 )
+        else:
+            logger.warning(f"No accounts found for item {item_id}")
         
+        # Log all PlaidItems after creation
+        all_items = PlaidItem.objects.all()
+        user_item_mapping = {}
+        for item in all_items:
+            if item.user_id not in user_item_mapping:
+                user_item_mapping[item.user_id] = []
+            user_item_mapping[item.user_id].append(f"{item.id}: {item.institution_name}")
+        
+        logger.info(f"Current PlaidItem distribution: {user_item_mapping}")
+
         # Return success response
+        logger.info(f"Account connection completed successfully for user {request.user.id}")
         return Response({
             'success': True,
             'message': 'Account successfully connected',
@@ -109,7 +135,13 @@ class AccountsView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        logger.info(f"User {request.user.id} ({request.user.username}) is requesting accounts")
+        
+        # Filter accounts by the current user
         accounts = Account.objects.filter(plaid_item__user=request.user)
+        
+        logger.info(f"Found {accounts.count()} accounts for user {request.user.id}")
+        
         serializer = AccountSerializer(accounts, many=True)
         return Response(serializer.data)
     
@@ -128,26 +160,38 @@ class TransactionFetchView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
+        logger.info(f"User {request.user.id} ({request.user.username}) is requesting transaction fetch")
         item_id = request.data.get('item_id')
         
         if not item_id:
+            logger.warning("Missing item_id in request")
             return Response({'error': 'Item ID is required'}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            # Get the Plaid item
+            # Get the Plaid item - explicitly filter by the current user
             plaid_item = PlaidItem.objects.get(item_id=item_id, user=request.user)
+            
+            # Verify ownership (additional security check)
+            if not plaid_item.user_id == request.user.id:
+                logger.warning(f"User {request.user.id} attempted to access item {item_id} owned by user {plaid_item.user_id}")
+                return Response(
+                    {'error': 'You do not have permission to access this item'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            logger.info(f"Fetching transactions for item {item_id} (institution: {plaid_item.institution_name})")
             
             # Initialize the Plaid service
             plaid_service = PlaidService()
             
             # Get transactions for the last 30 days by default
-            # You can customize this by passing start_date and end_date to process_transactions
             processed_data = plaid_service.process_transactions(
                 plaid_item.access_token,
                 item_id=item_id
             )
             
             if not processed_data:
+                logger.error(f"Failed to fetch transactions for item {item_id}")
                 return Response(
                     {'error': 'Failed to fetch transactions'}, 
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -162,7 +206,7 @@ class TransactionFetchView(APIView):
                     account_id = transaction_data.pop('account_id')
                     
                     try:
-                        # Get the account
+                        # Get the account - ensure it belongs to this plaid_item
                         account = Account.objects.get(account_id=account_id, plaid_item=plaid_item)
                         
                         # Check if transaction already exists
@@ -180,7 +224,7 @@ class TransactionFetchView(APIView):
                     
                     except Account.DoesNotExist:
                         # Log this error but continue processing other transactions
-                        print(f"Account with ID {account_id} not found for item {item_id}")
+                        logger.warning(f"Account with ID {account_id} not found for item {item_id}")
                 
                 # Update account balances
                 for account_id, account_data in processed_data['accounts'].items():
@@ -191,8 +235,9 @@ class TransactionFetchView(APIView):
                         account.save()
                     except Account.DoesNotExist:
                         # Log this error but continue processing other accounts
-                        print(f"Account with ID {account_id} not found for item {item_id}")
+                        logger.warning(f"Account with ID {account_id} not found for item {item_id} during balance update")
             
+            logger.info(f"Successfully fetched {transactions_created} new transactions for item {item_id}")
             return Response({
                 'success': True,
                 'message': f'Successfully fetched transactions. {transactions_created} new transactions.',
@@ -200,13 +245,14 @@ class TransactionFetchView(APIView):
             })
             
         except PlaidItem.DoesNotExist:
+            logger.warning(f"Item {item_id} not found or does not belong to user {request.user.id}")
             return Response(
                 {'error': 'Plaid item not found'}, 
                 status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
             # Log the error
-            print(f"Error fetching transactions: {str(e)}")
+            logger.error(f"Error fetching transactions for item {item_id}: {str(e)}")
             return Response(
                 {'error': 'An error occurred while fetching transactions'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -219,6 +265,8 @@ class TransactionsView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        logger.info(f"User {request.user.id} ({request.user.username}) is requesting transactions")
+
         # Get query parameters for filtering
         account_id = request.query_params.get('account_id')
         start_date = request.query_params.get('start_date')
@@ -226,6 +274,9 @@ class TransactionsView(APIView):
         category = request.query_params.get('category')
         amount_min = request.query_params.get('amount_min')
         amount_max = request.query_params.get('amount_max')
+
+        # Log the filters being applied
+        logger.info(f"Filters: account_id={account_id}, ...")
         
         # Base queryset - all transactions from user's accounts
         transactions = Transaction.objects.filter(
@@ -251,6 +302,9 @@ class TransactionsView(APIView):
         if amount_max:
             transactions = transactions.filter(amount__lte=float(amount_max))
         
+        # Log the result
+        logger.info(f"Found {transactions.count()} transactions for user {request.user.id}")
+
         # Paginate results
         paginator = PageNumberPagination()
         paginator.page_size = 25  # Adjust as needed
