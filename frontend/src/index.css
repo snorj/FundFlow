@@ -1,13 +1,28 @@
-/* body {
+/* frontend/src/index.css (Recommended) OR top of frontend/src/styles/auth.css */
+:root {
+  --deep-navy: #0D1B2A;
+  --medium-blue: #1D3557;
+  --teal: #2A9D8F;
+  --light-gray: #E9ECEF;
+  --warm-orange: #FF8C42;
+  --white: #FFFFFF;
+
+  /* Optional: Define lighter/darker shades if needed */
+  --warm-orange-darker: #E0752A; /* For hover states */
+  --warm-orange-lighter: #FFE8D6; /* For error backgrounds */
+  --teal-lighter: #B3E0DB;      /* For success backgrounds */
+  --medium-blue-lighter: #4A658A; /* Lighter blue for less emphasis */
+  --gray-border: #CED4DA; /* A slightly darker gray for borders */
+}
+
+/* Optional: Apply base font styles and background in index.css */
+body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--light-gray); /* Apply clean background globally */
+  color: var(--deep-navy); /* Default text color */
 }
-
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-} */
