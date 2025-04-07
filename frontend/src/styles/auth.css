@@ -329,14 +329,26 @@ body {
   align-items: center;
   padding: 40px 60px;
   overflow-y: auto; /* Allow scroll if form is long */
+  position: relative;
 }
+
+/* *** ADD STYLES FOR THE LOGO *** */
+.auth-page-logo {
+  position: absolute;
+  top: 40px;       /* Adjust spacing from top */
+  left: 60px;      /* Adjust spacing from left */
+  max-width: 250px;/* Control logo size - adjust as needed */
+  height: auto;    /* Maintain aspect ratio */
+  z-index: 10;     /* Ensure it's above other flow content if needed */
+}
+/* *** END OF LOGO STYLES *** */
 
 /* Container within the form column */
 .auth-form-container {
   width: 100%;
-  max-width: 400px; /* Limit form width */
-  /* animation: slideUpFadeIn 0.7s 0.2s ease-out forwards; */
-  /* opacity: 0; */
+  max-width: 400px;
+  /* Ensure form container doesn't overlap logo */
+  /* No specific style needed here usually, as logo is positioned outside it */
 }
 
 /* Logo (Two Column) */
@@ -473,6 +485,14 @@ body {
     order: 1; /* Form first */
   }
 
+  /* *** Adjust logo position for tablet padding *** */
+  .auth-page-logo {
+    top: 30px;
+    left: 40px;
+    max-width: 180px; /* Optional: smaller logo */
+  }
+  /* *** End logo adjustment *** */
+
   .auth-promo-column {
     min-height: 40vh; /* Promo some height */
     padding: 50px 30px;
@@ -490,6 +510,15 @@ body {
     padding-left: 20px;
     padding-right: 20px;
   }
+
+  /* *** Adjust logo position for small mobile padding *** */
+  .auth-page-logo {
+    top: 20px;
+    left: 20px;
+    max-width: 160px; /* Optional: smaller logo */
+  }
+  /* *** End logo adjustment *** */
+
    .auth-form-container { /* Allow form container full width */
       max-width: 100%;
   }

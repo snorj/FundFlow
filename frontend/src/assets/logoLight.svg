@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Option 2: Orange/Teal Gradient, Cutout Dollar, Navy Text -->
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 viewBox="130 60 550 115" style="enable-background:new 130 60 550 115;" xml:space="preserve">
+<style type="text/css">
+	.st2-fill-1{fill:url(#lg-var2-1);}
+	.st2-fill-2{fill:url(#lg-var2-2);}
+	.st2-fill-3{fill:url(#lg-var2-3);}
+	.mask-rect{fill:#FFFFFF;} /* White makes underlying element visible */
+	.mask-hole{fill:#000000;} /* Black makes underlying element transparent */
+	.text-style{
+		font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif; /* Specify Inter font */
+		font-size: 60px; /* Adjust size as needed */
+		font-weight: 600; /* SemiBold weight */
+		fill: #FF8C42; /* Deep Navy */
+		dominant-baseline: ; /* Vertical alignment */
+	}
+</style>
+<defs>
+	<!-- Gradients for Variation 2 (Orange/Teal) -->
+	<linearGradient id="lg-var2-1" gradientUnits="userSpaceOnUse" x1="135.8388" y1="130.3483" x2="256.3635" y2="130.3483">
+		<stop offset="0" style="stop-color:#2A9D8F"/> <!-- Teal -->
+    <stop offset="0.8" style="stop-color:#FF8C42"/> <!-- Warm Orange -->
+	</linearGradient>
+	<linearGradient id="lg-var2-2" gradientUnits="userSpaceOnUse" x1="151.4887" y1="115.8669" x2="272.0133" y2="115.8669">
+		<stop offset="0" style="stop-color:#2A9D8F"/> <!-- Teal -->
+    <stop offset="0.7" style="stop-color:#FF8C42"/> <!-- Warm Orange -->
+	</linearGradient>
+	<linearGradient id="lg-var2-3" gradientUnits="userSpaceOnUse" x1="167.1385" y1="101.3855" x2="364.1619" y2="101.3855">
+		<stop offset="0" style="stop-color:#2A9D8F"/> <!-- Teal -->
+    <stop offset="0.5" style="stop-color:#FF8C42"/> <!-- Warm Orange -->
+	</linearGradient>
+
+	<!-- Mask Definition -->
+	<mask id="dollarHoleMask2">
+		<!-- Make mask cover the entire potential area including text to avoid clipping -->
+		<rect x="130" y="60" width="420" height="115" class="mask-rect"/>
+		<!-- Black dollar sign shape (cuts a hole) -->
+		<path class="mask-hole" d="M228.986,111.431c-0.649-1.522-1.614-2.762-2.896-3.719c-1.282-0.959-3.16-1.851-5.635-2.677 c-4.819-1.522-8.636-3.217-11.453-5.087c-2.816-1.869-4.949-4.503-6.398-7.903c-1.346-3.156-1.439-5.743-0.28-7.763 c1.158-2.02,3.37-3.208,6.638-3.564l-2.583-6.059h4.48l2.607,6.115c3.514,0.489,6.7,1.869,9.557,4.142 c2.857,2.273,5.039,5.222,6.547,8.847l-0.024,0.141h-8.031c-0.945-2.216-2.129-3.926-3.552-5.128 c-1.424-1.202-2.925-1.804-4.503-1.804c-1.616,0-2.619,0.465-3.012,1.395c-0.393,0.93-0.261,2.165,0.396,3.705 c0.624,1.465,1.549,2.653,2.773,3.564c1.225,0.912,3.143,1.808,5.754,2.691c4.848,1.634,8.669,3.381,11.463,5.241 c2.793,1.859,4.903,4.461,6.328,7.805c1.393,3.269,1.501,5.879,0.325,7.833c-1.177,1.954-3.418,3.108-6.722,3.466l2.378,5.579 h-4.48l-2.366-5.551c-3.665-0.357-7.098-1.601-10.299-3.733c-3.201-2.132-5.644-5.264-7.331-9.396l-0.004-0.141h8.031 c1.073,2.517,2.419,4.321,4.039,5.41c1.62,1.09,3.321,1.634,5.106,1.634c1.709,0,2.825-0.454,3.348-1.366 C229.71,114.197,229.643,112.971,228.986,111.431z"/>
+	</mask>
+</defs>
+<!-- Icon Group -->
+<g id="Icon_Option_2" mask="url(#dollarHoleMask2)">
+	<polygon class="st2-fill-1" points="183.632,157.268 152.891,94.016 135.839,94.016 171.153,166.68 256.363,147.131"/>
+	<polygon class="st2-fill-2" points="199.281,142.786 168.541,79.535 151.489,79.535 186.803,152.199 272.013,142.786"/>
+	<path class="st2-fill-3" d="M360.125,129.644h-53.191h-20.072 c-2.23,0-4.037-1.807-4.037-4.037c0-2.23,1.807-4.037,4.037-4.037H305.7h33.427c2.229,0,4.037-1.807,4.037-4.037 c0-2.229-1.807-4.037-4.037-4.037h-34.661h-2.476c-2.229,0-4.037-1.807-4.037-4.037c0-2.23,1.807-4.037,4.037-4.037h1.242 h7.655c2.23,0,4.037-1.807,4.037-4.037s-1.807-4.037-4.037-4.037h-8.889h-38.143h-6.999c-2.23,0-4.037-1.807-4.037-4.037 s1.807-4.037,4.037-4.037h2.962h30.809h28.224c2.229,0,4.037-1.807,4.037-4.037c0-2.229-1.808-4.037-4.037-4.037h-29.458 h-8.644c-2.229,0-4.037-1.808-4.037-4.037c0-2.229,1.807-4.037,4.037-4.037h17.547h38.898c2.229,0,4.037-1.807,4.037-4.037v0 c0-2.229-1.807-4.037-4.037-4.037h-40.131h-27.108H167.138l35.315,72.664h71.54h34.174h51.958c2.229,0,4.037-1.807,4.037-4.037 C364.162,131.451,362.354,129.644,360.125,129.644z"/>
+</g>
+<!-- Text -->
+<text x="385" y="123" class="text-style">Fund Flow</text>
+</svg>

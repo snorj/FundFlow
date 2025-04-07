@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import LoginForm from '../components/auth/LoginForm'; // Assuming you have this
 import { AuthContext } from '../utils/AuthContext';
 import '../styles/auth.css'; // Make sure auth.css is imported
+import logoDark from '../assets/logoDark.svg';
 
 const Login = () => {
   const { isAuthenticated } = useContext(AuthContext);
@@ -24,10 +25,10 @@ const Login = () => {
 
         {/* --- Left Column: Form --- */}
         <div className="auth-form-column">
+          <img src={logoDark} alt="FundFlow Logo" className="auth-page-logo" /> 
+
           {/* Container within the column to center/max-width the form */}
           <div className="auth-form-container">
-             {/* Optional: Logo */}
-             {/* <img src="/path/to/your/logo.png" alt="Fund Flow Logo" className="auth-logo" /> */}
 
              <h1 className="auth-main-heading">Welcome Back!</h1>
              <p className="auth-sub-heading">Login to manage your finances.</p>
