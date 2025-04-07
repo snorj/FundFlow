@@ -1,16 +1,15 @@
-// frontend/src/pages/Login.js
+// Example: frontend/src/pages/Login.js (Structure might vary)
 import React, { useContext, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import LoginForm from '../components/auth/LoginForm';
+import LoginForm from '../components/auth/LoginForm'; // Assuming you have this
 import { AuthContext } from '../utils/AuthContext';
-import '../styles/auth.css'; // Ensure auth styles are imported here
-// import logo from '../assets/logo.svg'; // Assuming you have a logo file
+import '../styles/auth.css'; // Make sure auth.css is imported
 
 const Login = () => {
   const { isAuthenticated } = useContext(AuthContext);
   const navigate = useNavigate();
 
-  // Redirect to dashboard if already authenticated
+  // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
       navigate('/dashboard');
@@ -18,36 +17,48 @@ const Login = () => {
   }, [isAuthenticated, navigate]);
 
   return (
+    // *** Use the main page container ***
     <div className="auth-page-container">
+      {/* *** Use the split layout container *** */}
       <div className="auth-split-layout">
-        {/* Left Column: Form */}
+
+        {/* --- Left Column: Form --- */}
         <div className="auth-form-column">
+          {/* Container within the column to center/max-width the form */}
           <div className="auth-form-container">
-            {/* <img src={logo} alt="FundFlow Logo" className="auth-logo" /> */}
-            <h1 className="auth-main-heading">Login to Your Account</h1>
-            <p className="auth-sub-heading">Welcome back! Manage your finances efficiently.</p>
-            <LoginForm />
-            <div className="auth-form-footer">
-                Need an account? <Link to="/register">Sign Up Here</Link>
-            </div>
+             {/* Optional: Logo */}
+             {/* <img src="/path/to/your/logo.png" alt="Fund Flow Logo" className="auth-logo" /> */}
+
+             <h1 className="auth-main-heading">Welcome Back!</h1>
+             <p className="auth-sub-heading">Login to manage your finances.</p>
+
+             {/* Render the actual Login Form component here */}
+             <LoginForm />
+
+             {/* Optional: Footer links within the form container */}
+             <div className="auth-form-footer">
+                <p>Need an account? <Link to="/register">Sign Up</Link></p>
+             </div>
           </div>
         </div>
 
-        {/* Right Column: Promo / Signup */}
+        {/* --- Right Column: Promotional Content --- */}
         <div className="auth-promo-column">
           <div className="auth-promo-content">
-            <h2 className="auth-promo-heading">New Here?</h2>
+            <h2 className="auth-promo-heading">New Here? Take Control of Your Finances</h2>
             <p className="auth-promo-text">
-              Join FundFlow today to gain clarity on your spending, set budgets,
-              and achieve your financial goals.
+              Join Fund Flow today and gain clear insights into your spending and savings.
+              Effortless budgeting starts here.
             </p>
+            {/* Optional button linking to register or features page */}
             <Link to="/register" className="auth-promo-button">
-              Sign Up
+              Get Started
             </Link>
           </div>
         </div>
-      </div>
-    </div>
+
+      </div> {/* End auth-split-layout */}
+    </div> // End auth-page-container
   );
 };
 

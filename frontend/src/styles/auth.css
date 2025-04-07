@@ -1,6 +1,6 @@
 /* frontend/src/styles/auth.css */
 
-/* --- :root variables should be in index.css as discussed --- */
+/* --- :root variables should be in index.css --- */
 :root {
   --deep-navy: #0D1B2A;
   --medium-blue: #1D3557;
@@ -17,141 +17,409 @@
 }
 
 /* --- Base & Reset --- */
-body {
-  margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif; /* Using Inter font - add via Google Fonts or similar */
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: var(--light-gray);
-  color: var(--deep-navy);
-  font-size: 16px;
-}
-
 *, *::before, *::after {
   box-sizing: border-box; /* Crucial for predictable layout */
 }
 
+html {
+  height: 100%; /* Ensure html takes full height */
+  margin: 0;
+  padding: 0;
+}
 
-/* --- Animations (Keep from previous version) --- */
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUpFadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes pulseGlow { /* ... keep definition ... */ }
-@keyframes spin { /* ... keep definition ... */ }
+/* --- MODIFIED BODY STYLES --- */
+/* These styles are now suitable for a page that might contain
+   a full-width layout, not just centering a single card. */
+body {
+  margin: 0;
+  padding: 0; /* Ensure no default body padding */
+  /* Using Inter font - add via Google Fonts or similar in your index.html */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--light-gray, #f0f2f5); /* Default background */
+  color: var(--deep-navy, #1a202c);
+  font-size: 16px;
+  min-height: 100%; /* Make body at least full height */
+  /* REMOVED: display:flex, justify-content, align-items */
+  /* The page layout itself (e.g., auth-page-container) will handle content arrangement */
+}
 
 
-/* --- Two-Column Layout --- */
-.auth-page-container {
+/* =============================================== */
+/* --- Styles for Single Card Layout (e.g., RegisterForm) --- */
+/* =============================================== */
+
+/* Container for the auth card - Centers the card using flex on BODY */
+/* NOTE: If using this layout, the BODY needs display:flex; justify-content:center; align-items:center */
+.auth-container {
   display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  padding: 20px; /* Padding around card on small screens */
+  box-sizing: border-box;
+  min-height: 100vh; /* Ensure container takes full height if body isn't flex */
+}
+
+/* The Auth Card Styling */
+.auth-card {
+  background-color: var(--white, #ffffff);
+  padding: 30px 40px; /* Internal spacing */
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Softer shadow */
+  width: 100%;
+  max-width: 450px; /* Limit maximum width */
+  box-sizing: border-box;
+  text-align: center;
+}
+
+/* Titles and Subtitles (Single Card) */
+.auth-title {
+  font-size: 1.8em;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--deep-navy, #1a202c);
+}
+
+.auth-subtitle {
+  font-size: 1em;
+  color: var(--medium-blue, #4a5568);
+  margin-bottom: 25px;
+}
+
+/* Form Styling (Single Card) */
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px; /* Vertical space between form elements/rows */
+  text-align: left;
+}
+
+/* Row for First/Last Name (Single Card) */
+.form-row {
+  display: flex;
+  gap: 15px; /* Horizontal space between items */
+}
+
+.form-row .form-group {
+  flex: 1; /* Each group takes equal width */
+  margin-bottom: 0; /* Let the parent gap handle spacing */
+}
+
+/* --- Form Group & Input Base (Single Card & Two Column Shared where applicable) --- */
+.form-group {
+  position: relative; /* Needed for absolute positioning of children */
+  margin-bottom: 0; /* Use parent gap for spacing */
+}
+
+.form-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--medium-blue, #2d3748);
+  margin-bottom: 8px;
+}
+
+.form-group input[type="text"],
+.form-group input[type="email"],
+.form-group input[type="password"] {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 16px;
+  line-height: 1.5;
+  border: 1px solid var(--gray-border, #cbd5e0);
+  border-radius: 6px;
+  background-color: var(--white, #ffffff);
+  color: var(--deep-navy, #2d3748);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Adjust padding for password input if using toggle */
+.form-group.has-password-toggle input[type="password"] {
+  padding-right: 45px; /* Make space for the button */
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--teal, #2A9D8F);
+  box-shadow: 0 0 0 3px var(--teal-lighter, rgba(42, 157, 143, 0.15));
+}
+
+.form-group input::placeholder {
+  color: var(--text-muted, #adb5bd);
+  opacity: 1;
+}
+
+/* --- Password Visibility Toggle Button --- */
+.password-toggle-btn {
+  position: absolute;
+  bottom: 0; /* Align to the bottom of the form-group */
+  right: 0;
+  height: 43px; /* Match input height approx */
+  width: 45px;
+  background: none;
+  border: none;
+  padding: 0 12px;
+  margin: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted, #6c757d);
+  opacity: 0.7;
+  transition: opacity 0.2s ease, color 0.2s ease;
+}
+
+.password-toggle-btn:hover {
+  opacity: 1;
+  color: var(--teal, #2A9D8F);
+}
+
+.password-toggle-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* --- Input Error Styling (Shared) --- */
+.form-group input.input-error {
+  border-color: var(--warm-orange, #e53e3e);
+  background-color: var(--warm-orange-lighter, #fff5f5);
+}
+.form-group input.input-error:focus {
+  border-color: var(--warm-orange, #e53e3e);
+  box-shadow: 0 0 0 3px var(--warm-orange-lighter, rgba(255, 140, 66, 0.15));
+}
+
+/* Field-specific Error Message (Shared) */
+.field-error {
+  font-size: 13px;
+  color: var(--warm-orange-darker, #c53030);
+  margin-top: 5px;
+  padding-left: 2px;
+  display: block;
+  text-align: left;
+}
+
+/* General API/Non-field Error Message Box (Shared) */
+.auth-error-message {
+  background-color: var(--warm-orange-lighter, #fed7d7);
+  color: var(--warm-orange-darker, #a34a00);
+  border: 1px solid var(--warm-orange, #f56565);
+  border-left-width: 4px;
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+/* --- Buttons & Links (Shared Base) --- */
+.auth-button {
+  width: 100%;
+  padding: 12px 15px;
+  background-color: var(--warm-orange, #FF8C42);
+  color: var(--white, #ffffff);
+  font-size: 16px;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.25s ease, transform 0.15s ease, box-shadow 0.25s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+  margin-top: 10px;
+}
+
+.auth-button:hover:not(:disabled) {
+  background-color: var(--warm-orange-darker, #E0752A);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+}
+
+.auth-button:active:not(:disabled) {
+  transform: translateY(0px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.auth-button:disabled {
+  background-color: var(--medium-blue-lighter, #a0aec0);
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Footer Link (Single Card & Two Column Shared) */
+.auth-footer, .auth-form-footer { /* Target both potential footer classes */
+  margin-top: 25px;
+  font-size: 0.9em; /* Consistent size */
+  color: var(--text-muted, #6c757d);
+  text-align: center;
+}
+
+.auth-footer a, .auth-form-footer a {
+  color: var(--teal, #2A9D8F);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.auth-footer a:hover, .auth-form-footer a:hover {
+  text-decoration: underline;
+  color: var(--medium-blue, #1D3557);
+}
+
+/* Forgot Password Link Specific Styling (if used) */
+.forgot-password {
+  text-align: right;
+  margin-top: -10px; /* Pull up slightly if needed */
+  margin-bottom: 20px; /* Space below */
+}
+.forgot-password a {
+  font-size: 14px; /* Match footer link size */
+}
+
+
+/* --- Success Message Styling (Shared) --- */
+.success-message {
+    text-align: center;
+    color: var(--teal, #2f855a);
+}
+.success-message h2 {
+    color: var(--teal, #2f855a);
+    font-size: 22px;
+    margin-bottom: 12px;
+}
+.success-message p {
+    font-size: 16px;
+    color: var(--medium-blue, #38a169);
+}
+
+
+/* =============================================== */
+/* --- Styles Specific to Two-Column Layout (e.g., Login Page) --- */
+/* =============================================== */
+
+/* This container ensures the split layout takes full width/height */
+.auth-page-container {
+  display: flex; /* Can remain flex if needed for future structure */
   min-height: 100vh;
   width: 100%;
-  animation: fadeIn 0.5s ease-out; /* Fade in the whole page */
+  /* animation: fadeIn 0.5s ease-out; */
 }
 
 .auth-split-layout {
   display: grid;
-  grid-template-columns: repeat(2, 1fr); /* Equal columns */
+  grid-template-columns: 5fr 3fr; /* Left column takes 2 fractions, Right takes 1 */
   width: 100%;
-  height: 100vh; /* Ensure it takes full viewport height */
-  overflow: hidden; /* Prevent scrollbars from layout */
+  height: 100vh; /* Full viewport height */
+  overflow: hidden; /* Prevent internal scrollbars */
 }
 
-/* --- Left Column: Form Area --- */
+/* Left Column: Form Area */
 .auth-form-column {
   background-color: var(--white);
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 40px 60px; /* Generous padding */
-  overflow-y: auto; /* Allow scrolling if content overflows */
+  padding: 40px 60px;
+  overflow-y: auto; /* Allow scroll if form is long */
 }
 
+/* Container within the form column */
 .auth-form-container {
   width: 100%;
   max-width: 400px; /* Limit form width */
-  animation: slideUpFadeIn 0.7s 0.2s ease-out forwards; /* Delayed entrance */
-  opacity: 0;
+  /* animation: slideUpFadeIn 0.7s 0.2s ease-out forwards; */
+  /* opacity: 0; */
 }
 
+/* Logo (Two Column) */
 .auth-logo {
   display: block;
-  max-width: 150px; /* Adjust as needed */
+  max-width: 150px;
   height: auto;
   margin-bottom: 30px;
 }
 
+/* Headings (Two Column) */
 .auth-main-heading {
-  font-size: 28px; /* Slightly smaller than old title */
+  font-size: 28px;
   font-weight: 700;
   color: var(--deep-navy);
   margin-bottom: 8px;
-  text-align: left; /* Align left */
+  text-align: left;
 }
 
 .auth-sub-heading {
   font-size: 16px;
   color: var(--medium-blue);
   margin-bottom: 35px;
-  text-align: left; /* Align left */
+  text-align: left;
 }
 
-/* --- Right Column: Promo Area --- */
+/* Right Column: Promo Area */
 .auth-promo-column {
   background-color: var(--deep-navy); /* Base color */
-  /* --- Geometric Pattern Idea (CSS Gradient) --- */
+  /* Geometric Pattern */
   background-image: linear-gradient(135deg, var(--medium-blue) 25%, transparent 25%),
                     linear-gradient(225deg, var(--medium-blue) 25%, transparent 25%),
                     linear-gradient(45deg, var(--medium-blue) 25%, transparent 25%),
                     linear-gradient(315deg, var(--medium-blue) 25%, var(--deep-navy) 25%);
-  background-size: 40px 40px; /* Size of the pattern */
-  /* --- --- */
+  background-size: 40px 40px;
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 40px 60px;
-  position: relative; /* For potential overlays */
+  position: relative;
 }
 
-/* Optional: Dark overlay for better text contrast */
+/* Dark overlay for promo text contrast */
 .auth-promo-column::before {
     content: '';
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
-    background-color: rgba(13, 27, 42, 0.5); /* Deep navy with opacity */
+    background-color: rgba(13, 27, 42, 0.5); /* Semi-transparent deep navy */
     z-index: 1;
 }
 
+/* Content within the promo column */
 .auth-promo-content {
-  position: relative; /* Ensure content is above overlay */
+  position: relative;
   z-index: 2;
   text-align: center;
   max-width: 400px;
   color: var(--white);
-  animation: fadeIn 0.8s 0.4s ease-out forwards; /* Delayed entrance */
-  opacity: 0;
+  /* animation: fadeIn 0.8s 0.4s ease-out forwards; */
+  /* opacity: 0; */
 }
 
 .auth-promo-heading {
   font-size: 32px;
   font-weight: 700;
   margin-bottom: 15px;
-  color: var(--light-gray); /* Use light gray for high contrast */
+  color: var(--light-gray);
 }
 
 .auth-promo-text {
   font-size: 18px;
   line-height: 1.6;
   margin-bottom: 30px;
-  color: var(--light-gray); /* Light gray for readability */
+  color: var(--light-gray);
   opacity: 0.9;
 }
 
+/* Button (Promo Area) */
 .auth-promo-button {
   display: inline-block;
   padding: 14px 35px;
   background-color: var(--white);
-  color: var(--deep-navy); /* Text color matches promo background */
+  color: var(--deep-navy);
   font-size: 16px;
   font-weight: 600;
   border: 2px solid var(--white);
@@ -162,291 +430,77 @@ body {
 }
 
 .auth-promo-button:hover {
-  background-color: transparent; /* Transparent background on hover */
-  color: var(--white); /* White text on hover */
-  transform: translateY(-2px);
-}
-
-
-/* --- Shared Form Styling & Fixes --- */
-.auth-form {
-  margin: 0; /* Reset margin as spacing is handled by container/headings */
-}
-
-.form-group {
-  margin-bottom: 20px;
-  position: relative; /* Needed for password toggle */
-}
-
-/* Fix for First/Last Name (RegisterForm) spacing */
-.form-row {
-  display: flex;
-  /* Use gap for spacing, flex-wrap for responsiveness if needed */
-  gap: 15px;
-  margin-bottom: 20px;
-}
-.form-row .form-group {
-  flex: 1; /* Allow groups to grow */
-  min-width: 0; /* Prevent overflow issues in flex items */
-  margin-bottom: 0; /* Remove bottom margin within row */
-}
-/* Ensure inputs inside form-row take full width of their group */
-.form-row .form-group input {
-    width: 100%;
-}
-
-
-.form-group label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--medium-blue); /* Use medium blue for labels */
-  margin-bottom: 8px;
-}
-
-.form-group input {
-  width: 100%;
-  /* Equal horizontal padding fix */
-  padding: 12px 16px;
-  font-size: 16px;
-  line-height: 1.5; /* Better vertical alignment */
-  border: 1px solid var(--gray-border);
-  border-radius: 6px;
-  background-color: var(--white);
-  color: var(--deep-navy);
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
-}
-
-/* Adjust padding for password input to make space for the button */
-.form-group.password-group input {
-  padding-right: 50px; /* Space for the icon button */
-}
-
-
-.form-group input:focus {
-  outline: none;
-  border-color: var(--teal);
-  box-shadow: 0 0 0 3px var(--teal-lighter); /* Subtle teal glow */
-}
-
-.form-group input::placeholder {
-  color: #adb5bd;
-  opacity: 1;
-}
-
-.form-group input.input-error {
-  border-color: var(--warm-orange);
-  background-color: var(--warm-orange-lighter);
-}
-.form-group input.input-error:focus {
-  border-color: var(--warm-orange);
-  box-shadow: 0 0 0 3px rgba(255, 140, 66, 0.15);
-}
-
-/* --- Password Visibility Toggle Button --- */
-.password-toggle-btn {
-  position: absolute;
-  top: 50%; /* Align vertically middle relative to label+input space */
-  bottom: 0;
-  right: 0;
-  height: 40px; /* Match input height roughly */
-  width: 45px; /* Width for the button */
-  transform: translateY(8px); /* Adjust vertical position fine-tuning */
-  /* Precise vertical centering if label isn't present or differently styled:
-     top: calc(50% + (label height + margin) / 2);
-     transform: translateY(-50%); */
-
-  background: none;
-  border: none;
-  padding: 0 12px;
-  margin: 0;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  opacity: 0.7;
-  transition: opacity 0.2s ease, color 0.2s ease;
-}
-
-.password-toggle-btn:hover {
-  opacity: 1;
-  color: var(--teal);
-}
-
-.password-toggle-btn svg {
-  width: 20px;
-  height: 20px;
-}
-
-
-/* --- Error & Success Messages --- */
-.field-error {
-  font-size: 13px;
-  color: var(--warm-orange-darker);
-  margin-top: 6px;
-  padding-left: 2px; /* Small indent */
-  animation: fadeIn 0.3s ease-out;
-}
-
-.auth-error-message { /* General API errors */
-  background-color: var(--warm-orange-lighter);
-  color: #a34a00;
-  border: 1px solid var(--warm-orange);
-  border-left-width: 4px; /* Accent border */
-  padding: 12px 16px;
-  border-radius: 4px;
-  margin-bottom: 20px;
-  font-size: 14px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  animation: fadeIn 0.4s ease-out;
-}
-
-.success-message h2 {
-  color: var(--teal);
-  font-size: 24px; /* Larger success title */
-  margin-bottom: 12px;
-}
-
-.success-message p {
-    font-size: 16px;
-    color: var(--medium-blue); /* Use medium blue for success text */
-}
-
-/* --- Buttons & Links --- */
-.auth-button { /* Primary action button (Login/Register) */
-  width: 100%;
-  padding: 14px;
-  background-color: var(--warm-orange);
+  background-color: transparent;
   color: var(--white);
-  font-size: 16px;
-  font-weight: 600;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background-color 0.25s ease, transform 0.15s ease, box-shadow 0.25s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-  margin-top: 10px; /* Space above button */
-}
-
-.auth-button:hover:not(:disabled) {
-  background-color: var(--warm-orange-darker);
   transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
-}
-
-.auth-button:active:not(:disabled) {
-  transform: translateY(0px); /* Press down effect */
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* Smaller shadow when pressed */
-}
-
-
-.auth-button:disabled {
-background-color: var(--medium-blue-lighter);
-opacity: 0.6; /* Slightly more faded when disabled */
-cursor: not-allowed;
-transform: none;
-box-shadow: none;
-}
-
-/* Optional: Add subtle pulsing animation to button on focus for accessibility */
-.auth-button:focus-visible:not(:disabled) {
-  outline: none;
-  animation: pulseGlow 1.5s infinite cubic-bezier(0.66, 0, 0, 1);
-}
-
-.forgot-password { /* Link specific positioning */
-  text-align: right;
-  margin-top: -10px; /* Pull up slightly */
-  margin-bottom: 20px;
-}
-
-.forgot-password a,
-.auth-form-footer a { /* Form related links */
-  font-size: 14px;
-  color: var(--teal);
-  font-weight: 500; /* Slightly less bold than promo links */
-  text-decoration: none;
-  transition: color 0.2s ease, text-decoration 0.2s ease;
-}
-
-.forgot-password a:hover,
-.auth-form-footer a:hover {
-  color: var(--medium-blue);
-  text-decoration: underline;
-}
-
-.auth-form-footer { /* "Need an account?" text */
-  text-align: center;
-  margin-top: 25px;
-  font-size: 15px;
-  color: var(--text-muted);
 }
 
 
 /* --- Responsive Adjustments --- */
-@media (max-width: 992px) { /* Tablet and below */
+
+/* Styles for Single Card on Mobile (already defined above) */
+@media (max-width: 500px) {
+  /* Applies to .auth-card */
+  .auth-card {
+    padding: 25px 20px;
+    box-shadow: none;
+    border-radius: 0;
+    max-width: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .auth-card .form-row { /* Ensure form row stacks correctly inside */
+    flex-direction: column;
+    gap: 15px;
+  }
+  .auth-card .auth-title { font-size: 1.6em; }
+  .auth-card .auth-subtitle { font-size: 0.95em; margin-bottom: 20px; }
+}
+
+/* Styles for Two-Column Layout on Tablet and Below */
+@media (max-width: 992px) {
+  /* Only apply stacking to the two-column layout */
   .auth-split-layout {
     grid-template-columns: 1fr; /* Stack columns */
-    height: auto; /* Allow height to adjust to content */
+    height: auto; /* Allow height to adjust */
   }
 
   .auth-form-column {
     padding: 40px;
-    min-height: 60vh; /* Ensure form column takes reasonable height */
-    order: 1; /* Show form first on mobile */
+    min-height: 60vh; /* Give form reasonable height */
+    order: 1; /* Form first */
   }
 
   .auth-promo-column {
-    min-height: 40vh; /* Give promo some minimum height */
+    min-height: 40vh; /* Promo some height */
     padding: 50px 30px;
-    order: 2; /* Show promo second */
+    order: 2; /* Promo second */
   }
 
-  .auth-promo-heading {
-      font-size: 28px;
-  }
-  .auth-promo-text {
-      font-size: 16px;
-  }
+  .auth-promo-heading { font-size: 28px; }
+  .auth-promo-text { font-size: 16px; }
 }
 
-@media (max-width: 576px) { /* Small mobile */
-    .auth-form-column {
-        padding: 30px 20px; /* Reduce padding */
-    }
-     .auth-form-container {
-        max-width: 100%; /* Allow form to take full width */
-    }
-    .auth-promo-column {
-        padding: 40px 20px;
-    }
-     .auth-main-heading {
-        font-size: 24px;
-    }
-    .auth-sub-heading {
-        font-size: 15px;
-        margin-bottom: 25px;
-    }
-}
-
-/* Loading spinner styles */
-/* No changes needed unless you want to customize it further */
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid var(--medium-blue-lighter);
-  border-radius: 50%;
-  border-top-color: var(--medium-blue);
-  animation: spin 1s linear infinite; /* Changed timing to linear */
-  margin: 20px auto; /* Center spinner if used alone */
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
+/* Styles for Two-Column Layout on Small Mobile */
+@media (max-width: 576px) {
+  /* Adjust padding for two-column layout on small screens */
+  .auth-form-column, .auth-promo-column {
+    padding-left: 20px;
+    padding-right: 20px;
   }
+   .auth-form-container { /* Allow form container full width */
+      max-width: 100%;
+  }
+   .auth-main-heading { font-size: 24px; }
+   .auth-sub-heading { font-size: 15px; margin-bottom: 25px; }
 }
+
+
+/* --- Animations (Optional) --- */
+/* @keyframes definitions here if used */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUpFadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulseGlow { /* Add definition if using */ }
+@keyframes spin { to { transform: rotate(360deg); } }
