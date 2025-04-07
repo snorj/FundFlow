@@ -375,58 +375,91 @@ body {
   text-align: left;
 }
 
-/* Right Column: Promo Area */
+/* --- Right Column: Promo Area (UPDATED) --- */
 .auth-promo-column {
-  background-color: var(--deep-navy); /* Base color */
-  /* Geometric Pattern */
-  background-image: linear-gradient(135deg, var(--medium-blue) 25%, transparent 25%),
-                    linear-gradient(225deg, var(--medium-blue) 25%, transparent 25%),
-                    linear-gradient(45deg, var(--medium-blue) 25%, transparent 25%),
-                    linear-gradient(315deg, var(--medium-blue) 25%, var(--deep-navy) 25%);
-  background-size: 40px 40px;
+  /* Remove static pattern */
+  /* background-image: linear-gradient(...); */
+
+  /* --- Animated Gradient Background --- */
+  background: linear-gradient(120deg,
+    var(--deep-navy),
+    var(--medium-blue),
+    var(--teal),
+    var(--medium-blue),
+    var(--deep-navy)
+  );
+  background-size: 300% 300%; /* Make gradient larger than the container */
+  animation: auroraBackground 25s ease infinite; /* Apply the slow animation */
+  /* --- End Animated Background --- */
+
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 40px 60px;
+  padding: 60px; /* Consistent padding */
   position: relative;
+  overflow: hidden; /* Hide gradient overflow */
 }
 
-/* Dark overlay for promo text contrast */
+/* Remove the dark overlay if using glassmorphism, as the content bg provides contrast */
+/* .auth-promo-column::before { display: none; } */
+/* OR keep it if you prefer the darker overall look */
 .auth-promo-column::before {
     content: '';
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
-    background-color: rgba(13, 27, 42, 0.5); /* Semi-transparent deep navy */
+    background-color: rgba(13, 27, 42, 0.3); /* Slightly lighter overlay? Optional */
     z-index: 1;
 }
 
-/* Content within the promo column */
+
+/* --- Content within the promo column (UPDATED) --- */
 .auth-promo-content {
   position: relative;
   z-index: 2;
   text-align: center;
-  max-width: 400px;
+  max-width: 420px; /* Slightly wider */
   color: var(--white);
+
+  /* --- Glassmorphism Effect --- */
+  background: rgba(29, 53, 87, 0.15); /* Semi-transparent Medium Blue */
+  backdrop-filter: blur(12px); /* The blur effect */
+  -webkit-backdrop-filter: blur(12px); /* Safari support */
+  padding: 40px 50px; /* Padding inside the glass */
+  border-radius: 12px; /* Rounded corners */
+  border: 1px solid rgba(255, 255, 255, 0.1); /* Subtle border */
+  box-shadow: 0 8px 32px 0 rgba(13, 27, 42, 0.15); /* Soft shadow */
+  /* --- End Glassmorphism --- */
+
+  /* Remove old animation */
   /* animation: fadeIn 0.8s 0.4s ease-out forwards; */
   /* opacity: 0; */
 }
 
+/* --- Staggered Content Animation --- */
+.auth-promo-heading,
+.auth-promo-text,
+.auth-promo-button {
+  opacity: 0; /* Start hidden */
+  animation: fadeInUp 0.6s ease-out forwards; /* Apply animation */
+}
+
 .auth-promo-heading {
-  font-size: 32px;
+  font-size: 30px; /* Adjust size if needed */
   font-weight: 700;
   margin-bottom: 15px;
-  color: var(--light-gray);
+  color: var(--white); /* Ensure high contrast */
+  animation-delay: 0.2s; /* Stagger start time */
 }
 
 .auth-promo-text {
-  font-size: 18px;
+  font-size: 17px; /* Adjust size if needed */
   line-height: 1.6;
   margin-bottom: 30px;
-  color: var(--light-gray);
-  opacity: 0.9;
+  color: var(--light-gray); /* Use light gray */
+  opacity: 0; /* Start hidden - will be overridden by animation */
+  animation-delay: 0.4s; /* Stagger start time */
 }
 
-/* Button (Promo Area) */
 .auth-promo-button {
   display: inline-block;
   padding: 14px 35px;
@@ -438,13 +471,17 @@ body {
   border-radius: 6px;
   text-decoration: none;
   cursor: pointer;
-  transition: background-color 0.3s ease, color 0.3s ease, transform 0.2s ease;
+  transition: background-color 0.3s ease, color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+  opacity: 0; /* Start hidden */
+  animation-delay: 0.6s; /* Stagger start time */
+  box-shadow: 0 2px 5px rgba(255, 255, 255, 0.1); /* Subtle glow */
 }
 
 .auth-promo-button:hover {
-  background-color: transparent;
-  color: var(--white);
-  transform: translateY(-2px);
+  background-color: rgba(255, 255, 255, 0.9); /* Slightly less opaque white */
+  color: var(--deep-navy);
+  transform: translateY(-3px) scale(1.03); /* More noticeable hover */
+  box-shadow: 0 4px 10px rgba(255, 255, 255, 0.2); /* Enhanced glow */
 }
 
 
@@ -494,12 +531,12 @@ body {
   /* *** End logo adjustment *** */
 
   .auth-promo-column {
-    min-height: 40vh; /* Promo some height */
-    padding: 50px 30px;
-    order: 2; /* Promo second */
+    padding: 50px 30px; /* Adjust padding if needed */
   }
-
-  .auth-promo-heading { font-size: 28px; }
+  .auth-promo-content {
+      padding: 35px 40px; /* Adjust glass padding */
+  }
+  .auth-promo-heading { font-size: 26px; } /* Adjust text sizes */
   .auth-promo-text { font-size: 16px; }
 }
 
@@ -524,12 +561,43 @@ body {
   }
    .auth-main-heading { font-size: 24px; }
    .auth-sub-heading { font-size: 15px; margin-bottom: 25px; }
+   .auth-promo-column {
+    padding: 40px 20px; /* Adjust padding */
+  }
+  .auth-promo-content {
+      padding: 30px; /* Adjust glass padding */
+      backdrop-filter: blur(8px); /* Slightly less blur on mobile? Optional */
+      -webkit-backdrop-filter: blur(8px);
+  }
+  .auth-promo-heading { font-size: 24px; }
+  .auth-promo-text { font-size: 15px; }
 }
 
 
-/* --- Animations (Optional) --- */
-/* @keyframes definitions here if used */
+/* =============================================== */
+/* --- NEW ANIMATIONS --- */
+/* =============================================== */
+
+@keyframes auroraBackground {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Simple fade-in-up for staggered content */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Keep other animations like spin, pulseGlow if used elsewhere */
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUpFadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes pulseGlow { /* Add definition if using */ }
+/* @keyframes slideUpFadeIn { ... } */ /* Can remove if not used */
+/* @keyframes pulseGlow { ... } */
 @keyframes spin { to { transform: rotate(360deg); } }
