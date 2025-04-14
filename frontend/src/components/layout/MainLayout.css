@@ -1,319 +1,117 @@
 /* frontend/src/components/layout/MainLayout.css */
 
-/* Using variables from :root */
+/* Using variables from :root in index.css */
 
-.app-container {
-  display: flex;
+.app-container-no-sidebar {
+  display: flex; /* Keep flex for main content structure */
   min-height: 100vh;
-  background-color: var(--light-gray); /* Base background */
-}
-
-/* ===== Sidebar Styles ===== */
-.sidebar {
-  width: var(--sidebar-width);
-  background-color: var(--deep-navy); /* Use Deep Navy */
-  color: var(--text-muted); /* Use lighter muted text */
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  transition: transform 0.3s ease-in-out, width 0.3s ease-in-out;
-  position: fixed; /* Fixed position */
-  top: 0;
-  left: 0;
-  z-index: 1000; /* High z-index */
-  border-right: 1px solid var(--medium-blue); /* Subtle border */
-}
-
-.sidebar.closed {
-  transform: translateX(-100%);
-}
-
-.sidebar-header {
-  padding: 15px 20px; /* Adjusted padding */
-  height: var(--header-height); /* Match header height */
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid var(--medium-blue); /* Use Medium Blue */
-}
-
-.sidebar-app-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--white);
-  margin: 0;
-}
-
-.close-sidebar-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: none; /* Hidden by default, shown in media query */
-  padding: 5px;
-  border-radius: 4px;
-  transition: background-color 0.2s;
-}
-.close-sidebar-btn:hover {
-    background-color: var(--medium-blue);
-    color: var(--white);
-}
-.close-sidebar-btn svg { /* Style the close icon */
-    display: block;
-}
-
-
-.sidebar-nav {
-  flex-grow: 1; /* Take remaining vertical space */
-  padding: 20px 0;
-  overflow-y: auto; /* Allow scrolling if many items */
-}
-
-/* Simple scrollbar styling (optional) */
-.sidebar-nav::-webkit-scrollbar { width: 6px; }
-.sidebar-nav::-webkit-scrollbar-thumb { background-color: var(--medium-blue); border-radius: 3px; }
-.sidebar-nav::-webkit-scrollbar-track { background-color: transparent; }
-
-
-.sidebar-nav ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.sidebar-nav li {
-  margin: 0 10px 5px 10px; /* Add horizontal margin */
-}
-
-.sidebar-nav li a {
-  display: flex;
-  align-items: center;
-  padding: 10px 15px; /* Adjust padding */
-  color: var(--text-muted);
-  text-decoration: none;
-  border-radius: 5px; /* Rounded corners */
-  transition: background-color 0.2s ease, color 0.2s ease;
-  font-weight: 500;
-}
-
-.sidebar-nav li a:hover {
-  background-color: var(--medium-blue); /* Use Medium Blue */
-  color: var(--white);
-}
-
-.sidebar-nav li.active a {
-  background-color: var(--teal); /* Use Teal for active */
-  color: var(--white);
-}
-.sidebar-nav li.active a:hover {
-    background-color: var(--teal-darker); /* Darker teal on hover active */
-}
-
-
-.nav-icon {
-  margin-right: 12px;
-  display: inline-flex; /* Better alignment */
-  align-items: center;
-  /* Ensure icon color inherits correctly */
-  color: inherit;
-}
-/* Adjust icon stroke width if needed */
-.nav-icon svg { stroke-width: 2; }
-
-.nav-label {
-    font-size: 15px;
-}
-
-
-.sidebar-footer {
-  padding: 15px 20px;
-  border-top: 1px solid var(--medium-blue);
-}
-
-.logout-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px;
-  background-color: transparent; /* Transparent background */
-  color: var(--text-muted);
-  border: 1px solid var(--medium-blue); /* Use medium blue border */
-  border-radius: 5px;
-  cursor: pointer;
-  font-weight: 500;
-  font-size: 15px;
-  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
-}
-
-.logout-btn:hover {
-  background-color: var(--medium-blue);
-  border-color: var(--medium-blue);
-  color: var(--white);
-}
-.logout-btn svg {
-    margin-bottom: -2px; /* Fine-tune icon alignment */
+  background-color: var(--light-gray);
 }
 
 /* ===== Main Content Styles ===== */
-.main-content {
-  flex-grow: 1; /* Takes remaining space */
+.main-content-full-width {
+  flex-grow: 1; /* Takes full width */
   display: flex;
   flex-direction: column;
-  height: 100vh; /* Full height */
-  overflow: hidden; /* Prevent content overflow issues at this level */
-  transition: margin-left 0.3s ease-in-out;
-  margin-left: var(--sidebar-width); /* Default margin */
-  width: calc(100% - var(--sidebar-width));
-}
-
-/* Adjust margin when sidebar is closed */
-.main-content.sidebar-closed {
-  margin-left: 0;
+  height: 100vh;
+  overflow: hidden;
   width: 100%;
 }
 
-/* ===== Header Styles (UPDATED) ===== */
+/* ===== Header Styles ===== */
 .main-header {
   height: var(--header-height);
-  background-color: var(--deep-navy); /* Use Deep Navy */
-  border-bottom: 1px solid var(--medium-blue); /* Use Medium Blue */
+  background-color: var(--deep-navy);
+  border-bottom: 1px solid var(--medium-blue);
   display: flex;
   align-items: center;
-  justify-content: space-between; /* Space between left and right items */
+  justify-content: space-between; /* Pushes left and right divs apart */
   padding: 0 25px; /* Header horizontal padding */
-  position: sticky; /* Keep header visible */
+  position: sticky;
   top: 0;
-  z-index: 900; /* Below sidebar */
-  flex-shrink: 0; /* Prevent header from shrinking */
-  color: var(--white); /* Default text color */
+  z-index: 900;
+  flex-shrink: 0;
+  color: var(--white);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 15px; /* Space between menu toggle and settings icon */
-}
-
-.menu-toggle {
-  background: none;
-  border: none;
-  color: var(--light-gray); /* Icon color on dark bg */
-  cursor: pointer;
-  display: none; /* Hidden on desktop */
-  padding: 8px;
-  border-radius: 50%;
-  transition: background-color 0.2s;
-}
-.menu-toggle:hover {
-    background-color: var(--medium-blue);
-}
-.menu-toggle svg { display: block; }
-
-
-.header-icon-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--light-gray); /* Icon color */
-  padding: 8px;
-  border-radius: 50%;
-  transition: background-color 0.2s, color 0.2s;
-}
-.header-icon-link:hover {
-  background-color: var(--medium-blue);
-  color: var(--white);
-}
-.header-icon-link svg {
-  display: block;
-  width: var(--header-icon-size);
-  height: var(--header-icon-size);
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
 }
 
 .header-logo-link {
-  display: flex; /* Helps alignment */
+  display: flex;
   align-items: center;
 }
 
 .header-logo {
   display: block;
-  height: var(--header-logo-height); /* Control logo size */
-  width: auto; /* Maintain aspect ratio */
+  height: var(--header-logo-height);
+  width: auto;
 }
 
-/* Remove old header styles */
-.header-title, .user-profile, .user-info, .user-avatar {
-    display: none;
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px; /* Space if more icons are added later */
 }
+
+/* Styles for the Logout Button in Header */
+.header-action-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px; /* Space between icon and text */
+    background: none;
+    border: none;
+    color: var(--light-gray);
+    padding: 8px 12px; /* Adjust padding */
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s;
+    font-family: var(--font-family-sans); /* Ensure font consistency */
+    font-size: 14px; /* Adjust font size */
+    font-weight: 500;
+}
+
+.header-action-button:hover {
+    background-color: var(--medium-blue);
+    color: var(--white);
+}
+
+.header-action-button svg {
+    display: block;
+    width: var(--header-icon-size);
+    height: var(--header-icon-size);
+}
+
+/* Hide logout text on smaller screens (optional) */
+.logout-text {
+    display: inline; /* Default show */
+}
+
 
 /* ===== Content Area Styles ===== */
 .content-container {
-  padding: 30px; /* Padding around page content */
+  padding: 30px;
   overflow-y: auto; /* Allow content area to scroll */
   flex-grow: 1; /* Take remaining space */
   background-color: var(--light-gray); /* Use Light Gray */
 }
 
-/* Sidebar overlay for mobile */
-.sidebar-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(13, 27, 42, 0.6); /* Semi-transparent Deep Navy */
-  z-index: 999; /* Below sidebar, above main content */
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
-}
-.sidebar.open ~ .sidebar-overlay {
-    opacity: 1;
-    visibility: visible;
-}
-
 
 /* ===== Responsive Styles ===== */
-@media (max-width: 1023px) {
-  .sidebar {
-    width: var(--sidebar-width-mobile); /* Slightly wider on mobile? */
-    transform: translateX(-100%); /* Start closed */
-  }
-  .sidebar.open {
-    transform: translateX(0);
-  }
-
-  .close-sidebar-btn {
-    display: block; /* Show close button */
-  }
-
-  .menu-toggle {
-    display: block; /* Show menu toggle */
-  }
-
-  /* Main content takes full width on mobile, sidebar overlays */
-  .main-content {
-    margin-left: 0 !important; /* Override margin */
-    width: 100% !important;
-    transition: none; /* Disable margin transition */
-  }
+@media (max-width: 768px) { /* Example breakpoint to hide text */
+    .logout-text {
+        display: none; /* Hide text, show only icon */
+    }
+    .header-action-button {
+        padding: 8px; /* Adjust padding for icon only */
+    }
 }
 
 @media (max-width: 639px) {
-   .main-header {
-       padding: 0 15px; /* Reduce header padding */
-   }
-   .content-container {
-       padding: 20px; /* Reduce content padding */
-   }
-   .sidebar-app-title {
-       font-size: 20px;
-   }
-   /* Further adjustments for small screens if needed */
+   .main-header { padding: 0 15px; }
+   .content-container { padding: 20px; }
+   .header-logo { height: calc(var(--header-logo-height) * 0.9); } /* Slightly smaller logo */
 }
