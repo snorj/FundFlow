@@ -1,32 +1,27 @@
 """
 URL configuration for FundFlow project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.1/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
 from django.urls import path, include
-from finance.views import dashboard_view
+# Remove: from finance.views import dashboard_view
+# Import the specific URL lists from accounts.urls
 from accounts.urls import api_urlpatterns as accounts_api_urls
+from accounts.urls import password_urls as accounts_password_urls
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('accounts/', include('accounts.urls')),  # Template-based views
-    path('', dashboard_view, name='dashboard'),
-    
-    # API endpoints
-    path('api/auth/', include(accounts_api_urls)),  # JWT Authentication API
-    
-    # Add other app URLs here
-    path('api/finance/', include('finance.urls')),
+
+    # Include password reset/change URLs under '/accounts/'
+    path('accounts/', include(accounts_password_urls)),
+
+    # Include JWT/API Auth URLs under '/api/auth/'
+    path('api/auth/', include(accounts_api_urls)),
+
+    # Remove: path('', dashboard_view, name='dashboard') # Handled by React frontend
+    # Remove: path('api/finance/', include('finance.urls')) # Finance app removed
 ]
+
+# Note: You might want a catch-all route later to serve your React app's index.html
+# for client-side routing to work correctly on page refresh, but that depends
+# on your deployment setup (often handled by webserver config or Django middleware).
+# For development with separate frontend/backend servers, this is usually okay.

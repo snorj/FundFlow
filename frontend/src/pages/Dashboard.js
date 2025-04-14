@@ -1,9 +1,9 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import './Dashboard.css'; // We'll create this CSS file next
+import './Dashboard.css';
 
-// Import icons from react-icons
-import { FiPlusCircle, FiUpload, FiLink } from 'react-icons/fi'; // Example icons
+// Remove FiLink, Keep FiPlusCircle, FiUpload
+import { FiPlusCircle, FiUpload } from 'react-icons/fi';
 
 const Dashboard = () => {
   // Placeholder: In the future, check if the user has data
@@ -26,11 +26,7 @@ const Dashboard = () => {
             To get started, add your financial data using one of the options below:
           </p>
           <div className="action-buttons">
-            <Link to="/connect-bank" className="action-button teal-button">
-              <FiLink className="button-icon" />
-              Connect Bank Account
-            </Link>
-            {/* Consider making upload a component/page later */}
+            {/* Remove Connect Bank Button */}
             <button type="button" className="action-button teal-button" onClick={() => alert('Upload CSV - Placeholder Action')}>
               <FiUpload className="button-icon" />
               Upload .csv File
