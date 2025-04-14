@@ -13,13 +13,21 @@ const LoadingSpinner = () => (
 const PrivateRoute = () => {
   const { isAuthenticated, isLoading } = useContext(AuthContext);
 
-  // Show loading spinner while checking authentication
+  // Log the state received from context *every time* PrivateRoute renders
+  console.log(`PrivateRoute Rendering: isLoading=${isLoading}, isAuthenticated=${isAuthenticated}`);
+
   if (isLoading) {
+    console.log("PrivateRoute: Returning LoadingSpinner."); // <-- ADD
     return <LoadingSpinner />;
   }
 
-  // Redirect to login if not authenticated
-  return isAuthenticated ? <Outlet /> : <Navigate to="/login" />;
+  if (isAuthenticated) {
+      console.log("PrivateRoute: Returning Outlet (Authenticated)."); // <-- ADD
+      return <Outlet />;
+  } else {
+      console.log("PrivateRoute: Returning Navigate to /login (Not Authenticated)."); // <-- ADD
+      return <Navigate to="/login" replace />;
+  }
 };
 
 export default PrivateRoute;

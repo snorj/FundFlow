@@ -2,12 +2,19 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import './Dashboard.css';
 
-// Remove FiLink, Keep FiPlusCircle, FiUpload
-import { FiPlusCircle, FiUpload } from 'react-icons/fi';
+// Re-import FiLink icon
+import { FiPlusCircle, FiUpload, FiLink } from 'react-icons/fi';
 
 const Dashboard = () => {
   // Placeholder: In the future, check if the user has data
   const hasData = false; // Set to true later to show actual dashboard
+
+  // Placeholder handler for the connect bank button
+  const handleConnectBankClick = () => {
+    alert('Connect Bank Account - Placeholder Action (Plaid integration removed)');
+    // In the future, this might open a modal or navigate to a different flow
+    // if you re-implement bank connection differently.
+  };
 
   return (
     <div className="dashboard-page">
@@ -26,7 +33,17 @@ const Dashboard = () => {
             To get started, add your financial data using one of the options below:
           </p>
           <div className="action-buttons">
-            {/* Remove Connect Bank Button */}
+            {/* --- Re-added Connect Bank Button (as a button) --- */}
+            <button
+              type="button"
+              className="action-button teal-button"
+              onClick={handleConnectBankClick} // Placeholder action
+            >
+              <FiLink className="button-icon" />
+              Connect Bank Account
+            </button>
+            {/* --- End of Re-added Button --- */}
+
             <button type="button" className="action-button teal-button" onClick={() => alert('Upload CSV - Placeholder Action')}>
               <FiUpload className="button-icon" />
               Upload .csv File

@@ -34,85 +34,54 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const initializeAuth = async () => {
+      console.log("AuthContext: initializeAuth START"); // <-- ADD
       const accessToken = localStorage.getItem('access_token');
       const refreshTokenValue = localStorage.getItem('refresh_token');
 
-      // If no tokens, immediately set to not authenticated
       if (!accessToken || !refreshTokenValue) {
-        console.log("AuthContext: No tokens found, setting unauthenticated.");
-        setAuthState({
-          isAuthenticated: false,
-          isLoading: false,
-          user: null,
-          accessToken: null,
-          refreshToken: null,
-        });
+        console.log("AuthContext: No tokens found."); // <-- ADD
+        setAuthState(prev => ({ ...prev, isAuthenticated: false, isLoading: false, user: null, accessToken: null, refreshToken: null }));
         return;
       }
 
-      // Tokens exist, try to validate them and fetch user
       try {
-        console.log("AuthContext: Tokens found, attempting to get user info.");
+        console.log("AuthContext: Tokens found, attempting getCurrentUser."); // <-- ADD
         const userInfo = await AuthService.getCurrentUser();
-        console.log("AuthContext: User info fetched successfully.", userInfo);
+        console.log("AuthContext: getCurrentUser SUCCESS.", userInfo); // <-- ADD
 
-        // Successfully fetched user, update state
-        setAuthState({
-          isAuthenticated: true,
-          isLoading: false,
-          user: userInfo,
-          accessToken, // Keep existing token from localStorage
-          refreshToken: refreshTokenValue, // Keep existing token
-        });
+        setAuthState(prev => ({ ...prev, isAuthenticated: true, isLoading: false, user: userInfo, accessToken, refreshToken: refreshTokenValue }));
+        console.log("AuthContext: State set to AUTHENTICATED."); // <-- ADD
 
       } catch (error) {
-        console.log("AuthContext: Error fetching user info.", error);
-        // Check if it was a 401 Unauthorized (likely expired token)
+        console.error("AuthContext: Error during initial getCurrentUser.", error); // <-- ADD
+
         if (error.response && error.response.status === 401) {
-          console.log("AuthContext: Access token likely expired, attempting refresh.");
+          console.log("AuthContext: Attempting token refresh."); // <-- ADD
           try {
-            // Attempt to refresh the token
-            await AuthService.refreshToken(refreshTokenValue); // This updates localStorage internally now
-            console.log("AuthContext: Token refresh successful.");
-
-            // Refetch user info with the new token
+            await AuthService.refreshToken(refreshTokenValue);
+            console.log("AuthContext: Token refresh SUCCESS."); // <-- ADD
             const refreshedUserInfo = await AuthService.getCurrentUser();
-            console.log("AuthContext: User info fetched successfully after refresh.", refreshedUserInfo);
+            console.log("AuthContext: getCurrentUser after refresh SUCCESS.", refreshedUserInfo); // <-- ADD
 
-            // Update state with new token and user info
-            setAuthState({
-              isAuthenticated: true,
-              isLoading: false,
-              user: refreshedUserInfo,
-              accessToken: localStorage.getItem('access_token'), // Get the newly stored token
-              refreshToken: refreshTokenValue,
-            });
+            setAuthState(prev => ({ ...prev, isAuthenticated: true, isLoading: false, user: refreshedUserInfo, accessToken: localStorage.getItem('access_token'), refreshToken: refreshTokenValue }));
+             console.log("AuthContext: State set to AUTHENTICATED after refresh."); // <-- ADD
 
           } catch (refreshError) {
-            // If refresh fails (e.g., refresh token also expired/invalid)
-            console.log("AuthContext: Token refresh failed.", refreshError);
-            handleLogout(); // Log the user out completely
+            console.error("AuthContext: Token refresh FAILED.", refreshError); // <-- ADD
+            handleLogout(); // This will set state to unauthenticated/not loading
           }
         } else {
-          // Some other error occurred (network issue, server error)
-          // Treat as unauthenticated for now, but keep tokens in case it's temporary
-          console.log("AuthContext: Non-401 error during user fetch, setting unauthenticated.");
-           setAuthState({
-             isAuthenticated: false,
-             isLoading: false, // Finished loading check
-             user: null,
-             accessToken: null, // Clear tokens from state as they didn't work
-             refreshToken: null,
-           });
-           // Optionally clear localStorage here too if error persists
-           // localStorage.removeItem('access_token');
-           // localStorage.removeItem('refresh_token');
+          console.error("AuthContext: Non-401 error during init, setting unauthenticated."); // <-- ADD
+          setAuthState(prev => ({ ...prev, isAuthenticated: false, isLoading: false, user: null, accessToken: null, refreshToken: null }));
+          // Consider removing tokens if this happens persistently
+          // localStorage.removeItem('access_token');
+          // localStorage.removeItem('refresh_token');
         }
       }
     };
 
     initializeAuth();
-  }, [handleLogout]); // Include handleLogout in dependency array
+  }, [handleLogout]); // Keep handleLogout dependency
 
   return (
     <AuthContext.Provider
