@@ -191,3 +191,72 @@
   .apply-button svg {
       margin-bottom: -1px;
   }
+
+/* --- Styles for Create New Category Form --- */
+.create-category-form {
+  margin-top: 15px;
+  margin-bottom: 20px; /* Space before buttons */
+  padding: 15px;
+  background-color: #f8f9fa; /* Slightly different background */
+  border: 1px dashed var(--gray-border);
+  border-radius: 5px;
+}
+
+/* Use form-row/form-group structure if desired */
+.create-category-form .form-row {
+  display: flex;
+  gap: 15px;
+  align-items: flex-end; /* Align bottoms of label/input/select */
+}
+
+.create-category-form .form-group {
+  flex: 1; /* Allow fields to grow */
+  margin-bottom: 0; /* Remove margin if using gap */
+}
+
+.create-category-form label {
+  display: block;
+  font-size: 0.85em; /* Smaller label */
+  font-weight: 500;
+  color: var(--medium-blue);
+  margin-bottom: 5px;
+}
+
+.create-category-form input[type="text"],
+.create-category-form select {
+  width: 100%;
+  padding: 8px 10px; /* Slightly smaller padding */
+  font-size: 0.95em;
+  border: 1px solid var(--gray-border);
+  border-radius: 4px;
+  background-color: var(--white);
+}
+.create-category-form select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%236c757d'%3E%3Cpolygon points='0,0 10,0 5,10'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.create-category-form input:disabled,
+.create-category-form select:disabled {
+  background-color: var(--light-gray);
+  cursor: not-allowed;
+}
+
+.create-category-form .error-text {
+  color: var(--warm-orange-darker);
+  font-size: 0.85em;
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+/* Inline spinner for button */
+.apply-button .spinner-inline {
+  width: 1em; /* Match text size */
+  height: 1em;
+  vertical-align: middle;
+  margin-right: 5px; /* Space before text */
+  margin-bottom: -1px;
+  animation: spin 1s linear infinite;
+}

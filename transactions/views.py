@@ -15,8 +15,8 @@ from .permissions import IsOwnerOrSystemReadOnly
 import logging
 from django.db.models import Count, Min
 from django.shortcuts import get_object_or_404 # Useful for getting the Category
-
 from transactions import serializers # Added logging
+from django.db.models import Max # Import Max for aggregation
 
 logger = logging.getLogger(__name__)
 
@@ -99,49 +99,54 @@ class BatchCategorizeTransactionView(APIView):
             # 'not_updated_ids': missing_or_unowned_ids # Optionally return IDs that failed
         }, status=status.HTTP_200_OK)
 
-
-# --- NEW UNCATEGORIZED TRANSACTION VIEW ---
 class UncategorizedTransactionGroupView(APIView):
     """
     API endpoint to list uncategorized transactions for the authenticated user,
-    grouped by description. Returns groups ordered by the earliest transaction
-    date within each group.
+    grouped by description. Returns groups ordered by the *most recent* transaction
+    date within each group descending (newest groups first).
     """
     permission_classes = [permissions.IsAuthenticated]
-    # Use default pagination settings if defined globally, or add custom one if needed
-    # pagination_class = PageNumberPagination (Import if needed)
 
     def get(self, request, *args, **kwargs):
         user = request.user
+
+        # --- NEW: Check if only existence check is needed ---
+        check_existence_only = request.query_params.get('check_existence', 'false').lower() == 'true'
+
+        if check_existence_only:
+             logger.info(f"Checking existence of uncategorized groups for user: {user.username} ({user.id})")
+             exists = Transaction.objects.filter(user=user, category__isnull=True).exists()
+             return Response({'has_uncategorized': exists}, status=status.HTTP_200_OK)
+        
         logger.info(f"Fetching uncategorized transaction groups for user: {user.username} ({user.id})")
 
         # 1. Filter uncategorized transactions for the user
+        # Order by description first for consistent grouping, then date if needed within group
         uncategorized_txs = Transaction.objects.filter(
             user=user,
             category__isnull=True
-        ).order_by('description', 'transaction_date') # Order for predictable grouping (optional but good)
-
-        logger.debug(f"Queryset count BEFORE grouping (for user {user.id}): {uncategorized_txs.count()}") 
-        logger.info(f"Queryset count BEFORE grouping for user {user.id}: {uncategorized_txs.count()}")
-        logger.info(f"First 5 Tx IDs in queryset: {[tx.id for tx in uncategorized_txs[:5]]}")   
+        ).order_by('description', '-transaction_date') # Order date descending within description
 
         # 2. Group transactions by description in Python
-        # (Alternative: Could use database GROUP BY if performance becomes an issue,
-        # but Python grouping is often simpler for complex structures)
         grouped_transactions = {}
         for tx in uncategorized_txs:
-            description = tx.description # Or normalize description if needed (e.g., lowercase, strip)
+            description = tx.description
             if description not in grouped_transactions:
                 grouped_transactions[description] = {
                     'description': description,
-                    'earliest_date': tx.transaction_date, # Track earliest date for sorting groups
-                    'transaction_ids': [], # Store IDs for batch update later
-                    'previews': [] # Store limited info for preview
+                    # Initialize max_date with the first transaction's date found for this group
+                    'max_date': tx.transaction_date,
+                    'transaction_ids': [],
+                    'previews': []
                 }
 
-            # Update earliest date if current tx is earlier
-            if tx.transaction_date < grouped_transactions[description]['earliest_date']:
-                grouped_transactions[description]['earliest_date'] = tx.transaction_date
+            # --- Track MOST RECENT date ---
+            # No need to update if dates are already sorted descending within group
+            # If sorting wasn't guaranteed, you'd do:
+            # if tx.transaction_date > grouped_transactions[description]['max_date']:
+            #     grouped_transactions[description]['max_date'] = tx.transaction_date
+            # Since we ordered by -transaction_date initially, the first tx added
+            # for a group *is* the most recent.
 
             # Add transaction ID
             grouped_transactions[description]['transaction_ids'].append(tx.id)
@@ -153,52 +158,61 @@ class UncategorizedTransactionGroupView(APIView):
                      'date': tx.transaction_date,
                      'amount': tx.amount,
                      'direction': tx.direction,
-                     'signed_amount': tx.signed_amount # Use property if available
+                     'signed_amount': tx.signed_amount
                  })
 
-        # 3. Convert grouped data to a list and sort groups by earliest date
+        # 3. Convert grouped data to a list and sort groups by MOST RECENT date DESCENDING
         sorted_groups = sorted(
             grouped_transactions.values(),
-            key=lambda group: group['earliest_date'] # Sort groups chronologically
+            key=lambda group: group['max_date'], # Sort using the tracked max_date
+            reverse=True # Newest groups first
         )
 
         # Optional: Add count to each group
         for group in sorted_groups:
             group['count'] = len(group['transaction_ids'])
+            # Optionally add earliest date too if needed by frontend, requires extra tracking
+            # group['earliest_date'] = min(tx['date'] for tx in group['previews']) # Simple but less efficient
 
-        logger.info(f"Found {len(sorted_groups)} groups of uncategorized transactions for user {user.id}")
+        logger.info(f"Found {len(sorted_groups)} groups of uncategorized transactions for user {user.id}, sorted by most recent.")
 
-        # --- Optional: Apply Pagination if needed ---
-        # paginator = self.pagination_class()
-        # page = paginator.paginate_queryset(sorted_groups, request, view=self)
-        # if page is not None:
-        #     return paginator.get_paginated_response(page)
-
-        # Return the sorted list of groups
         return Response(sorted_groups, status=status.HTTP_200_OK)
 
 # --- NEW TRANSACTION LIST VIEW ---
 class TransactionListView(generics.ListAPIView):
     """
     API endpoint to list transactions for the authenticated user.
-    Supports basic filtering and pagination (optional).
+    Supports filtering by categorization status.
     """
     serializer_class = TransactionSerializer
     permission_classes = [permissions.IsAuthenticated]
-    # Optional: Add pagination
-    # from rest_framework.pagination import PageNumberPagination
-    # pagination_class = PageNumberPagination
-    # pagination_class.page_size = 50 # Example page size
+    # pagination_class = PageNumberPagination # Keep if you want pagination
 
     def get_queryset(self):
         """
-        Return transactions owned by the currently authenticated user,
-        ordered by date descending.
+        Return transactions owned by the user, optionally filtered
+        by categorization status, ordered by date descending.
         """
         user = self.request.user
-        logger.info(f"Fetching transactions for user: {user.username} ({user.id})")
-        queryset = Transaction.objects.filter(user=user).order_by('-transaction_date', '-created_at')
-        logger.info(f"Found {queryset.count()} transactions for user {user.id}")
+        queryset = Transaction.objects.filter(user=user)
+
+        # --- NEW FILTER ---
+        # Check for a query parameter like 'status' or 'categorized'
+        status_filter = self.request.query_params.get('status', None) # e.g., ?status=categorized or ?status=uncategorized
+
+        if status_filter == 'categorized':
+            logger.info(f"Filtering for CATEGORIZED transactions for user {user.id}")
+            queryset = queryset.filter(category__isnull=False)
+        elif status_filter == 'uncategorized':
+             logger.info(f"Filtering for UNCATEGORIZED transactions for user {user.id}")
+             queryset = queryset.filter(category__isnull=True)
+        else:
+             # Default: Return ALL transactions if no specific status filter is applied
+             logger.info(f"Fetching ALL transactions for user: {user.username} ({user.id})")
+
+        # Keep original ordering
+        queryset = queryset.order_by('-transaction_date', '-created_at')
+        logger.info(f"Found {queryset.count()} transactions matching filter for user {user.id}")
         return queryset
 
 class CategoryListCreateView(generics.ListCreateAPIView):
@@ -235,7 +249,6 @@ class CategoryListCreateView(generics.ListCreateAPIView):
     def get_serializer_context(self):
         """Pass request to serializer context for validation."""
         return {'request': self.request}
-
 
 class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
     """

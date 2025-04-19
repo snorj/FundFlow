@@ -14,11 +14,16 @@ const transactionService = {
     }
   },
 
-  getTransactions: async () => {
-    // ... (existing get function) ...
+  /**
+   * Fetches transactions for the current user, optionally filtered.
+   * @param {object} [filters] - Optional filter parameters (e.g., { status: 'categorized' })
+   * @returns {Promise<Array>} - Promise resolving to an array of transaction objects.
+   */
+  getTransactions: async (filters = {}) => { // Accept filters object
     try {
-      // Assuming default pagination, adjust if needed
-      const response = await api.get('/transactions/');
+      // Pass filters as URL query parameters
+      const response = await api.get('/transactions/', { params: filters });
+      // Handle potential pagination
       return response.data.results || response.data;
     } catch (error) {
       console.error('Error fetching transactions:', error.response || error);
@@ -54,7 +59,23 @@ const transactionService = {
       throw error.response?.data || new Error('Failed to fetch uncategorized groups.');
     }
   },
-  // --- END NEW FUNCTION ---
+
+  /**
+   * Checks if there are any uncategorized transaction groups for the user.
+   * @returns {Promise<boolean>} - Promise resolving to true if uncategorized groups exist, false otherwise.
+   */
+  checkUncategorizedExists: async () => {
+    try {
+       const response = await api.get('/transactions/uncategorized-groups/', {
+           params: { check_existence: true } // Use the new param
+       });
+       return response.data.has_uncategorized || false;
+    } catch (error) {
+        console.error('Error checking for uncategorized groups:', error.response || error);
+        // Assume none exist on error to avoid blocking UI, but log it
+        return false;
+    }
+ }
 
 };
 

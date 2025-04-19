@@ -271,3 +271,42 @@
       font-size: 15px;
   }
 }
+
+/* --- Categorization Prompt Styles --- */
+.categorization-prompt {
+  background-color: var(--teal-lighter); /* Use a distinct background */
+  border-left: 5px solid var(--teal); /* Accent border */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 25px; /* Adjust padding */
+}
+
+.categorization-prompt .prompt-icon {
+  font-size: 2.5em; /* Larger icon */
+  color: var(--teal);
+  flex-shrink: 0;
+}
+
+.categorization-prompt .prompt-text {
+  flex-grow: 1;
+}
+
+.categorization-prompt p {
+  margin: 0 0 5px 0;
+  color: var(--deep-navy);
+}
+.categorization-prompt p:last-child {
+  margin-bottom: 0;
+  font-size: 0.95em;
+}
+
+.categorization-prompt strong {
+  font-weight: 600;
+}
+
+.categorization-prompt .action-button {
+  padding: 10px 20px; /* Match other action buttons */
+  flex-shrink: 0; /* Prevent button shrinking */
+}

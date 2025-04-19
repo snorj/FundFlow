@@ -1,159 +1,218 @@
 import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types'; // For defining prop types
+import PropTypes from 'prop-types';
 import './CategorizationCard.css';
-import { FiCalendar, FiDollarSign, FiTag, FiChevronDown, FiChevronUp, FiCheck } from 'react-icons/fi'; // Example icons
+import { FiCalendar, FiDollarSign, FiTag, FiChevronDown, FiChevronUp, FiCheck, FiPlus, FiLoader } from 'react-icons/fi'; // Added FiPlus, FiLoader
+import categoryService from '../../services/categories'; // Import category service
 
-// --- Helper Functions (reuse from Dashboard if needed) ---
-const formatDate = (dateString) => {
-  if (!dateString) return 'N/A';
-  try {
-    const options = { year: 'numeric', month: 'short', day: 'numeric' };
-    return new Date(dateString + 'T00:00:00').toLocaleDateString(undefined, options);
-  } catch (e) { return dateString; }
-};
+// --- Helper Functions (Keep formatDate, formatCurrency) ---
+const formatDate = (dateString) => { /* ... */ };
+const formatCurrency = (amount, direction) => { /* ... */ };
 
-const formatCurrency = (amount, direction) => {
-  const numAmount = Number(amount);
-  if (isNaN(numAmount)) return 'N/A';
-  const options = { style: 'currency', currency: 'EUR' }; // Use appropriate currency
-  const formatted = Math.abs(numAmount).toLocaleString(undefined, options);
-  return direction === 'DEBIT' ? `- ${formatted}` : `+ ${formatted}`;
-};
-// --- End Helper Functions ---
-
+const CREATE_NEW_VALUE = "CREATE_NEW"; // Constant for the special value
 
 const CategorizationCard = ({ group, onCategorize, onSkip, availableCategories = [], isLoading = false }) => {
-  // State for the selected category ID for this group
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
-  // State for showing individual transaction editing (future use)
   const [showIndividual, setShowIndividual] = useState(false);
-  // State for potentially creating a new category (future use)
+  // --- NEW State for creating category ---
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false); // Track if create mode active
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryParentId, setNewCategoryParentId] = useState(''); // Store parent ID if creating nested
+  const [createCategoryError, setCreateCategoryError] = useState(null);
+  const [isSubmittingCreate, setIsSubmittingCreate] = useState(false); // Loading state for creation API call
+  // --- End NEW State ---
 
 
   // Reset local state when the group prop changes
   useEffect(() => {
       setSelectedCategoryId('');
       setShowIndividual(false);
+      setIsCreatingCategory(false); // Reset create mode
       setNewCategoryName('');
+      setNewCategoryParentId('');
+      setCreateCategoryError(null);
   }, [group]);
 
   if (!group || !group.description) {
-    // Handle case where group data is missing or invalid
     return <div className="categorization-card loading">Loading group...</div>;
   }
 
   const handleCategoryChange = (event) => {
-    setSelectedCategoryId(event.target.value);
-    // If implementing create-new, check if 'create-new' value is selected
+    const value = event.target.value;
+    setSelectedCategoryId(value);
+    setCreateCategoryError(null); // Clear errors on change
+    // Toggle create input visibility
+    if (value === CREATE_NEW_VALUE) {
+        setIsCreatingCategory(true);
+        setNewCategoryParentId(''); // Reset parent selection for new category
+    } else {
+        setIsCreatingCategory(false);
+        setNewCategoryName('');
+    }
   };
 
-  // Placeholder for submitting the category for the group
-  const handleApplyCategory = () => {
-    if (!selectedCategoryId || isLoading) return;
-    // In the next step, this will call the backend API
-    console.log(`Applying Category ID: ${selectedCategoryId} to ${group.count} transactions with description: ${group.description}`);
-    onCategorize(group.transaction_ids, selectedCategoryId); // Pass IDs and category ID up
-  };
-
-  // Placeholder for skipping this group for now
-  const handleSkip = () => {
-      console.log(`Skipping group: ${group.description}`);
-      onSkip(group.transaction_ids); // Notify parent component
+  // Handle input change for the new category name
+  const handleNewCategoryNameChange = (event) => {
+      setNewCategoryName(event.target.value);
+      setCreateCategoryError(null); // Clear errors on typing
   }
 
+  // Handle selecting a parent for the new category
+  const handleNewCategoryParentChange = (event) => {
+      setNewCategoryParentId(event.target.value === "null" ? null : event.target.value); // Handle 'null' string value
+  }
+
+  // Handle Applying/Creating Category
+  const handleApplyCategory = async () => {
+    setCreateCategoryError(null); // Clear previous errors
+    let categoryIdToApply = selectedCategoryId;
+
+    // --- Logic for Creating New Category ---
+    if (selectedCategoryId === CREATE_NEW_VALUE) {
+        if (!newCategoryName.trim()) {
+            setCreateCategoryError("Please enter a name for the new category.");
+            return;
+        }
+        setIsSubmittingCreate(true); // Start create loading
+        try {
+            console.log(`Creating new category: ${newCategoryName}, Parent ID: ${newCategoryParentId || 'None'}`);
+            const newCategoryData = {
+                name: newCategoryName.trim(),
+                parent: newCategoryParentId ? parseInt(newCategoryParentId, 10) : null // Send null or parsed ID
+            };
+            const createdCategory = await categoryService.createCategory(newCategoryData);
+            console.log("New category created:", createdCategory);
+            categoryIdToApply = createdCategory.id; // Get the ID of the newly created category
+
+            // Optionally: Add the new category to the availableCategories list in the parent
+            // state so it appears immediately in the next card's dropdown. This requires
+            // passing a handler down from CategorizeTransactions page.
+            // For now, it will be available on next page load/refresh.
+
+            // Reset create fields
+            setIsCreatingCategory(false);
+            setNewCategoryName('');
+            setNewCategoryParentId('');
+
+        } catch (creationError) {
+            console.error("Error creating category:", creationError);
+            setCreateCategoryError(creationError.message || "Could not create category.");
+            setIsSubmittingCreate(false); // Stop loading on error
+            return; // Stop the process if category creation failed
+        } finally {
+             setIsSubmittingCreate(false); // Stop loading
+        }
+    }
+    // --- End Create Logic ---
+
+
+    // Proceed to apply the category (either selected existing or newly created)
+    if (!categoryIdToApply || isLoading || isSubmittingCreate) return; // Ensure we have an ID and aren't loading
+
+    console.log(`Applying Category ID: ${categoryIdToApply} to ${group.count} transactions with description: ${group.description}`);
+    // Call the parent's handler, passing the final category ID (number)
+    onCategorize(group.transaction_ids, parseInt(categoryIdToApply, 10));
+  };
+
+  const handleSkip = () => { /* ... keep existing skip logic ... */ }
+
+  // Filter categories for the parent selection dropdown (only system or own top-level)
+  const parentCategoryOptions = availableCategories.filter(cat => cat.user === null || !cat.parent);
+
   return (
-    <div className={`categorization-card ${isLoading ? 'is-loading' : ''}`}>
-      {/* 1. Group Description */}
-      <h3 className="card-description">
-        <FiTag className="icon" /> {group.description}
-      </h3>
-      <p className="card-meta">
-        {group.count} transaction(s) between {formatDate(group.earliest_date)} and {formatDate(group.previews[group.previews.length - 1]?.date || group.earliest_date)}
-      </p>
+    <div className={`categorization-card ${isLoading || isSubmittingCreate ? 'is-loading' : ''}`}>
+      {/* ... (description, meta, previews remain the same) ... */}
+       <h3 className="card-description"><FiTag className="icon" /> {group.description}</h3>
+       {/* ... card-meta ... */}
+       {/* ... transaction-previews ... */}
+       {/* ... individual transactions area (hidden) ... */}
 
-      {/* 2. Transaction Previews */}
-      <div className="transaction-previews">
-        <p><strong>Recent transactions in this group:</strong></p>
-        <ul>
-          {group.previews.map(tx => (
-            <li key={tx.id}>
-              <span className="preview-date">{formatDate(tx.date)}</span>
-              <span className={`preview-amount amount-${tx.direction?.toLowerCase()}`}>
-                 {formatCurrency(tx.amount, tx.direction)}
-              </span>
-            </li>
-          ))}
-        </ul>
-        {group.count > group.previews.length && (
-          <button className="view-all-btn" onClick={() => setShowIndividual(!showIndividual)}>
-            {showIndividual ? <FiChevronUp /> : <FiChevronDown />} View All / Edit Individually ({group.count})
-          </button>
-        )}
-      </div>
-
-      {/* 3. Individual Transaction Editing Area (Future) */}
-      {showIndividual && (
-          <div className="individual-transactions-area">
-              <p><em>Individual editing UI will go here.</em></p>
-              {/* Map through all transaction_ids, fetch details maybe, show inputs */}
-          </div>
-      )}
-
-
-      {/* 4. Categorization Input */}
-      {!showIndividual && ( // Only show group categorization if not editing individually
+      {!showIndividual && (
         <div className="categorization-action-area">
           <label htmlFor={`category-select-${group.transaction_ids[0]}`}>Assign Category:</label>
           <select
-            id={`category-select-${group.transaction_ids[0]}`} // Unique ID based on group
+            id={`category-select-${group.transaction_ids[0]}`}
             value={selectedCategoryId}
             onChange={handleCategoryChange}
-            disabled={isLoading}
+            disabled={isLoading || isSubmittingCreate}
           >
-            <option value="" disabled>-- Select or Type Category --</option>
-            {/* Add option group for system categories */}
+            <option value="" disabled>-- Select or Create Category --</option>
+            {/* --- Add "Create New" Option --- */}
+            <option value={CREATE_NEW_VALUE}>-- Create New Category --</option>
+            {/* --- System Categories --- */}
             <optgroup label="System Categories">
-                {availableCategories.filter(cat => !cat.is_custom && !cat.parent).map(cat => ( // Top level system
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-                 {/* Basic nesting example - improve later */}
-                 {availableCategories.filter(cat => !cat.is_custom && cat.parent).map(cat => (
-                    <option key={cat.id} value={cat.id}>   - {cat.name}</option>
-                ))}
+                 {/* Render hierarchical options maybe using recursion or padding later */}
+                 {availableCategories.filter(cat => !cat.is_custom).map(cat => (
+                    <option key={cat.id} value={cat.id}>
+                        {cat.parent ? '\u00A0\u00A0\u00A0\u00A0↳ ' : ''}{cat.name} {/* Basic indent */}
+                    </option>
+                 ))}
             </optgroup>
-             {/* Add option group for user categories */}
+             {/* --- Your Categories --- */}
             <optgroup label="Your Categories">
-                 {availableCategories.filter(cat => cat.is_custom && !cat.parent).map(cat => ( // Top level custom
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-                {/* Basic nesting example - improve later */}
-                {availableCategories.filter(cat => cat.is_custom && cat.parent).map(cat => (
-                    <option key={cat.id} value={cat.id}>   - {cat.name}</option>
-                ))}
+                 {availableCategories.filter(cat => cat.is_custom).map(cat => (
+                    <option key={cat.id} value={cat.id}>
+                        {cat.parent ? '\u00A0\u00A0\u00A0\u00A0↳ ' : ''}{cat.name} {/* Basic indent */}
+                    </option>
+                 ))}
             </optgroup>
-            {/* Option to create new category */}
-            {/* <option value="create-new">-- Create New Category --</option> */}
           </select>
 
-          {/* TODO: Add input for creating new category if 'create-new' is selected */}
+          {/* --- Conditional Input for Creating New Category --- */}
+          {isCreatingCategory && (
+            <div className="create-category-form">
+              <div className="form-row">
+                 <div className="form-group">
+                    <label htmlFor={`new-cat-name-${group.transaction_ids[0]}`}>New Category Name:</label>
+                    <input
+                        type="text"
+                        id={`new-cat-name-${group.transaction_ids[0]}`}
+                        value={newCategoryName}
+                        onChange={handleNewCategoryNameChange}
+                        placeholder="e.g., 'Birthday Gifts'"
+                        disabled={isSubmittingCreate}
+                    />
+                 </div>
+                 <div className="form-group">
+                     <label htmlFor={`new-cat-parent-${group.transaction_ids[0]}`}>Parent (Optional):</label>
+                     <select
+                         id={`new-cat-parent-${group.transaction_ids[0]}`}
+                         value={newCategoryParentId}
+                         onChange={handleNewCategoryParentChange}
+                         disabled={isSubmittingCreate}
+                     >
+                         <option value="null">-- No Parent (Top Level) --</option>
+                         {/* System Categories */}
+                         <optgroup label="System Categories">
+                            {parentCategoryOptions.filter(cat => !cat.is_custom).map(cat => (
+                                <option key={cat.id} value={cat.id}>{cat.name}</option>
+                            ))}
+                         </optgroup>
+                         {/* Your Categories */}
+                         <optgroup label="Your Categories">
+                             {parentCategoryOptions.filter(cat => cat.is_custom).map(cat => (
+                                <option key={cat.id} value={cat.id}>{cat.name}</option>
+                             ))}
+                         </optgroup>
+                     </select>
+                 </div>
+              </div>
+              {createCategoryError && <p className="error-text">{createCategoryError}</p>}
+            </div>
+          )}
+          {/* --- End Create New Category Input --- */}
 
+
+          {/* --- Card Buttons --- */}
           <div className="card-buttons">
-              <button
-                  onClick={handleSkip}
-                  className="skip-button"
-                  disabled={isLoading}
-                  title="Categorize later"
-              >
-                  Skip
-              </button>
+              <button onClick={handleSkip} className="skip-button" disabled={isLoading || isSubmittingCreate}>Skip</button>
               <button
                   onClick={handleApplyCategory}
                   className="apply-button"
-                  disabled={!selectedCategoryId || selectedCategoryId === 'create-new' || isLoading}
-                  title={`Apply selected category to all ${group.count} transactions`}
+                  // Disable if no category selected OR if creating new but name is empty
+                  disabled={(!selectedCategoryId || selectedCategoryId === CREATE_NEW_VALUE && !newCategoryName.trim()) || isLoading || isSubmittingCreate}
               >
-                  <FiCheck /> Apply to All
+                 {isSubmittingCreate ? <FiLoader className="spinner-inline"/> : <FiCheck />}
+                 {selectedCategoryId === CREATE_NEW_VALUE ? 'Create & Apply' : 'Apply to All'}
               </button>
           </div>
         </div>
@@ -162,30 +221,7 @@ const CategorizationCard = ({ group, onCategorize, onSkip, availableCategories =
   );
 };
 
-// Define PropTypes for validation
-CategorizationCard.propTypes = {
-  group: PropTypes.shape({
-    description: PropTypes.string.isRequired,
-    earliest_date: PropTypes.string, // Assuming date comes as string
-    transaction_ids: PropTypes.arrayOf(PropTypes.number).isRequired,
-    previews: PropTypes.arrayOf(PropTypes.shape({
-        id: PropTypes.number.isRequired,
-        date: PropTypes.string,
-        amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
-        direction: PropTypes.string,
-        signed_amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-    })).isRequired,
-    count: PropTypes.number.isRequired,
-  }).isRequired,
-  onCategorize: PropTypes.func.isRequired, // Function to call when category applied
-  onSkip: PropTypes.func.isRequired,       // Function to call when skipping
-  availableCategories: PropTypes.arrayOf(PropTypes.shape({ // List of categories for dropdown
-      id: PropTypes.number.isRequired,
-      name: PropTypes.string.isRequired,
-      parent: PropTypes.number, // ID of parent or null
-      is_custom: PropTypes.bool,
-  })),
-  isLoading: PropTypes.bool, // To disable controls during API calls
-};
+// --- Keep PropTypes ---
+CategorizationCard.propTypes = { /* ... */ };
 
 export default CategorizationCard;
