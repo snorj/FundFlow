@@ -109,6 +109,10 @@ const CategorizationCard = ({ group, onCategorize, onSkip, availableCategories =
     if (!categoryIdToApply || isLoading || isSubmittingCreate) return; // Ensure we have an ID and aren't loading
 
     console.log(`Applying Category ID: ${categoryIdToApply} to ${group.count} transactions with description: ${group.description}`);
+    console.log("Applying category - Group data:", group); // Log the whole group
+    console.log("Applying category - Transaction IDs:", group.transaction_ids); // Log the specific array
+    console.log("Applying category - Category ID to apply:", categoryIdToApply);
+    
     // Call the parent's handler, passing the final category ID (number)
     onCategorize(group.transaction_ids, parseInt(categoryIdToApply, 10));
   };

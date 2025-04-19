@@ -32,10 +32,14 @@ const transactionService = {
   },
 
   batchUpdateCategory: async (transactionIds, categoryId) => {
-    // ... (existing batch update function) ...
     try {
-      const payload = { /* ... */ };
-      const response = await api.patch('/transactions/batch-categorize/', payload);
+      const payload = { // This payload looks correct
+        transaction_ids: transactionIds,
+        category_id: categoryId,
+      };
+      console.log("Sending PATCH payload:", payload); // <-- ADD LOGGING HERE
+      // Axios PATCH syntax: api.patch(url, data, [config])
+      const response = await api.patch('/transactions/batch-categorize/', payload); // <-- Check this line
       return response.data;
     } catch (error) {
       console.error('Error batch updating categories:', error.response || error);

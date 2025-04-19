@@ -74,10 +74,15 @@ const CategorizeTransactions = () => {
     };
 
     const handleNextCard = () => {
+        console.log(`handleNextCard called. Current Index: ${currentIndex}, Total Groups: ${groupedTransactions.length}`); // <-- LOG
         if (currentIndex < groupedTransactions.length - 1) {
-            setCurrentIndex(prevIndex => prevIndex + 1);
+            setCurrentIndex(prevIndex => {
+                const nextIndex = prevIndex + 1;
+                console.log(`Setting next index to: ${nextIndex}`); // <-- LOG
+                return nextIndex;
+            });
         } else {
-            console.log("Categorization complete!");
+            console.log("Categorization complete! Navigating..."); // <-- LOG
             navigate('/dashboard');
         }
     };

@@ -31,11 +31,20 @@ class BatchCategorizeTransactionView(APIView):
 
     def patch(self, request, *args, **kwargs):
         user = request.user
+        # --- ADD LOGGING ---
+        logger.info(f"User {user.id}: Received PATCH request for batch categorization.")
+        logger.info(f"Request data TYPE: {type(request.data)}")
+        logger.info(f"Request data CONTENT: {request.data}")
+        # --- END LOGGING ---
+
         transaction_ids = request.data.get('transaction_ids')
         category_id = request.data.get('category_id')
 
         # --- Input Validation ---
         if not isinstance(transaction_ids, list) or not transaction_ids:
+            # --- Add More Specific Logging ---
+            logger.error(f"Validation failed: 'transaction_ids' is not a non-empty list. Value received: {transaction_ids} (Type: {type(transaction_ids)})")
+            # --- End Logging ---
             return Response({'error': 'A non-empty list of "transaction_ids" is required.'}, status=status.HTTP_400_BAD_REQUEST)
         if not category_id:
             return Response({'error': '"category_id" is required.'}, status=status.HTTP_400_BAD_REQUEST)
