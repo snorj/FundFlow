@@ -236,43 +236,30 @@ PLAID_ENV = os.getenv('PLAID_ENV', 'sandbox')
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-    },
     'handlers': {
         'console': {
-            'level': 'INFO',
             'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
         },
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'debug.log'),
-            'formatter': 'verbose',
-        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO', # Change to DEBUG for more verbose output
     },
     'loggers': {
         'django': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
+            'handlers': ['console'],
+            'level': 'INFO', # Change to DEBUG for Django specific logs
+            'propagate': False,
+        },
+        # Add logger for your app if needed for specific levels
+        'transactions': {
+            'handlers': ['console'],
+            'level': 'DEBUG', # See DEBUG messages from transactions app
             'propagate': True,
         },
-        'finance': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': True,
-        },
-        'accounts': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
+         'accounts': { # Also log for accounts app
+            'handlers': ['console'],
+            'level': 'DEBUG',
             'propagate': True,
         },
     },

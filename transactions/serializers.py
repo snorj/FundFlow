@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Category
+from .models import Category, Transaction
 
 User = get_user_model()
 
@@ -82,3 +82,39 @@ class CategorySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"A category named '{value}' already exists under this parent.")
 
         return value.strip() # Return cleaned value
+    
+# --- NEW TRANSACTION SERIALIZER ---
+class TransactionSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Transaction model.
+    Includes category details nested (or just ID depending on need).
+    """
+    # To show category name instead of just ID in API responses:
+    category_name = serializers.CharField(source='category.name', read_only=True, allow_null=True)
+    # Or use nested serializer:
+    # category = CategorySerializer(read_only=True) # If you want full category object
+
+    user = serializers.PrimaryKeyRelatedField(read_only=True) # User assigned internally
+
+    class Meta:
+        model = Transaction
+        fields = [
+            'id',
+            'user',
+            'category', # ID for writing (if updating later)
+            'category_name', # Read-only name display
+            'transaction_date',
+            'description',
+            'amount',
+            'direction',
+            'signed_amount', # Include the property if useful for frontend
+            # Optional source fields if needed by frontend
+            'source_account_identifier',
+            'counterparty_identifier',
+            'source_code',
+            'source_type',
+            'source_notifications',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'user', 'category_name', 'signed_amount', 'created_at', 'updated_at']
