@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+// Import Transition components
+import { TransitionGroup, CSSTransition } from 'react-transition-group';
 import CategorizationCard from '../components/categorization/CategorizationCard';
-import transactionService from '../services/transactions'; // Use real service
-import categoryService from '../services/categories'; // Use real service
-import './CategorizeTransactions.css';
+import transactionService from '../services/transactions';
+import categoryService from '../services/categories';
+import './CategorizeTransactions.css'; // Ensure CSS is imported
 import { FiLoader, FiInbox, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
-
-// Remove Mock Category Service
-// --- End Remove Mock ---
-
 
 const CategorizeTransactions = () => {
     const [groupedTransactions, setGroupedTransactions] = useState([]);
@@ -17,20 +15,19 @@ const CategorizeTransactions = () => {
     const [isLoadingGroups, setIsLoadingGroups] = useState(true);
     const [isLoadingCategories, setIsLoadingCategories] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [error, setError] = useState(null); // For general loading errors
-    const [submitError, setSubmitError] = useState(null); // For submission errors
+    const [error, setError] = useState(null);
+    const [submitError, setSubmitError] = useState(null);
     const navigate = useNavigate();
 
-    // Fetch initial data
     const fetchData = useCallback(async () => {
         setIsLoadingGroups(true);
         setIsLoadingCategories(true);
         setError(null);
-        setSubmitError(null); // Clear submission errors too
+        setSubmitError(null);
         try {
             const [groupsData, categoriesData] = await Promise.all([
                 transactionService.getUncategorizedGroups(),
-                categoryService.getCategories() // Use real service now
+                categoryService.getCategories()
             ]);
             setGroupedTransactions(groupsData || []);
             setAvailableCategories(categoriesData || []);
@@ -51,29 +48,20 @@ const CategorizeTransactions = () => {
         fetchData();
     }, [fetchData]);
 
-    // --- Handlers for CategorizationCard ---
     const handleCategorizeGroup = async (transactionIds, categoryId) => {
         if (!categoryId) {
-            setSubmitError("Please select a category."); // Basic validation
+            setSubmitError("Please select a category.");
             return;
         }
-        console.log(`Parent: Attempting to categorize IDs: ${transactionIds} with Category ID: ${categoryId}`);
         setIsSubmitting(true);
-        setSubmitError(null); // Clear previous submission errors
+        setSubmitError(null);
         try {
-             // --- Use the real service function ---
-             const response = await transactionService.batchUpdateCategory(transactionIds, parseInt(categoryId, 10)); // Ensure categoryId is number
+             const response = await transactionService.batchUpdateCategory(transactionIds, parseInt(categoryId, 10));
              console.log("Batch categorize response:", response);
-             // --- End Use real service ---
-
-             // Move to the next card or finish
-             handleNextCard();
-
+             handleNextCard(); // Advance only on success
         } catch (err) {
              console.error("Error submitting categorization:", err);
-             // Display specific error from backend if available, otherwise generic
              setSubmitError(err.message || err.error || 'Failed to save category. Please try again.');
-             // Don't advance card on error
         } finally {
              setIsSubmitting(false);
         }
@@ -81,7 +69,7 @@ const CategorizeTransactions = () => {
 
     const handleSkipGroup = (transactionIds) => {
         console.log(`Parent: Skipping IDs: ${transactionIds}`);
-        setSubmitError(null); // Clear errors when skipping
+        setSubmitError(null);
         handleNextCard();
     };
 
@@ -90,18 +78,48 @@ const CategorizeTransactions = () => {
             setCurrentIndex(prevIndex => prevIndex + 1);
         } else {
             console.log("Categorization complete!");
-            navigate('/dashboard'); // Navigate back after finishing
+            navigate('/dashboard');
         }
     };
 
-    // --- Render Logic ---
     const currentGroup = groupedTransactions[currentIndex];
     const totalGroups = groupedTransactions.length;
     const isLoading = isLoadingGroups || isLoadingCategories;
 
-    if (isLoading) { /* ... loading state ... */ }
-    if (error && !isLoading) { /* ... error state ... */ } // Show general load error only if not loading
-    if (!isLoading && totalGroups === 0) { /* ... empty state ... */ }
+    // Define animation timeout duration (should match CSS)
+    const animationTimeout = 300; // milliseconds
+
+    if (isLoading) {
+        return (
+            <div className="categorization-page loading-state">
+                <FiLoader className="spinner" />
+                <p>Loading transactions to categorize...</p>
+            </div>
+        );
+    }
+
+    if (error && !isLoading) {
+         return (
+            <div className="categorization-page error-state">
+                <FiAlertCircle />
+                <p>Error loading data: {error}</p>
+                <button onClick={fetchData} className="retry-button">Retry</button>
+            </div>
+        );
+    }
+
+    if (!isLoading && totalGroups === 0) {
+         return (
+            <div className="categorization-page empty-state">
+                 <FiInbox />
+                 <h2>All Caught Up!</h2>
+                 <p>There are no transactions waiting for categorization.</p>
+                 <button onClick={() => navigate('/dashboard')} className="action-button teal-button">
+                     Back to Dashboard
+                 </button>
+            </div>
+         );
+    }
 
     return (
         <div className="categorization-page">
@@ -114,27 +132,35 @@ const CategorizeTransactions = () => {
                 )}
             </div>
 
-             {/* Error display for submission errors */}
-             {submitError && ( // Display specific submission errors here
+             {submitError && (
                 <div className="categorization-error error-message">
                    <FiAlertCircle /> {submitError}
                 </div>
              )}
 
-            {/* Render the current card */}
-            {currentGroup ? (
-                <CategorizationCard
-                    key={currentGroup.transaction_ids[0]}
-                    group={currentGroup}
-                    onCategorize={handleCategorizeGroup}
-                    onSkip={handleSkipGroup}
-                    availableCategories={availableCategories}
-                    isLoading={isSubmitting}
-                />
-            ) : (
-                // Should only show if initial fetch brings 0 groups, handled above
-                !isLoading && <p>No groups left to categorize.</p>
-            )}
+            {/* --- Animation Wrapper --- */}
+            <TransitionGroup className="categorization-card-container">
+                {/* Render CSSTransition ONLY if currentGroup exists */}
+                {currentGroup && (
+                    <CSSTransition
+                        key={currentGroup.transaction_ids[0]} // Unique key based on current group
+                        timeout={animationTimeout}
+                        classNames="card-transition" // Prefix for CSS classes
+                        unmountOnExit // Remove card from DOM after exit animation
+                    >
+                         {/* The Card component itself */}
+                        <CategorizationCard
+                            group={currentGroup}
+                            onCategorize={handleCategorizeGroup}
+                            onSkip={handleSkipGroup}
+                            availableCategories={availableCategories}
+                            isLoading={isSubmitting}
+                        />
+                    </CSSTransition>
+                )}
+            </TransitionGroup>
+            {/* --- End Animation Wrapper --- */}
+
         </div>
     );
 };

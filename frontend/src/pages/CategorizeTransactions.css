@@ -1,7 +1,7 @@
 .categorization-page {
-    padding: 20px; /* Padding handled by content-container, adjust if needed */
-    max-width: 800px; /* Limit width for better focus */
-    margin: 0 auto; /* Center the content */
+    padding: 20px;
+    max-width: 800px;
+    margin: 0 auto;
   }
   
   .categorization-header {
@@ -39,7 +39,7 @@
     justify-content: center;
     text-align: center;
     padding: 60px 20px;
-    min-height: 300px; /* Ensure some height */
+    min-height: 300px;
     color: var(--medium-blue);
   }
   
@@ -54,7 +54,7 @@
   .categorization-page.empty-state svg {
       font-size: 3em;
       margin-bottom: 20px;
-      color: var(--medium-blue); /* Or specific error/empty color */
+      color: var(--medium-blue);
   }
   .categorization-page.error-state svg {
       color: var(--warm-orange);
@@ -71,10 +71,8 @@
       margin-bottom: 10px;
   }
   
-  
   .retry-button,
   .categorization-page.empty-state .action-button {
-      /* Use existing action button styles maybe? Or customize */
       padding: 10px 25px;
       font-weight: 600;
       border-radius: 5px;
@@ -103,5 +101,48 @@
       font-size: 14px;
   }
   
-  /* --- Card Transition Area (Placeholder for Animation Later) --- */
-  /* Add styles for the container holding the card if needed for animation */
+  /* --- Card Transition Styles --- */
+  
+  /* Container rendered by TransitionGroup */
+  .categorization-card-container {
+    position: relative; /* Establishes positioning context for children */
+    min-height: 400px; /* Give it some minimum height to avoid collapse during transitions */
+    /* Add overflow: hidden; if needed, but might clip shadows */
+  }
+  
+  /* Base transition duration (must match timeout prop in CSSTransition) */
+  .card-transition-enter,
+  .card-transition-exit {
+    transition: opacity 300ms ease-in-out, transform 300ms ease-in-out;
+     /* Make cards absolute positioned during transition to allow overlap */
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%; /* Ensure it takes full width of container */
+  }
+  
+  /* Entering card: Start state (invisible, slightly offset) */
+  .card-transition-enter {
+    opacity: 0;
+    transform: scale(0.95) translateY(20px);
+  }
+  
+  /* Entering card: End state (fully visible, normal position) */
+  .card-transition-enter-active {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  
+  /* Exiting card: Start state (fully visible, normal position) */
+  .card-transition-exit {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  
+  /* Exiting card: End state (invisible, slightly offset) */
+  .card-transition-exit-active {
+    opacity: 0;
+    transform: scale(0.95) translateY(-20px);
+  }
+  
+  /* --- End Card Transition Styles --- */
