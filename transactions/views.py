@@ -20,6 +20,30 @@ logger = logging.getLogger(__name__)
 
 # Create your views here.
 
+# --- NEW TRANSACTION LIST VIEW ---
+class TransactionListView(generics.ListAPIView):
+    """
+    API endpoint to list transactions for the authenticated user.
+    Supports basic filtering and pagination (optional).
+    """
+    serializer_class = TransactionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    # Optional: Add pagination
+    # from rest_framework.pagination import PageNumberPagination
+    # pagination_class = PageNumberPagination
+    # pagination_class.page_size = 50 # Example page size
+
+    def get_queryset(self):
+        """
+        Return transactions owned by the currently authenticated user,
+        ordered by date descending.
+        """
+        user = self.request.user
+        logger.info(f"Fetching transactions for user: {user.username} ({user.id})")
+        queryset = Transaction.objects.filter(user=user).order_by('-transaction_date', '-created_at')
+        logger.info(f"Found {queryset.count()} transactions for user {user.id}")
+        return queryset
+
 class CategoryListCreateView(generics.ListCreateAPIView):
     """
     API endpoint to list accessible categories (System + User's Own)

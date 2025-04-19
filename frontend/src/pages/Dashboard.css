@@ -1,41 +1,204 @@
 /* frontend/src/pages/Dashboard.css */
 
-/* Using variables defined in index.css */
+/* Keep existing empty state styles if needed elsewhere,
+   but the primary empty state is now within the transaction section */
 
-.dashboard-page {
-  /* Padding removed here, handled by .content-container in MainLayout.css */
-  /* background-color is set by .content-container */
-  width: 100%; /* Ensure it takes full width of container */
-}
-
-/* --- Empty State Styles --- */
-.empty-state-container {
-  background-color: var(--white);
-  border-radius: 8px;
-  padding: 40px 50px;
-  text-align: center;
-  max-width: 700px;
-  margin: 40px auto; /* Center the container horizontally */
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--gray-border); /* Use variable */
-}
-
-.empty-state-heading {
-  color: var(--deep-navy);
-  font-size: 24px;
-  font-weight: 600;
-  margin-bottom: 15px;
-}
-
-.empty-state-text {
-  color: var(--medium-blue);
-  font-size: 16px;
-  line-height: 1.6;
-  margin-bottom: 35px;
-  max-width: 550px; /* Limit text width */
-  margin-left: auto;
-  margin-right: auto;
-}
+   .dashboard-page {
+    display: flex;
+    flex-direction: column;
+    gap: 30px; /* Space between sections */
+  }
+  
+  /* General Card Styling */
+  .card-style {
+    background-color: var(--white);
+    border-radius: 8px;
+    padding: 25px 30px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--gray-border);
+  }
+  
+  .section-title {
+    color: var(--deep-navy);
+    font-size: 20px;
+    font-weight: 600;
+    margin-top: 0;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--light-gray);
+  }
+  
+  .upload-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap; /* Allow wrapping */
+  }
+  
+  /* Style the file input */
+  #csv-upload-input {
+    /* Basic styling - consider libraries for better look */
+    border: 1px solid var(--gray-border);
+    padding: 8px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    flex-grow: 1; /* Allow it to take space */
+    min-width: 200px;
+  }
+  /* Style browser-specific file input button if desired */
+  #csv-upload-input::file-selector-button {
+    background-color: var(--medium-blue);
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-right: 10px;
+    transition: background-color 0.2s;
+  }
+  #csv-upload-input::file-selector-button:hover {
+    background-color: var(--deep-navy);
+  }
+  
+  .upload-button {
+    /* Use action-button styles */
+    padding: 10px 20px; /* Adjust size */
+    min-width: 150px; /* Ensure minimum width */
+    justify-content: center; /* Center icon/text */
+  }
+  
+  .upload-button .spinner {
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  
+  .upload-feedback {
+    margin-top: 15px;
+    padding: 12px 15px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+  }
+  
+  .upload-feedback.success-message {
+    background-color: var(--teal-lighter);
+    color: var(--teal-darkest);
+    border: 1px solid var(--teal);
+    flex-direction: column; /* Stack main message and errors */
+    align-items: flex-start;
+  }
+  
+  .upload-feedback.error-message {
+    background-color: var(--warm-orange-lighter);
+    color: var(--warm-orange-darker);
+    border: 1px solid var(--warm-orange);
+  }
+  
+  .upload-row-errors {
+      list-style: disc;
+      margin-top: 10px;
+      margin-left: 20px; /* Indent error list */
+      padding-left: 15px;
+      font-size: 13px;
+      color: var(--warm-orange-darker);
+  }
+  .upload-row-errors li {
+      margin-bottom: 4px;
+  }
+  
+  .loading-transactions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 40px 20px;
+    color: var(--medium-blue);
+    font-size: 16px;
+  }
+  .loading-transactions .spinner {
+      animation: spin 1s linear infinite;
+  }
+  
+  /* Minimal styling for the embedded empty state */
+  .empty-state-container.minimal {
+      background-color: transparent;
+      border: none;
+      box-shadow: none;
+      padding: 20px 0;
+      text-align: center;
+      margin: 20px auto;
+  }
+  .empty-state-container.minimal .empty-state-text {
+      margin-bottom: 20px;
+      color: var(--text-muted-dark);
+  }
+  .empty-state-container.minimal .action-buttons button {
+      font-size: 14px; /* Make button smaller maybe */
+      padding: 10px 20px;
+  }
+  
+  
+  /* Transaction Table Styles */
+  .transaction-table-container {
+    overflow-x: auto; /* Allow horizontal scrolling on small screens */
+  }
+  
+  .transaction-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  
+  .transaction-table th,
+  .transaction-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid var(--light-gray);
+  }
+  
+  .transaction-table th {
+    background-color: #f8f9fa; /* Very light header background */
+    font-weight: 600;
+    color: var(--medium-blue);
+  }
+  
+  .transaction-table tbody tr:hover {
+    background-color: var(--teal-lighter); /* Subtle hover */
+  }
+  
+  .transaction-table td:nth-child(1) { /* Date */
+    width: 15%;
+    white-space: nowrap;
+  }
+  .transaction-table td:nth-child(2) { /* Description */
+    width: 45%;
+    word-break: break-word; /* Allow long descriptions to wrap */
+  }
+  .transaction-table td:nth-child(3) { /* Category */
+    width: 20%;
+  }
+  .transaction-table td:nth-child(4) { /* Amount */
+    width: 20%;
+    text-align: right;
+    font-weight: 500;
+  }
+  
+  .transaction-table .uncategorized {
+    color: var(--text-muted-dark);
+    font-style: italic;
+  }
+  
+  .transaction-table .amount-debit {
+    color: var(--deep-navy); /* Or a red color */
+  }
+  .transaction-table .amount-credit {
+    color: var(--teal-darker); /* Or a green color */
+  }
 
 .action-buttons {
   display: flex;
