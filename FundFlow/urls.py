@@ -17,8 +17,8 @@ urlpatterns = [
     # Include JWT/API Auth URLs under '/api/auth/'
     path('api/auth/', include(accounts_api_urls)),
 
-    # Remove: path('', dashboard_view, name='dashboard') # Handled by React frontend
-    # Remove: path('api/finance/', include('finance.urls')) # Finance app removed
+    # Include Transaction/Category API URLs under '/api/'
+    path('api/', include('transactions.urls')), 
 ]
 
 # Note: You might want a catch-all route later to serve your React app's index.html
