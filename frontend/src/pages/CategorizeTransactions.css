@@ -1,0 +1,107 @@
+.categorization-page {
+    padding: 20px; /* Padding handled by content-container, adjust if needed */
+    max-width: 800px; /* Limit width for better focus */
+    margin: 0 auto; /* Center the content */
+  }
+  
+  .categorization-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--gray-border);
+  }
+  
+  .categorization-header h1 {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--deep-navy);
+    margin: 0;
+  }
+  
+  .progress-indicator {
+    font-size: 0.95em;
+    font-weight: 500;
+    color: var(--text-muted-dark);
+    background-color: var(--light-gray);
+    padding: 5px 10px;
+    border-radius: 4px;
+  }
+  
+  /* Loading and Error States */
+  .categorization-page.loading-state,
+  .categorization-page.error-state,
+  .categorization-page.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 60px 20px;
+    min-height: 300px; /* Ensure some height */
+    color: var(--medium-blue);
+  }
+  
+  .categorization-page .spinner {
+    font-size: 2.5em;
+    margin-bottom: 15px;
+    animation: spin 1.5s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  
+  .categorization-page.error-state svg,
+  .categorization-page.empty-state svg {
+      font-size: 3em;
+      margin-bottom: 20px;
+      color: var(--medium-blue); /* Or specific error/empty color */
+  }
+  .categorization-page.error-state svg {
+      color: var(--warm-orange);
+  }
+  
+  .categorization-page.error-state p,
+  .categorization-page.empty-state p {
+      font-size: 1.1em;
+      margin-bottom: 25px;
+  }
+  .categorization-page.empty-state h2 {
+      font-size: 1.5em;
+      color: var(--deep-navy);
+      margin-bottom: 10px;
+  }
+  
+  
+  .retry-button,
+  .categorization-page.empty-state .action-button {
+      /* Use existing action button styles maybe? Or customize */
+      padding: 10px 25px;
+      font-weight: 600;
+      border-radius: 5px;
+      cursor: pointer;
+      border: 1px solid var(--teal);
+      background-color: var(--teal);
+      color: var(--white);
+      transition: background-color 0.2s;
+  }
+  .retry-button:hover,
+  .categorization-page.empty-state .action-button:hover {
+      background-color: var(--teal-darker);
+      border-color: var(--teal-darker);
+  }
+  
+  .categorization-error.error-message {
+      background-color: var(--warm-orange-lighter);
+      color: var(--warm-orange-darker);
+      border: 1px solid var(--warm-orange);
+      padding: 12px 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+  }
+  
+  /* --- Card Transition Area (Placeholder for Animation Later) --- */
+  /* Add styles for the container holding the card if needed for animation */

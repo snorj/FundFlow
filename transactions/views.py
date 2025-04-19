@@ -13,12 +13,169 @@ from .models import Category, Transaction # Import Transaction model
 from .serializers import CategorySerializer, TransactionSerializer # Add TransactionSerializer later
 from .permissions import IsOwnerOrSystemReadOnly
 import logging
+from django.db.models import Count, Min
+from django.shortcuts import get_object_or_404 # Useful for getting the Category
 
 from transactions import serializers # Added logging
 
 logger = logging.getLogger(__name__)
 
 # Create your views here.
+# --- NEW BATCH CATEGORIZE VIEW ---
+class BatchCategorizeTransactionView(APIView):
+    """
+    API endpoint to assign a category to multiple transactions at once.
+    Expects a list of transaction IDs and a category ID in the request body.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, *args, **kwargs):
+        user = request.user
+        transaction_ids = request.data.get('transaction_ids')
+        category_id = request.data.get('category_id')
+
+        # --- Input Validation ---
+        if not isinstance(transaction_ids, list) or not transaction_ids:
+            return Response({'error': 'A non-empty list of "transaction_ids" is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not category_id:
+            return Response({'error': '"category_id" is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Ensure all provided IDs are integers
+        try:
+            transaction_ids = [int(tid) for tid in transaction_ids]
+            category_id = int(category_id)
+        except (ValueError, TypeError):
+            return Response({'error': 'Invalid ID format provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        logger.info(f"User {user.id}: Attempting to categorize {len(transaction_ids)} transactions with category ID {category_id}.")
+
+        # --- Validate Category ---
+        try:
+            # User must be able to access the category (System or their own)
+            category_to_assign = Category.objects.get(
+                Q(pk=category_id),
+                Q(user__isnull=True) | Q(user=user)
+            )
+            logger.debug(f"Found category: {category_to_assign.name}")
+        except Category.DoesNotExist:
+            logger.warning(f"User {user.id}: Category ID {category_id} not found or not accessible.")
+            return Response({'error': f'Category with ID {category_id} not found or access denied.'}, status=status.HTTP_404_NOT_FOUND) # Or 400 Bad Request
+
+        # --- Update Transactions ---
+        updated_count = 0
+        not_found_ids = []
+        not_owned_ids = []
+
+        # Filter transactions that belong to the user AND are in the provided list
+        # This prevents users from categorizing transactions they don't own
+        queryset = Transaction.objects.filter(
+            user=user,
+            id__in=transaction_ids
+        )
+
+        # Perform the update within a database transaction for atomicity
+        try:
+            with db_transaction.atomic():
+                updated_count = queryset.update(category=category_to_assign)
+        except Exception as e:
+             logger.error(f"Database error during batch categorization for user {user.id}: {e}")
+             return Response({"error": "Failed to update transactions due to a database error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+        # --- Verify which IDs were updated (optional but good feedback) ---
+        if updated_count != len(transaction_ids):
+            logger.warning(f"User {user.id}: Mismatch in updated count. Expected {len(transaction_ids)}, updated {updated_count}.")
+            # Find which requested IDs were not updated (either didn't exist or didn't belong to user)
+            updated_ids = set(queryset.values_list('id', flat=True))
+            all_requested_ids = set(transaction_ids)
+            missing_or_unowned_ids = list(all_requested_ids - updated_ids)
+            logger.warning(f"User {user.id}: IDs not updated (missing or not owned): {missing_or_unowned_ids}")
+            # Potentially split these into truly not found vs not owned if needed, requires more queries
+
+        logger.info(f"User {user.id}: Successfully categorized {updated_count} transactions with category '{category_to_assign.name}'.")
+        return Response({
+            'message': f'Successfully assigned category "{category_to_assign.name}" to {updated_count} transaction(s).',
+            'updated_count': updated_count,
+            # 'not_updated_ids': missing_or_unowned_ids # Optionally return IDs that failed
+        }, status=status.HTTP_200_OK)
+
+
+# --- NEW UNCATEGORIZED TRANSACTION VIEW ---
+class UncategorizedTransactionGroupView(APIView):
+    """
+    API endpoint to list uncategorized transactions for the authenticated user,
+    grouped by description. Returns groups ordered by the earliest transaction
+    date within each group.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    # Use default pagination settings if defined globally, or add custom one if needed
+    # pagination_class = PageNumberPagination (Import if needed)
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        logger.info(f"Fetching uncategorized transaction groups for user: {user.username} ({user.id})")
+
+        # 1. Filter uncategorized transactions for the user
+        uncategorized_txs = Transaction.objects.filter(
+            user=user,
+            category__isnull=True
+        ).order_by('description', 'transaction_date') # Order for predictable grouping (optional but good)
+
+        logger.debug(f"Queryset count BEFORE grouping (for user {user.id}): {uncategorized_txs.count()}") 
+        logger.info(f"Queryset count BEFORE grouping for user {user.id}: {uncategorized_txs.count()}")
+        logger.info(f"First 5 Tx IDs in queryset: {[tx.id for tx in uncategorized_txs[:5]]}")   
+
+        # 2. Group transactions by description in Python
+        # (Alternative: Could use database GROUP BY if performance becomes an issue,
+        # but Python grouping is often simpler for complex structures)
+        grouped_transactions = {}
+        for tx in uncategorized_txs:
+            description = tx.description # Or normalize description if needed (e.g., lowercase, strip)
+            if description not in grouped_transactions:
+                grouped_transactions[description] = {
+                    'description': description,
+                    'earliest_date': tx.transaction_date, # Track earliest date for sorting groups
+                    'transaction_ids': [], # Store IDs for batch update later
+                    'previews': [] # Store limited info for preview
+                }
+
+            # Update earliest date if current tx is earlier
+            if tx.transaction_date < grouped_transactions[description]['earliest_date']:
+                grouped_transactions[description]['earliest_date'] = tx.transaction_date
+
+            # Add transaction ID
+            grouped_transactions[description]['transaction_ids'].append(tx.id)
+
+            # Add preview data (limit number of previews per group if needed)
+            if len(grouped_transactions[description]['previews']) < 5: # Example limit
+                 grouped_transactions[description]['previews'].append({
+                     'id': tx.id,
+                     'date': tx.transaction_date,
+                     'amount': tx.amount,
+                     'direction': tx.direction,
+                     'signed_amount': tx.signed_amount # Use property if available
+                 })
+
+        # 3. Convert grouped data to a list and sort groups by earliest date
+        sorted_groups = sorted(
+            grouped_transactions.values(),
+            key=lambda group: group['earliest_date'] # Sort groups chronologically
+        )
+
+        # Optional: Add count to each group
+        for group in sorted_groups:
+            group['count'] = len(group['transaction_ids'])
+
+        logger.info(f"Found {len(sorted_groups)} groups of uncategorized transactions for user {user.id}")
+
+        # --- Optional: Apply Pagination if needed ---
+        # paginator = self.pagination_class()
+        # page = paginator.paginate_queryset(sorted_groups, request, view=self)
+        # if page is not None:
+        #     return paginator.get_paginated_response(page)
+
+        # Return the sorted list of groups
+        return Response(sorted_groups, status=status.HTTP_200_OK)
 
 # --- NEW TRANSACTION LIST VIEW ---
 class TransactionListView(generics.ListAPIView):
@@ -231,6 +388,10 @@ class TransactionCSVUploadView(APIView):
                     # Catch unexpected errors during row processing
                     logger.error(f"Row {i+1}: Unexpected error processing row: {str(e)}. Row data: {row}")
                     errors.append(f"Row {i+1}: Unexpected error skipped.")
+
+            logger.debug(f"Checking transactions before bulk create (sample):")
+            for i, tx_obj in enumerate(transactions_to_create[:3]): # Log first 3
+                logger.debug(f"  - Obj {i}: category={tx_obj.category}")
 
             # --- Bulk Create Transactions ---
             if transactions_to_create:

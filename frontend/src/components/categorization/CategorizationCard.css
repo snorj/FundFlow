@@ -1,0 +1,193 @@
+.categorization-card {
+    background-color: var(--white);
+    border-radius: 8px;
+    padding: 25px 30px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    border: 1px solid var(--gray-border);
+    margin-bottom: 20px; /* Space below card if multiple are shown somehow */
+    max-width: 650px; /* Limit card width */
+    margin-left: auto;
+    margin-right: auto;
+    transition: opacity 0.3s ease; /* For loading state */
+  }
+  
+  .categorization-card.is-loading {
+      opacity: 0.6;
+      pointer-events: none; /* Prevent interaction while loading */
+  }
+  
+  .card-description {
+    color: var(--deep-navy);
+    font-size: 1.3em;
+    font-weight: 600;
+    margin-top: 0;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .card-description .icon {
+    color: var(--medium-blue);
+    flex-shrink: 0; /* Prevent icon shrinking */
+  }
+  
+  .card-meta {
+    font-size: 0.9em;
+    color: var(--text-muted-dark);
+    margin-top: 0;
+    margin-bottom: 20px;
+  }
+  
+  .transaction-previews {
+    margin-bottom: 25px;
+    background-color: #f8f9fa; /* Slight background */
+    padding: 15px;
+    border-radius: 5px;
+    border: 1px solid var(--light-gray);
+  }
+  
+  .transaction-previews p {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-weight: 500;
+    font-size: 0.9em;
+    color: var(--medium-blue);
+  }
+  
+  .transaction-previews ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .transaction-previews li {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.95em;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--gray-border);
+  }
+  .transaction-previews li:last-child {
+      border-bottom: none;
+  }
+  
+  .preview-date {
+    color: var(--text-muted-dark);
+    white-space: nowrap;
+    padding-right: 15px;
+  }
+  
+  .preview-amount {
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  
+  .amount-debit { color: var(--deep-navy); }
+  .amount-credit { color: var(--teal-darker); }
+  
+  
+  .view-all-btn {
+      background: none;
+      border: none;
+      color: var(--teal);
+      cursor: pointer;
+      padding: 8px 0;
+      margin-top: 10px;
+      font-size: 0.9em;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+  }
+  .view-all-btn:hover {
+      color: var(--teal-darker);
+  }
+  
+  .individual-transactions-area {
+      margin-top: 15px;
+      padding: 15px;
+      border: 1px dashed var(--gray-border);
+      border-radius: 5px;
+      background-color: #fafbfc;
+  }
+  
+  
+  .categorization-action-area {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--light-gray);
+  }
+  
+  .categorization-action-area label {
+    display: block;
+    font-size: 0.95em;
+    font-weight: 600;
+    color: var(--medium-blue);
+    margin-bottom: 8px;
+  }
+  
+  .categorization-action-area select {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 1em;
+    border: 1px solid var(--gray-border);
+    border-radius: 5px;
+    background-color: var(--white);
+    margin-bottom: 20px;
+    appearance: none; /* Basic style reset */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%236c757d'%3E%3Cpolygon points='0,0 10,0 5,10'/%3E%3C/svg%3E"); /* Basic dropdown arrow */
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+  .categorization-action-area select:disabled {
+      background-color: var(--light-gray);
+      cursor: not-allowed;
+  }
+  
+  
+  .card-buttons {
+      display: flex;
+      justify-content: flex-end; /* Align buttons to the right */
+      gap: 10px;
+      margin-top: 15px;
+  }
+  
+  .card-buttons button {
+      padding: 10px 20px;
+      font-size: 0.95em;
+      font-weight: 600;
+      border-radius: 5px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+  }
+  .card-buttons button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+  }
+  
+  .skip-button {
+      background-color: var(--white);
+      color: var(--medium-blue);
+      border-color: var(--gray-border);
+  }
+  .skip-button:hover:not(:disabled) {
+      background-color: var(--light-gray);
+      border-color: var(--text-muted-dark);
+      color: var(--deep-navy);
+  }
+  
+  .apply-button {
+      background-color: var(--teal);
+      color: var(--white);
+  }
+  .apply-button:hover:not(:disabled) {
+      background-color: var(--teal-darker);
+  }
+  .apply-button svg {
+      margin-bottom: -1px;
+  }
