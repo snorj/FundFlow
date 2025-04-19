@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     # Add your apps here as you create them
     'accounts',
+    'transactions',
     # Third-party apps
     'rest_framework',
     'corsheaders',
