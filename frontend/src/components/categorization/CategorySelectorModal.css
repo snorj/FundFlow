@@ -1,0 +1,360 @@
+/* Styles for CategorySelectorModal and CategoryTreeNode */
+
+/* --- Modal Styles --- */
+.category-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(13, 27, 42, 0.6); /* Use Deep Navy with alpha */
+    z-index: 1040;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease-out forwards;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
+  .category-modal-content {
+    background-color: var(--white);
+    border-radius: 8px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 550px; /* Limit modal width */
+    max-height: 85vh; /* Limit height */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Prevent content overflow */
+    animation: slideUpFadeInModal 0.3s ease-out forwards;
+  }
+  
+  @keyframes slideUpFadeInModal {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--light-gray);
+  }
+  
+  .modal-header h2 {
+    margin: 0;
+    font-size: 1.25em;
+    font-weight: 600;
+    color: var(--deep-navy);
+  }
+  
+  .modal-close-button {
+    background: none;
+    border: none;
+    font-size: 1.5em;
+    line-height: 1;
+    padding: 5px;
+    cursor: pointer;
+    color: var(--text-muted-dark);
+    transition: color 0.2s;
+  }
+  .modal-close-button:hover {
+    color: var(--deep-navy);
+  }
+  
+  .modal-actions-top {
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--light-gray);
+  }
+  
+  .add-top-level-button {
+      background: none;
+      border: 1px dashed var(--teal);
+      color: var(--teal);
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9em;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: background-color 0.2s, color 0.2s;
+  }
+  .add-top-level-button:hover {
+      background-color: var(--teal-lighter);
+      color: var(--teal-darker);
+  }
+  .add-top-level-button svg {
+      margin-bottom: -1px;
+  }
+  
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto; /* Allow tree scrolling */
+    flex-grow: 1;
+  }
+  
+  .selection-preview {
+      font-size: 0.95em;
+      color: var(--text-muted-dark);
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px dashed var(--light-gray);
+  }
+  .selection-preview strong {
+      color: var(--deep-navy);
+      font-weight: 600;
+  }
+  
+  /* .category-tree-container {
+    /* Styles for the tree container if needed */
+  /* } */ 
+  
+  .tree-section {
+      margin-bottom: 15px;
+  }
+  .tree-section h4 {
+      font-size: 0.85em;
+      text-transform: uppercase;
+      color: var(--text-muted-dark);
+      margin: 0 0 8px 0;
+      letter-spacing: 0.5px;
+  }
+  
+  .no-categories-message {
+      text-align: center;
+      color: var(--text-muted-dark);
+      padding: 20px;
+  }
+  
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 15px 20px;
+    border-top: 1px solid var(--light-gray);
+    background-color: #f8f9fa;
+  }
+  
+  .modal-button {
+    padding: 8px 18px;
+    font-size: 0.95em;
+    font-weight: 600;
+    border-radius: 5px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+    margin-left: 10px;
+  }
+  .modal-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+  }
+  
+  .modal-button.cancel {
+    background-color: var(--white);
+    color: var(--medium-blue);
+    border-color: var(--gray-border);
+  }
+  .modal-button.cancel:hover:not(:disabled) {
+    background-color: var(--light-gray);
+  }
+  
+  .modal-button.confirm {
+    background-color: var(--teal);
+    color: var(--white);
+    border-color: var(--teal);
+  }
+  .modal-button.confirm:hover:not(:disabled) {
+    background-color: var(--teal-darker);
+    border-color: var(--teal-darker);
+  }
+  
+  
+  /* --- Category Tree Node Styles --- */
+  .category-tree-node {
+    margin-bottom: 2px; /* Small space between nodes */
+  }
+  
+  .node-content {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px; /* Padding around node content */
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.15s ease-in-out;
+    position: relative; /* For positioning add button */
+  }
+  
+  .node-content:hover {
+    background-color: var(--light-gray);
+  }
+  
+  .node-content.selected {
+    background-color: var(--teal-lighter);
+    /* font-weight: 600; */ /* Make selected bold? */
+    color: var(--teal-darkest);
+  }
+  .node-content.selected .node-name {
+      font-weight: 600;
+  }
+  
+  
+  .expand-icon {
+    display: inline-flex; /* Use flex for centering */
+    align-items: center;
+    justify-content: center;
+    width: 18px; /* Fixed width for alignment */
+    height: 18px;
+    margin-right: 5px;
+    color: var(--text-muted-dark);
+    flex-shrink: 0;
+    border-radius: 3px;
+  }
+  .expand-icon:hover {
+      background-color: rgba(0,0,0,0.05);
+  }
+  .expand-icon .spacer { /* Maintain space even if no icon */
+      display: inline-block;
+      width: 14px;
+  }
+  
+  
+  .node-name {
+    flex-grow: 1; /* Take available space */
+    font-size: 0.95em;
+  }
+  
+  .add-child-button {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 3px;
+      margin-left: 8px;
+      line-height: 0; /* Prevent extra button height */
+      opacity: 0; /* Hide by default */
+      transition: opacity 0.2s, color 0.2s;
+      border-radius: 3px;
+  }
+  .node-content:hover .add-child-button {
+      opacity: 0.7; /* Show on hover */
+  }
+  .add-child-button:hover {
+      opacity: 1;
+      color: var(--teal);
+      background-color: rgba(0,0,0,0.05);
+  }
+  
+  
+  /* .node-children {
+    /* Styles for children container if needed */
+    /* Example: border-left: 1px dashed var(--gray-border); margin-left: 9px; padding-left: 10px; */
+  /* } */ 
+
+    /* --- Inline Add Input Styles (within Tree Node) --- */
+    .add-child-input-area {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 0 5px 20px; /* Indent and vertical padding */
+        /* background-color: #eee; */ /* Optional subtle background */
+    }
+
+    .add-child-input-area input[type="text"] {
+        flex-grow: 1; /* Take available space */
+        padding: 4px 8px;
+        font-size: 0.9em;
+        border: 1px solid var(--gray-border);
+        border-radius: 3px;
+    }
+    .add-child-input-area input:disabled {
+        background-color: var(--light-gray);
+        cursor: not-allowed;
+    }
+
+
+    .add-child-input-area button {
+        background: none;
+        border: none;
+        padding: 4px;
+        cursor: pointer;
+        line-height: 0;
+        color: var(--text-muted-dark);
+        border-radius: 3px;
+        transition: color 0.2s, background-color 0.2s;
+    }
+    .add-child-input-area button:hover:not(:disabled) {
+        color: var(--deep-navy);
+        background-color: rgba(0,0,0,0.05);
+    }
+    .add-child-input-area button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    .add-child-input-area button .spinner-inline {
+        width: 14px; height: 14px;
+        vertical-align: middle;
+    }
+
+    .add-child-input-area .inline-error-text {
+        color: var(--warm-orange-darker);
+        font-size: 0.8em;
+        margin-left: 5px;
+    }
+
+    /* --- Top Level Add Input Styles --- */
+    .add-top-level-input-area {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-bottom: 10px; /* Space below input area */
+    }
+    .add-top-level-input-area input[type="text"] {
+        flex-grow: 1;
+        padding: 6px 10px;
+        font-size: 0.95em;
+        border: 1px solid var(--gray-border);
+        border-radius: 4px;
+    }
+    .add-top-level-input-area button {
+        background: none;
+        border: none;
+        padding: 5px;
+        cursor: pointer;
+        line-height: 0;
+        color: var(--text-muted-dark);
+        border-radius: 3px;
+        transition: color 0.2s, background-color 0.2s;
+    }
+    .add-top-level-input-area button:hover:not(:disabled) {
+        color: var(--deep-navy);
+        background-color: rgba(0,0,0,0.05);
+    }
+    .add-top-level-input-area button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    .add-top-level-input-area button .spinner-inline {
+        width: 14px; height: 14px; vertical-align: middle;
+    }
+
+    /* General modal error */
+    .modal-error.inline-error-text {
+        padding-left: 5px;
+        margin-top: -5px; /* Pull up slightly */
+        margin-bottom: 10px;
+        color: var(--warm-orange-darker);
+        font-size: 0.9em;
+    }
+
+    /* Disable tree interaction while creating */
+    .category-tree-container.disabled-tree {
+        opacity: 0.5;
+        pointer-events: none;
+    }

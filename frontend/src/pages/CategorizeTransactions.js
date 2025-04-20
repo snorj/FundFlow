@@ -1,11 +1,17 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'; // Import useRef
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+// Import Transition components
 import { TransitionGroup, CSSTransition } from 'react-transition-group';
+// Correctly import the Card component from its location
 import CategorizationCard from '../components/categorization/CategorizationCard';
+// Import services
 import transactionService from '../services/transactions';
 import categoryService from '../services/categories';
+// Import this page's CSS
 import './CategorizeTransactions.css';
-import { FiLoader, FiInbox, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
+// Import necessary icons
+import { FiLoader, FiInbox, FiAlertCircle } from 'react-icons/fi';
+
 
 const CategorizeTransactions = () => {
     const [groupedTransactions, setGroupedTransactions] = useState([]);
@@ -13,16 +19,27 @@ const CategorizeTransactions = () => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isLoadingGroups, setIsLoadingGroups] = useState(true);
     const [isLoadingCategories, setIsLoadingCategories] = useState(true);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [error, setError] = useState(null);
-    const [submitError, setSubmitError] = useState(null);
+    const [isSubmitting, setIsSubmitting] = useState(false); // Loading state for applying category
+    const [error, setError] = useState(null); // For general loading errors
+    const [submitError, setSubmitError] = useState(null); // For submission errors
     const navigate = useNavigate();
-    // --- Create refs for each potential card node ---
-    // We need an array of refs if we preload cards, but for one card at a time,
-    // one ref that gets reassigned is sufficient IF the key prop forces a remount.
-    // Let's stick with one ref for now, as the key change should handle reset.
-    const nodeRef = useRef(null);
+    const nodeRef = useRef(null); // Ref for CSSTransition
 
+    // Callback passed down to modal (via card) to refresh category list
+    const handleCategoriesUpdate = useCallback(async () => {
+        console.log("Refreshing categories list after update...");
+        // Optionally set a category-specific loading state here if needed
+        try {
+            const categoriesData = await categoryService.getCategories();
+            setAvailableCategories(categoriesData || []);
+        } catch (err) {
+            console.error("Error refreshing categories:", err);
+            // Set a general submit error or a specific category error state
+            setSubmitError("Could not refresh category list after update.");
+        }
+    }, []); // Dependency array is empty as it relies on categoryService
+
+    // Fetch initial data (groups and categories)
     const fetchData = useCallback(async () => {
         setIsLoadingGroups(true);
         setIsLoadingCategories(true);
@@ -46,17 +63,23 @@ const CategorizeTransactions = () => {
             setIsLoadingGroups(false);
             setIsLoadingCategories(false);
         }
-    }, []);
+    // Include handleCategoriesUpdate here ONLY if fetchData *needs* the latest categories
+    // which it doesn't currently, as it fetches them fresh.
+    // }, [handleCategoriesUpdate]);
+    }, []); // Keep dependency array empty for now
 
+    // Fetch data on component mount
     useEffect(() => {
         fetchData();
     }, [fetchData]);
 
+    // Handler for when the card signals to categorize a group
     const handleCategorizeGroup = async (transactionIds, categoryId) => {
         if (!categoryId) {
             setSubmitError("Please select a category.");
             return;
         }
+        console.log(`Parent: Attempting to categorize IDs: ${transactionIds} with Category ID: ${categoryId}`);
         setIsSubmitting(true);
         setSubmitError(null);
         try {
@@ -71,86 +94,115 @@ const CategorizeTransactions = () => {
         }
     };
 
+    // Handler for when the card signals to skip a group
     const handleSkipGroup = (transactionIds) => {
         console.log(`Parent: Skipping IDs: ${transactionIds}`);
         setSubmitError(null);
         handleNextCard();
     };
 
+    // Logic to advance to the next card or navigate away
     const handleNextCard = () => {
+        console.log(`handleNextCard called. Current Index: ${currentIndex}, Total Groups: ${groupedTransactions.length}`);
         if (currentIndex < groupedTransactions.length - 1) {
-            setCurrentIndex(prevIndex => prevIndex + 1);
+            setCurrentIndex(prevIndex => {
+                const nextIndex = prevIndex + 1;
+                console.log(`Setting next index to: ${nextIndex}`);
+                return nextIndex;
+            });
         } else {
-            console.log("Categorization complete!");
-            navigate('/dashboard');
+            console.log("Categorization complete! Navigating...");
+            navigate('/dashboard'); // Navigate back to dashboard after finishing
         }
     };
 
+    // --- Render Logic ---
     const currentGroup = groupedTransactions[currentIndex];
     const totalGroups = groupedTransactions.length;
     const isLoading = isLoadingGroups || isLoadingCategories;
-    const animationTimeout = 300;
 
-    // Assign the current group's potential node to the ref
-    // Note: This might cause a ref mismatch if not careful, but CSSTransition
-    // primarily uses it on mount/unmount based on the key.
-    // A more robust way might involve an array of refs if preloading.
-    useEffect(() => {
-        // Ensure ref is updated if needed, although maybe not necessary
-        // if CSSTransition uses it primarily on mount based on key change.
-        // If animations glitch, consider creating refs dynamically.
-    }, [currentIndex]);
+    const animationTimeout = 300; // Matches CSS transition duration
 
+    // Loading State
+    if (isLoading) {
+        return (
+            <div className="categorization-page loading-state">
+                <FiLoader className="spinner" />
+                <p>Loading transactions to categorize...</p>
+            </div>
+        );
+    }
 
-    if (isLoading) { /* ... loading ... */ }
-    if (error && !isLoading) { /* ... error ... */ }
-    if (!isLoading && totalGroups === 0) { /* ... empty ... */ }
+    // General Error State (for initial data load)
+    if (error && !isLoading) {
+         return (
+            <div className="categorization-page error-state">
+                <FiAlertCircle />
+                <p>Error loading data: {error}</p>
+                <button onClick={fetchData} className="retry-button">Retry</button>
+            </div>
+        );
+    }
 
-    // --- Inside the return statement ---
+    // All Done/Empty State (after loading, no errors)
+    if (!isLoading && !error && totalGroups === 0) {
+         return (
+            <div className="categorization-page empty-state">
+                 <FiInbox />
+                 <h2>All Caught Up!</h2>
+                 <p>There are no transactions waiting for categorization.</p>
+                 <button onClick={() => navigate('/dashboard')} className="action-button teal-button">
+                     Back to Dashboard
+                 </button>
+            </div>
+         );
+    }
+
+    // Main Render: Show Header, Errors, and Animated Card
     return (
         <div className="categorization-page">
             <div className="categorization-header">
                 <h1>Categorize Transactions</h1>
-                {totalGroups > 0 && (
+                {/* Show progress only if there are groups to process */}
+                {totalGroups > 0 && currentGroup && (
                     <span className="progress-indicator">
                         Group {currentIndex + 1} of {totalGroups}
                     </span>
                 )}
             </div>
 
-            {/* --- CORRECTED Submit Error Display --- */}
-            {submitError && (
+             {/* Display submission errors (errors during categorization action) */}
+             {submitError && (
                 <div className="categorization-error error-message">
-                <FiAlertCircle /> {submitError}
+                   <FiAlertCircle /> {submitError}
                 </div>
-            )}
-            {/* --- End Correction --- */}
+             )}
 
-
-            {/* --- Animation Wrapper --- */}
+            {/* Animation Wrapper */}
             <TransitionGroup className="categorization-card-container">
-                {/* ... CSSTransition and CategorizationCard ... */}
+                {/* Render CSSTransition ONLY if currentGroup exists */}
                 {currentGroup && (
                     <CSSTransition
-                        key={`${currentIndex}-${currentGroup.transaction_ids[0]}`}
+                        // Using a key that changes ensures animation triggers
+                        key={currentGroup.description + '-' + currentGroup.transaction_ids[0]}
                         timeout={animationTimeout}
                         classNames="card-transition"
                         unmountOnExit
-                        nodeRef={nodeRef}
+                        nodeRef={nodeRef} // Pass the ref for CSSTransition
                     >
+                         {/* Pass ref and the category update handler down */}
                         <CategorizationCard
-                            ref={nodeRef}
+                            ref={nodeRef} // Assign the ref to the card
                             group={currentGroup}
                             onCategorize={handleCategorizeGroup}
                             onSkip={handleSkipGroup}
                             availableCategories={availableCategories}
-                            isLoading={isSubmitting}
+                            isLoading={isSubmitting} // Pass submitting state for apply button
+                            onCategoriesUpdate={handleCategoriesUpdate} // Pass the refresh function
                         />
                     </CSSTransition>
                 )}
             </TransitionGroup>
-            {/* --- End Animation Wrapper --- */}
-
         </div>
     );
 };
