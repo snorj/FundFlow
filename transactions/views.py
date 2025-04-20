@@ -17,6 +17,7 @@ from django.db.models import Count, Min
 from django.shortcuts import get_object_or_404 # Useful for getting the Category
 from transactions import serializers # Added logging
 from django.db.models import Max # Import Max for aggregation
+from rest_framework.parsers import JSONParser
 
 logger = logging.getLogger(__name__)
 
@@ -28,23 +29,22 @@ class BatchCategorizeTransactionView(APIView):
     Expects a list of transaction IDs and a category ID in the request body.
     """
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser] # <-- *** ADD THIS LINE ***
 
     def patch(self, request, *args, **kwargs):
         user = request.user
-        # --- ADD LOGGING ---
+        # --- Keep Logging ---
         logger.info(f"User {user.id}: Received PATCH request for batch categorization.")
         logger.info(f"Request data TYPE: {type(request.data)}")
         logger.info(f"Request data CONTENT: {request.data}")
-        # --- END LOGGING ---
+        # --- End Logging ---
 
         transaction_ids = request.data.get('transaction_ids')
         category_id = request.data.get('category_id')
 
         # --- Input Validation ---
         if not isinstance(transaction_ids, list) or not transaction_ids:
-            # --- Add More Specific Logging ---
             logger.error(f"Validation failed: 'transaction_ids' is not a non-empty list. Value received: {transaction_ids} (Type: {type(transaction_ids)})")
-            # --- End Logging ---
             return Response({'error': 'A non-empty list of "transaction_ids" is required.'}, status=status.HTTP_400_BAD_REQUEST)
         if not category_id:
             return Response({'error': '"category_id" is required.'}, status=status.HTTP_400_BAD_REQUEST)

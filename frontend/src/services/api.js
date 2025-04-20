@@ -20,7 +20,8 @@ const api = axios.create({
   baseURL: '/api',
   withCredentials: true,  // Important for sending cookies with requests
   headers: {
-    'Content-Type': 'application/json',
+    // 'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
 });
 

@@ -1,12 +1,19 @@
 import api from './api'; // Your configured axios instance
 
 const transactionService = {
+  /**
+   * Uploads a CSV file containing transactions.
+   * @param {File} file - The CSV file object.
+   * @returns {Promise<object>} - Promise resolving to the API response data.
+   */
   uploadTransactions: async (file) => {
-    // ... (existing upload function) ...
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', file); // 'file' matches the key expected by the backend
+
     try {
-      const response = await api.post('/transactions/upload/', formData, { /* headers */ });
+      // Axios automatically sets the correct 'Content-Type: multipart/form-data; boundary=...'
+      // when the data is a FormData object. DO NOT set it manually here.
+      const response = await api.post('/transactions/upload/', formData); // <-- Remove the third argument (config with headers)
       return response.data;
     } catch (error) {
       console.error('Error uploading transactions:', error.response || error);
