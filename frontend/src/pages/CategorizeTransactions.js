@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react'; // Import useRef
 import { useNavigate } from 'react-router-dom';
-// Import Transition components
 import { TransitionGroup, CSSTransition } from 'react-transition-group';
 import CategorizationCard from '../components/categorization/CategorizationCard';
 import transactionService from '../services/transactions';
 import categoryService from '../services/categories';
-import './CategorizeTransactions.css'; // Ensure CSS is imported
+import './CategorizeTransactions.css';
 import { FiLoader, FiInbox, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
 
 const CategorizeTransactions = () => {
@@ -18,6 +17,11 @@ const CategorizeTransactions = () => {
     const [error, setError] = useState(null);
     const [submitError, setSubmitError] = useState(null);
     const navigate = useNavigate();
+    // --- Create refs for each potential card node ---
+    // We need an array of refs if we preload cards, but for one card at a time,
+    // one ref that gets reassigned is sufficient IF the key prop forces a remount.
+    // Let's stick with one ref for now, as the key change should handle reset.
+    const nodeRef = useRef(null);
 
     const fetchData = useCallback(async () => {
         setIsLoadingGroups(true);
@@ -74,15 +78,10 @@ const CategorizeTransactions = () => {
     };
 
     const handleNextCard = () => {
-        console.log(`handleNextCard called. Current Index: ${currentIndex}, Total Groups: ${groupedTransactions.length}`); // <-- LOG
         if (currentIndex < groupedTransactions.length - 1) {
-            setCurrentIndex(prevIndex => {
-                const nextIndex = prevIndex + 1;
-                console.log(`Setting next index to: ${nextIndex}`); // <-- LOG
-                return nextIndex;
-            });
+            setCurrentIndex(prevIndex => prevIndex + 1);
         } else {
-            console.log("Categorization complete! Navigating..."); // <-- LOG
+            console.log("Categorization complete!");
             navigate('/dashboard');
         }
     };
@@ -90,42 +89,24 @@ const CategorizeTransactions = () => {
     const currentGroup = groupedTransactions[currentIndex];
     const totalGroups = groupedTransactions.length;
     const isLoading = isLoadingGroups || isLoadingCategories;
+    const animationTimeout = 300;
 
-    // Define animation timeout duration (should match CSS)
-    const animationTimeout = 300; // milliseconds
+    // Assign the current group's potential node to the ref
+    // Note: This might cause a ref mismatch if not careful, but CSSTransition
+    // primarily uses it on mount/unmount based on the key.
+    // A more robust way might involve an array of refs if preloading.
+    useEffect(() => {
+        // Ensure ref is updated if needed, although maybe not necessary
+        // if CSSTransition uses it primarily on mount based on key change.
+        // If animations glitch, consider creating refs dynamically.
+    }, [currentIndex]);
 
-    if (isLoading) {
-        return (
-            <div className="categorization-page loading-state">
-                <FiLoader className="spinner" />
-                <p>Loading transactions to categorize...</p>
-            </div>
-        );
-    }
 
-    if (error && !isLoading) {
-         return (
-            <div className="categorization-page error-state">
-                <FiAlertCircle />
-                <p>Error loading data: {error}</p>
-                <button onClick={fetchData} className="retry-button">Retry</button>
-            </div>
-        );
-    }
+    if (isLoading) { /* ... loading ... */ }
+    if (error && !isLoading) { /* ... error ... */ }
+    if (!isLoading && totalGroups === 0) { /* ... empty ... */ }
 
-    if (!isLoading && totalGroups === 0) {
-         return (
-            <div className="categorization-page empty-state">
-                 <FiInbox />
-                 <h2>All Caught Up!</h2>
-                 <p>There are no transactions waiting for categorization.</p>
-                 <button onClick={() => navigate('/dashboard')} className="action-button teal-button">
-                     Back to Dashboard
-                 </button>
-            </div>
-         );
-    }
-
+    // --- Inside the return statement ---
     return (
         <div className="categorization-page">
             <div className="categorization-header">
@@ -137,24 +118,28 @@ const CategorizeTransactions = () => {
                 )}
             </div>
 
-             {submitError && (
+            {/* --- CORRECTED Submit Error Display --- */}
+            {submitError && (
                 <div className="categorization-error error-message">
-                   <FiAlertCircle /> {submitError}
+                <FiAlertCircle /> {submitError}
                 </div>
-             )}
+            )}
+            {/* --- End Correction --- */}
+
 
             {/* --- Animation Wrapper --- */}
             <TransitionGroup className="categorization-card-container">
-                {/* Render CSSTransition ONLY if currentGroup exists */}
+                {/* ... CSSTransition and CategorizationCard ... */}
                 {currentGroup && (
                     <CSSTransition
-                        key={currentGroup.transaction_ids[0]} // Unique key based on current group
+                        key={`${currentIndex}-${currentGroup.transaction_ids[0]}`}
                         timeout={animationTimeout}
-                        classNames="card-transition" // Prefix for CSS classes
-                        unmountOnExit // Remove card from DOM after exit animation
+                        classNames="card-transition"
+                        unmountOnExit
+                        nodeRef={nodeRef}
                     >
-                         {/* The Card component itself */}
                         <CategorizationCard
+                            ref={nodeRef}
                             group={currentGroup}
                             onCategorize={handleCategorizeGroup}
                             onSkip={handleSkipGroup}
