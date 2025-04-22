@@ -252,3 +252,106 @@
   box-shadow: 0 5px 15px rgba(0,0,0,0.2);
   z-index: 1050; /* Ensure it's above other content */
 }
+
+/* --- Styles for Transaction List Item Info Button --- */
+.transaction-list-scrollable li {
+  /* Keep existing styles (display: flex, etc.) */
+  position: relative; /* Needed if absolute positioning button, but flex is better */
+  gap: 10px; /* Add gap between elements */
+}
+
+.transaction-list-scrollable .tx-date {
+  flex-basis: auto; /* Let date take natural width */
+  padding-right: 10px;
+}
+
+.transaction-list-scrollable .tx-amount {
+  /* Keep existing */
+  margin-left: auto; /* Push amount to the right */
+  padding-left: 10px;
+}
+
+.view-info-button {
+  background: none;
+  border: none;
+  color: var(--text-muted-dark);
+  cursor: pointer;
+  padding: 3px;
+  margin-left: 5px; /* Space after amount */
+  line-height: 0;
+  border-radius: 3px;
+  transition: color 0.2s, background-color 0.2s;
+  flex-shrink: 0;
+}
+.view-info-button:hover:not(:disabled) {
+  color: var(--teal);
+  background-color: var(--light-gray);
+}
+.view-info-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+
+/* --- Transaction Detail Modal Styles --- */
+.transaction-detail-modal-overlay {
+position: fixed;
+top: 0;
+left: 0;
+right: 0;
+bottom: 0;
+background-color: rgba(13, 27, 42, 0.6); /* Consistent overlay */
+z-index: 1060; /* Higher than category modal */
+display: flex;
+align-items: center;
+justify-content: center;
+animation: fadeIn 0.2s ease-out forwards;
+}
+
+.transaction-detail-modal-content {
+background-color: var(--white);
+border-radius: 8px;
+box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+width: 90%;
+max-width: 600px; /* Adjust width */
+max-height: 90vh;
+display: flex;
+flex-direction: column;
+overflow: hidden;
+animation: slideUpFadeInModal 0.3s ease-out forwards;
+}
+
+/* Reuse modal header/footer/button styles from category modal if identical */
+.transaction-detail-modal-content .modal-body {
+  padding: 20px 25px; /* Adjust padding */
+  overflow-y: auto;
+  flex-grow: 1;
+  font-size: 0.95em; /* Base size for details */
+}
+
+/* Styles for Detail Items */
+.detail-item {
+  display: flex;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: var(--medium-blue);
+  width: 140px; /* Adjust width as needed */
+  flex-shrink: 0;
+  padding-right: 10px;
+}
+
+.detail-value {
+  color: var(--deep-navy);
+  word-break: break-word; /* Allow long values to wrap */
+}
+
+/* Separator */
+.detail-separator {
+  border: none;
+  border-top: 1px solid var(--light-gray);
+  margin: 15px 0;
+}

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, forwardRef } from 'react';
 import PropTypes from 'prop-types';
 import './CategorizationCard.css';
-// Add Edit/Save/Cancel icons
-import { FiTag, FiChevronDown, FiChevronUp, FiCheck, FiLoader, FiEdit2, FiSave, FiXCircle } from 'react-icons/fi';
+// Add FiInfo and update FiX import path if needed (assuming FiXCircle is used for description cancel)
+import { FiTag, FiCheck, FiLoader, FiEdit2, FiSave, FiXCircle, FiInfo, FiX } from 'react-icons/fi';
 import CategorySelectorModal from './CategorySelectorModal';
 
 // Helper Functions
@@ -28,15 +28,31 @@ const formatCurrency = (amount, direction) => {
   return direction?.toUpperCase() === 'DEBIT' ? `- ${formatted}` : `+ ${formatted}`;
 };
 
+// --- NEW: Helper to display detail field nicely ---
+const DetailField = ({ label, value }) => {
+    // Don't render if value is null, undefined, or empty string
+    if (value === null || typeof value === 'undefined' || value === '') {
+        return null;
+    }
+    return (
+        <div className="detail-item">
+            <span className="detail-label">{label}:</span>
+            <span className="detail-value">{value}</span>
+        </div>
+    );
+};
+DetailField.propTypes = { label: PropTypes.string, value: PropTypes.any };
+// --- End Helper ---
 
 // Wrap component in forwardRef for react-transition-group nodeRef
 const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableCategories = [], isLoading = false, onCategoriesUpdate }, ref) => {
     const [selectedCategoryId, setSelectedCategoryId] = useState('');
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    // --- NEW: State for Description Editing ---
+    // --- REINSTATE isCategoryModalOpen state ---
+    const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false); // Use this for Category modal
+    // --- END REINSTATE ---
     const [isEditingDescription, setIsEditingDescription] = useState(false);
     const [editedDescription, setEditedDescription] = useState('');
-    // --- End New State ---
+    const [viewingTxDetails, setViewingTxDetails] = useState(null); // State for Transaction Detail modal
 
     // --- Calculate selectedCategoryName BEFORE early return ---
     const selectedCategoryName = useMemo(() => {
@@ -49,11 +65,13 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
     }, [selectedCategoryId, availableCategories]);
 
 
+    // Reset local state when the group prop changes
     useEffect(() => {
         setSelectedCategoryId('');
-        setIsModalOpen(false);
+        setIsCategoryModalOpen(false); // Reset category modal state too
         setIsEditingDescription(false);
         setEditedDescription(group?.description || '');
+        setViewingTxDetails(null);
     }, [group]);
 
     if (!group || !group.description || !group.transaction_ids || group.transaction_ids.length === 0) {
@@ -90,17 +108,25 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
     // --- End Description Edit Handlers ---
 
 
-    // --- Modal Control Functions ---
-    const openCategoryModal = () => setIsModalOpen(true);
-    const closeCategoryModal = () => setIsModalOpen(false);
+    // --- UPDATED Modal Control Functions ---
+    const openCategoryModal = () => {
+        setViewingTxDetails(null); // Close detail modal if open
+        setIsCategoryModalOpen(true); // Use correct setter
+    }
+    const closeCategoryModal = () => setIsCategoryModalOpen(false); // Use correct setter
 
-    // --- Callback for Modal Selection ---
     const handleCategorySelected = (categoryId) => {
         console.log(`Card: Category selected via modal: ID = ${categoryId}`);
         setSelectedCategoryId(categoryId ? categoryId.toString() : '');
-        closeCategoryModal(); // Close modal after selection
+        closeCategoryModal();
     };
 
+    // Transaction Detail Modal Control
+    const openTxDetailModal = (tx) => {
+        setIsCategoryModalOpen(false); // Close category modal if open
+        setViewingTxDetails(tx);
+    };
+    const closeTxDetailModal = () => setViewingTxDetails(null);
 
     // --- Handle Apply Action (UPDATED) ---
     const handleApplyCategory = async () => {
@@ -194,7 +220,7 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
                     {group.earliest_date && ` between ${formatDate(group.earliest_date)} and ${formatDate(group.previews[group.previews.length - 1]?.date || group.earliest_date)}`}
                 </p>
 
-                {/* Scrollable Transaction List */}
+                {/* Scrollable Transaction List (UPDATED) */}
                 <div className="transaction-list-scrollable">
                      <p className="list-title">Transactions in this group:</p>
                      <ul>
@@ -204,6 +230,16 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
                                 <span className={`tx-amount amount-${tx.direction?.toLowerCase()}`}>
                                     {formatCurrency(tx.amount, tx.direction)}
                                 </span>
+                                {/* --- Add Info Button --- */}
+                                <button
+                                    className="view-info-button"
+                                    onClick={() => openTxDetailModal(tx)} // Pass the transaction object
+                                    title="View Details"
+                                    disabled={isLoading}
+                                >
+                                    <FiInfo size="14" />
+                                </button>
+                                {/* --- End Info Button --- */}
                             </li>
                         ))}
                     </ul>
@@ -240,19 +276,49 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
 
             </div> {/* End categorization-card div */}
 
-            {/* Modal */}
+            {/* Category Selector Modal */}
             <CategorySelectorModal
-                isOpen={isModalOpen}
+                isOpen={isCategoryModalOpen}
                 onClose={closeCategoryModal}
                 onSelectCategory={handleCategorySelected}
                 availableCategories={availableCategories}
                 onCategoriesUpdate={onCategoriesUpdate}
                 currentSelectedId={selectedCategoryId || null}
             />
-            {/* End Modal */}
+
+            {/* --- NEW: Transaction Detail Modal --- */}
+            {viewingTxDetails && (
+                <div className="transaction-detail-modal-overlay" onClick={closeTxDetailModal}>
+                    <div className="transaction-detail-modal-content" onClick={e => e.stopPropagation()}>
+                         <div className="modal-header">
+                            <h2>Transaction Details</h2>
+                            <button onClick={closeTxDetailModal} className="modal-close-button" aria-label="Close details">
+                                <FiX />
+                            </button>
+                         </div>
+                         <div className="modal-body">
+                             {/* Use the DetailField helper */}
+                             <DetailField label="Date" value={formatDate(viewingTxDetails.date)} />
+                             <DetailField label="Description" value={editedDescription || group.description} /> {/* Show potentially edited name */}
+                             <DetailField label="Amount" value={formatCurrency(viewingTxDetails.amount, viewingTxDetails.direction)} />
+                             <DetailField label="Direction" value={viewingTxDetails.direction} />
+                             <hr className="detail-separator" />
+                             <DetailField label="Source Account" value={viewingTxDetails.source_account} />
+                             <DetailField label="Counterparty" value={viewingTxDetails.counterparty} />
+                             <DetailField label="Code" value={viewingTxDetails.code} />
+                             <DetailField label="Type" value={viewingTxDetails.type} />
+                             <DetailField label="Notifications" value={viewingTxDetails.notifications} />
+                         </div>
+                          <div className="modal-footer">
+                            <button onClick={closeTxDetailModal} className="modal-button confirm">Close</button>
+                         </div>
+                    </div>
+                </div>
+            )}
+            {/* --- End Transaction Detail Modal --- */}
         </> // End Fragment
     );
-}); // Close forwardRef
+});
 
 // Define PropTypes for validation
 CategorizationCard.propTypes = {
@@ -266,6 +332,13 @@ CategorizationCard.propTypes = {
             amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
             direction: PropTypes.string,
             signed_amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+            // --- Add new shape props ---
+            source_account: PropTypes.string,
+            counterparty: PropTypes.string,
+            code: PropTypes.string,
+            type: PropTypes.string,
+            notifications: PropTypes.string,
+            // --- End new shape props ---
         })).isRequired,
         count: PropTypes.number.isRequired,
     }).isRequired,

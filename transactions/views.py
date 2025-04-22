@@ -197,14 +197,20 @@ class UncategorizedTransactionGroupView(APIView):
                 }
             # --- END ADD CHECK ---
 
-            # Now it's safe to append because the key exists
-            grouped_transactions[description]['transaction_ids'].append(tx.id)
+            # Add more detailed preview data, including source fields
             grouped_transactions[description]['previews'].append({
                  'id': tx.id,
                  'date': tx.transaction_date,
                  'amount': tx.amount,
                  'direction': tx.direction,
-                 'signed_amount': tx.signed_amount
+                 'signed_amount': tx.signed_amount,
+                 # --- ADD SOURCE FIELDS ---
+                 'source_account': tx.source_account_identifier,
+                 'counterparty': tx.counterparty_identifier,
+                 'code': tx.source_code,
+                 'type': tx.source_type,
+                 'notifications': tx.source_notifications,
+                 # --- END ADD SOURCE FIELDS ---
             })
 
             # --- Track MOST RECENT date ---
