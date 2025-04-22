@@ -66,26 +66,29 @@ const CategorizeTransactions = () => {
     // Include handleCategoriesUpdate here ONLY if fetchData *needs* the latest categories
     // which it doesn't currently, as it fetches them fresh.
     // }, [handleCategoriesUpdate]);
-    }, []); // Keep dependency array empty for now
+    }, [handleCategoriesUpdate]); // Keep dependency array empty for now
 
     // Fetch data on component mount
     useEffect(() => {
         fetchData();
     }, [fetchData]);
 
-    // Handler for when the card signals to categorize a group
-    const handleCategorizeGroup = async (transactionIds, categoryId) => {
-        if (!categoryId) {
-            setSubmitError("Please select a category.");
-            return;
-        }
-        console.log(`Parent: Attempting to categorize IDs: ${transactionIds} with Category ID: ${categoryId}`);
+    // --- UPDATED handleCategorizeGroup ---
+    const handleCategorizeGroup = async (transactionIds, categoryId, originalDescription, editedDescription) => {
+        if (!categoryId) { /* ... */ return; }
+        console.log(`Parent: Attempting to categorize IDs: ${transactionIds} with Category ID: ${categoryId}, OrigDesc: ${originalDescription}, EditedDesc: ${editedDescription}`);
         setIsSubmitting(true);
         setSubmitError(null);
         try {
-             const response = await transactionService.batchUpdateCategory(transactionIds, parseInt(categoryId, 10));
+             // Pass all necessary arguments to the service function
+             const response = await transactionService.batchUpdateCategory(
+                 transactionIds,
+                 parseInt(categoryId, 10),
+                 originalDescription,
+                 editedDescription // Pass null or the actual edited string
+                );
              console.log("Batch categorize response:", response);
-             handleNextCard(); // Advance only on success
+             handleNextCard();
         } catch (err) {
              console.error("Error submitting categorization:", err);
              setSubmitError(err.message || err.error || 'Failed to save category. Please try again.');
@@ -93,7 +96,7 @@ const CategorizeTransactions = () => {
              setIsSubmitting(false);
         }
     };
-
+    
     // Handler for when the card signals to skip a group
     const handleSkipGroup = (transactionIds) => {
         console.log(`Parent: Skipping IDs: ${transactionIds}`);

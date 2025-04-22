@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo, forwardRef } from 'react';
 import PropTypes from 'prop-types';
 import './CategorizationCard.css';
-// Import necessary icons
-import { FiTag, FiChevronDown, FiChevronUp, FiCheck, FiLoader } from 'react-icons/fi';
-// Import the Modal component
+// Add Edit/Save/Cancel icons
+import { FiTag, FiChevronDown, FiChevronUp, FiCheck, FiLoader, FiEdit2, FiSave, FiXCircle } from 'react-icons/fi';
 import CategorySelectorModal from './CategorySelectorModal';
 
 // Helper Functions
@@ -35,6 +34,10 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
     const [selectedCategoryId, setSelectedCategoryId] = useState('');
     const [showIndividual, setShowIndividual] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    // --- NEW: State for Description Editing ---
+    const [isEditingDescription, setIsEditingDescription] = useState(false);
+    const [editedDescription, setEditedDescription] = useState('');
+    // --- End New State ---
 
     // --- Calculate selectedCategoryName BEFORE early return ---
     const selectedCategoryName = useMemo(() => {
@@ -47,19 +50,49 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
     }, [selectedCategoryId, availableCategories]);
 
 
-    // Reset local state when the main group prop changes
+    // Reset local state when the group prop changes
     useEffect(() => {
         setSelectedCategoryId('');
         setShowIndividual(false);
-        setIsModalOpen(false); // Ensure modal is closed if group changes
-    }, [group]); // Dependency on the group object
+        setIsModalOpen(false);
+        // Reset description editing state as well
+        setIsEditingDescription(false);
+        setEditedDescription(group?.description || ''); // Initialize with group description
+    }, [group]); // Dependency includes group now
 
-    // --- Early return if group is invalid ---
+    // Early return check
     if (!group || !group.description || !group.transaction_ids || group.transaction_ids.length === 0) {
-        console.warn("CategorizationCard received invalid or empty group prop:", group);
-        // Attach ref here because forwardRef needs it attached to a DOM element returned
         return <div ref={ref} className="categorization-card loading">Loading group...</div>;
     }
+
+    // --- Description Edit Handlers ---
+    const handleEditDescriptionClick = () => {
+        setEditedDescription(group.description); // Start editing with original value
+        setIsEditingDescription(true);
+    };
+
+    const handleDescriptionChange = (event) => {
+        setEditedDescription(event.target.value);
+    };
+
+    const handleSaveDescription = () => {
+        // Basic validation: don't save if empty
+        if (!editedDescription.trim()) {
+            // Maybe show an error message briefly?
+            return;
+        }
+        // Here we just save the state locally. The actual 'saving' happens
+        // when the category is applied, sending the editedDescription.
+        console.log(`Description locally updated to: "${editedDescription.trim()}"`);
+        setIsEditingDescription(false);
+        // We don't need to trim the state variable itself yet, trim when sending
+    };
+
+    const handleCancelEditDescription = () => {
+        setIsEditingDescription(false);
+        setEditedDescription(group.description); // Reset to original
+    };
+    // --- End Description Edit Handlers ---
 
 
     // --- Modal Control Functions ---
@@ -74,16 +107,27 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
     };
 
 
-    // --- Handle Apply Action ---
+    // --- Handle Apply Action (UPDATED) ---
     const handleApplyCategory = async () => {
-        if (!selectedCategoryId || isLoading) {
-            console.warn("Apply clicked but no category selected or already loading.");
-            return;
-        }
-        console.log(`Card: Applying Category ID: ${selectedCategoryId} to ${group.count} transactions.`);
-        // Call the parent's handler, passing the final category ID (number)
-        onCategorize(group.transaction_ids, parseInt(selectedCategoryId, 10));
+        if (!selectedCategoryId || isLoading) { return; }
+
+        // Determine if description was actually changed
+        const finalCleanName = editedDescription.trim();
+        const originalDesc = group.description;
+        const cleanNameToSend = (finalCleanName && finalCleanName !== originalDesc) ? finalCleanName : null;
+
+        console.log(`Applying Category ID: ${selectedCategoryId} to ${group.count} transactions.`);
+        console.log(`Original Desc: "${originalDesc}", Clean Name to Send: "${cleanNameToSend || 'N/A'}"`);
+
+        // Pass original description and potentially edited clean name to parent
+        onCategorize(
+            group.transaction_ids,
+            parseInt(selectedCategoryId, 10),
+            originalDesc, // Always pass the original description for matching rule
+            cleanNameToSend // Pass the edited name only if it changed, otherwise null
+        );
     };
+    // --- End Apply Action ---
 
 
     // --- Handle Skip ---
@@ -99,8 +143,37 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
         <>
             {/* Attach ref to the main card div */}
             <div ref={ref} className={`categorization-card ${isLoading ? 'is-loading' : ''}`}>
-                {/* Header */}
-                <h3 className="card-description"><FiTag className="icon" /> {group.description}</h3>
+{/* --- UPDATED Header with Editable Description --- */}
+<div className="card-header">
+                    {!isEditingDescription ? (
+                        <>
+                            <h3 className="card-description">
+                                <FiTag className="icon" />
+                                {editedDescription || group.description} {/* Show edited or original */}
+                            </h3>
+                            <button onClick={handleEditDescriptionClick} className="edit-description-button" title="Edit description/vendor name">
+                                <FiEdit2 size="16"/>
+                            </button>
+                        </>
+                    ) : (
+                        <div className="description-edit-input-area">
+                            <input
+                                type="text"
+                                value={editedDescription}
+                                onChange={handleDescriptionChange}
+                                autoFocus
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveDescription(); else if (e.key === 'Escape') handleCancelEditDescription();}}
+                            />
+                            <button onClick={handleSaveDescription} title="Save Description" disabled={!editedDescription.trim()}>
+                                <FiSave size="16"/>
+                            </button>
+                            <button onClick={handleCancelEditDescription} title="Cancel Edit">
+                                <FiXCircle size="16"/>
+                            </button>
+                        </div>
+                    )}
+                </div>
+                 {/* --- END UPDATED Header --- */}
                 <p className="card-meta">
                     {group.count} transaction(s)
                     {/* Add date range only if dates are valid */}

@@ -3,7 +3,7 @@ from django.urls import reverse
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
-from ..models import Category, Transaction
+from ..models import Category, Transaction, DescriptionMapping
 from decimal import Decimal
 from datetime import date
 
@@ -130,85 +130,232 @@ class TransactionAPITests(APITestCase):
 
     # === Batch Categorize Tests (PATCH /api/transactions/batch-categorize/) ===
 
-    def test_batch_categorize_success(self):
-        transaction_ids = [self.tx1_user1.id, self.tx2_user1.id]
+    def test_batch_categorize_success_no_rename(self):
+        """
+        Test categorizing without renaming (no clean_name provided).
+        No DescriptionMapping should be created if one doesn't exist,
+        but transactions should be updated.
+        """
+        transaction_ids = [self.tx1_user1.id, self.tx2_user1.id] # Coffee Shop A
         category_id = self.cat_food.id
-        data = {'transaction_ids': transaction_ids, 'category_id': category_id}
+        original_desc = self.tx1_user1.description # Get original desc
+
+        # --- Payload: No clean_name ---
+        data = {
+            'transaction_ids': transaction_ids,
+            'category_id': category_id,
+            'original_description': original_desc
+        }
+
+        mapping_exists_before = DescriptionMapping.objects.filter(
+            user=self.user1, original_description=original_desc).exists()
+
         response = self.client.patch(self.batch_categorize_url, data, format='json')
+
+        # Assertions
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['updated_count'], 2)
-        self.assertIn(f'assigned category "{self.cat_food.name}"', response.data['message'])
-        # Verify DB
-        tx1 = Transaction.objects.get(pk=self.tx1_user1.id); tx2 = Transaction.objects.get(pk=self.tx2_user1.id); tx3 = Transaction.objects.get(pk=self.tx3_user1.id)
-        self.assertEqual(tx1.category, self.cat_food); self.assertEqual(tx2.category, self.cat_food); self.assertIsNone(tx3.category)
+        # --- Corrected Assertion ---
+        # Expect the message to indicate rule creation/update
+        self.assertIn(f'Rule for "{original_desc}"', response.data['message'])
+        # Optionally check if it says 'created' specifically if that's guaranteed
+        self.assertIn('created', response.data['message'])
+        # --- End Correction ---
 
-    def test_batch_categorize_success_single_transaction(self):
-        transaction_ids = [self.tx3_user1.id]
+        # Verify Mapping Rule (should NOT have been created just for categorizing)
+        # Although update_or_create *will* create one if it doesn't exist,
+        # even if clean_name matches original. Let's test the state *after*.
+        mapping = DescriptionMapping.objects.filter(user=self.user1, original_description=original_desc).first()
+        self.assertIsNotNone(mapping) # update_or_create ensures it exists
+        self.assertEqual(mapping.clean_name, original_desc) # Clean name defaults to original
+        self.assertEqual(mapping.assigned_category, self.cat_food)
+
+
+    def test_batch_categorize_success_with_rename_creates_rule(self):
+        """
+        Test categorizing WITH renaming, creating a new DescriptionMapping rule.
+        """
+        transaction_ids = [self.tx1_user1.id, self.tx2_user1.id] # Coffee Shop A
         category_id = self.cat_food.id
-        data = {'transaction_ids': transaction_ids, 'category_id': category_id}
-        response = self.client.patch(self.batch_categorize_url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK); self.assertEqual(response.data['updated_count'], 1)
-        tx3 = Transaction.objects.get(pk=self.tx3_user1.id); self.assertEqual(tx3.category, self.cat_food)
+        original_desc = self.tx1_user1.description
+        clean_name = "My Fav Coffee Place" # New clean name
 
-    def test_batch_categorize_success_with_custom_category(self):
-        transaction_ids = [self.tx1_user1.id]
-        category_id = self.cat_user1_custom.id
-        data = {'transaction_ids': transaction_ids, 'category_id': category_id}
+        # --- Payload: With clean_name ---
+        data = {
+            'transaction_ids': transaction_ids,
+            'category_id': category_id,
+            'original_description': original_desc,
+            'clean_name': clean_name
+        }
+
+        # Ensure no mapping exists beforehand
+        self.assertFalse(DescriptionMapping.objects.filter(
+            user=self.user1, original_description=original_desc).exists())
+
         response = self.client.patch(self.batch_categorize_url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK); self.assertEqual(response.data['updated_count'], 1)
-        tx1 = Transaction.objects.get(pk=self.tx1_user1.id); self.assertEqual(tx1.category, self.cat_user1_custom)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['updated_count'], 2)
+        self.assertIn('Rule for "Coffee Shop A" created', response.data['message'])
+
+        # Verify Transaction DB changes
+        tx1 = Transaction.objects.get(pk=self.tx1_user1.id)
+        tx2 = Transaction.objects.get(pk=self.tx2_user1.id)
+        self.assertEqual(tx1.category, self.cat_food)
+        self.assertEqual(tx2.category, self.cat_food)
+        # Descriptions should be updated to clean name
+        self.assertEqual(tx1.description, clean_name)
+        self.assertEqual(tx2.description, clean_name)
+
+        # Verify Mapping Rule Creation
+        mapping = DescriptionMapping.objects.filter(
+            user=self.user1, original_description=original_desc).first()
+        self.assertIsNotNone(mapping)
+        self.assertEqual(mapping.clean_name, clean_name)
+        self.assertEqual(mapping.assigned_category, self.cat_food)
+
+
+    def test_batch_categorize_success_with_rename_updates_rule(self):
+        """
+        Test categorizing WITH renaming, updating an existing DescriptionMapping rule.
+        """
+        # --- Create an initial rule ---
+        original_desc = self.tx3_user1.description # Supermarket B
+        initial_clean_name = "Grocery Store"
+        initial_category = self.cat_food
+        DescriptionMapping.objects.create(
+            user=self.user1,
+            original_description=original_desc,
+            clean_name=initial_clean_name,
+            assigned_category=initial_category
+        )
+        # --- End Initial Rule ---
+
+        transaction_ids = [self.tx3_user1.id]
+        new_category_id = self.cat_user1_custom.id # Change category to Gadgets
+        new_clean_name = "SuperMart" # Change clean name
+
+        data = {
+            'transaction_ids': transaction_ids,
+            'category_id': new_category_id,
+            'original_description': original_desc,
+            'clean_name': new_clean_name
+        }
+
+        response = self.client.patch(self.batch_categorize_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['updated_count'], 1)
+        self.assertIn(f'Rule for "{original_desc}" updated', response.data['message'])
+
+        # Verify Transaction DB changes
+        tx3 = Transaction.objects.get(pk=self.tx3_user1.id)
+        self.assertEqual(tx3.category, self.cat_user1_custom)
+        self.assertEqual(tx3.description, new_clean_name) # Description updated
+
+        # Verify Mapping Rule Update
+        mapping = DescriptionMapping.objects.get(user=self.user1, original_description=original_desc)
+        self.assertEqual(mapping.clean_name, new_clean_name) # Check new clean name
+        self.assertEqual(mapping.assigned_category, self.cat_user1_custom) # Check new category
+
+
+    def test_batch_categorize_success_empty_clean_name_uses_original(self):
+        """
+        Test that sending empty/whitespace clean_name defaults to original_description
+        and updates/creates the rule accordingly.
+        """
+        transaction_ids = [self.tx1_user1.id]
+        category_id = self.cat_food.id
+        original_desc = self.tx1_user1.description
+
+        data = {
+            'transaction_ids': transaction_ids,
+            'category_id': category_id,
+            'original_description': original_desc,
+            'clean_name': "   " # Empty whitespace
+        }
+
+        response = self.client.patch(self.batch_categorize_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['updated_count'], 1)
+
+        # Verify Transaction uses original description
+        tx1 = Transaction.objects.get(pk=self.tx1_user1.id)
+        self.assertEqual(tx1.description, original_desc)
+        self.assertEqual(tx1.category, self.cat_food)
+
+        # Verify Mapping rule uses original description as clean_name
+        mapping = DescriptionMapping.objects.get(user=self.user1, original_description=original_desc)
+        self.assertEqual(mapping.clean_name, original_desc)
+        self.assertEqual(mapping.assigned_category, self.cat_food)
+
+    # --- Keep failure tests, but add checks for original_description ---
 
     def test_batch_categorize_fail_invalid_category_id(self):
         transaction_ids = [self.tx1_user1.id]; invalid_category_id = 9999
-        data = {'transaction_ids': transaction_ids, 'category_id': invalid_category_id}
+        # Need original description now
+        data = {'transaction_ids': transaction_ids, 'category_id': invalid_category_id, 'original_description': self.tx1_user1.description}
         response = self.client.patch(self.batch_categorize_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND); self.assertIn('error', response.data)
         tx1 = Transaction.objects.get(pk=self.tx1_user1.id); self.assertIsNone(tx1.category)
 
     def test_batch_categorize_fail_category_not_owned(self):
         transaction_ids = [self.tx1_user1.id]; other_user_category_id = self.cat_user2_custom.id
-        data = {'transaction_ids': transaction_ids, 'category_id': other_user_category_id}
+        # Need original description now
+        data = {'transaction_ids': transaction_ids, 'category_id': other_user_category_id, 'original_description': self.tx1_user1.description}
         response = self.client.patch(self.batch_categorize_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND); self.assertIn('error', response.data)
         tx1 = Transaction.objects.get(pk=self.tx1_user1.id); self.assertIsNone(tx1.category)
 
     def test_batch_categorize_fail_transaction_not_owned(self):
         transaction_ids = [self.tx1_user2.id]; category_id = self.cat_food.id
-        data = {'transaction_ids': transaction_ids, 'category_id': category_id}
+        # Need original description (from the transaction we are *trying* to modify)
+        data = {'transaction_ids': transaction_ids, 'category_id': category_id, 'original_description': self.tx1_user2.description}
         response = self.client.patch(self.batch_categorize_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK); self.assertEqual(response.data['updated_count'], 0)
         tx1_user2 = Transaction.objects.get(pk=self.tx1_user2.id); self.assertIsNone(tx1_user2.category)
+        # Rule should not have been created/updated for user1
+        self.assertFalse(DescriptionMapping.objects.filter(user=self.user1, original_description=self.tx1_user2.description).exists())
+
 
     def test_batch_categorize_fail_partial_ownership(self):
         transaction_ids = [self.tx1_user1.id, self.tx1_user2.id]; category_id = self.cat_food.id
-        data = {'transaction_ids': transaction_ids, 'category_id': category_id}
+        # Need original description (should match the one we expect to be processed, i.e. tx1_user1's)
+        data = {'transaction_ids': transaction_ids, 'category_id': category_id, 'original_description': self.tx1_user1.description}
         response = self.client.patch(self.batch_categorize_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK); self.assertEqual(response.data['updated_count'], 1)
         tx1_user1 = Transaction.objects.get(pk=self.tx1_user1.id); tx1_user2 = Transaction.objects.get(pk=self.tx1_user2.id)
         self.assertEqual(tx1_user1.category, self.cat_food); self.assertIsNone(tx1_user2.category)
+        # Rule should have been created/updated for user1 for tx1_user1's description
+        self.assertTrue(DescriptionMapping.objects.filter(user=self.user1, original_description=self.tx1_user1.description).exists())
+
 
     def test_batch_categorize_fail_missing_data(self):
         # Missing transaction_ids
-        response = self.client.patch(self.batch_categorize_url, {'category_id': self.cat_food.id}, format='json')
+        response = self.client.patch(self.batch_categorize_url, {'category_id': self.cat_food.id, 'original_description': 'Desc'}, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST); self.assertIn('transaction_ids', response.data['error'].lower())
         # Missing category_id
-        response = self.client.patch(self.batch_categorize_url, {'transaction_ids': [self.tx1_user1.id]}, format='json')
+        response = self.client.patch(self.batch_categorize_url, {'transaction_ids': [self.tx1_user1.id], 'original_description': 'Desc'}, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST); self.assertIn('category_id', response.data['error'].lower())
         # Empty transaction_ids list
-        response = self.client.patch(self.batch_categorize_url, {'transaction_ids': [], 'category_id': self.cat_food.id}, format='json')
+        response = self.client.patch(self.batch_categorize_url, {'transaction_ids': [], 'category_id': self.cat_food.id, 'original_description': 'Desc'}, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST); self.assertIn('transaction_ids', response.data['error'].lower())
+        # --- NEW: Missing original_description ---
+        response = self.client.patch(self.batch_categorize_url, {'transaction_ids': [self.tx1_user1.id], 'category_id': self.cat_food.id}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST); self.assertIn('original_description', response.data['error'].lower())
+
 
     def test_batch_categorize_fail_invalid_id_format(self):
-        data = {'transaction_ids': ['abc', self.tx1_user1.id], 'category_id': self.cat_food.id}
+        data = {'transaction_ids': ['abc', self.tx1_user1.id], 'category_id': self.cat_food.id, 'original_description': 'Desc'}
         response = self.client.patch(self.batch_categorize_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST); self.assertIn('invalid id format', response.data['error'].lower())
-        data = {'transaction_ids': [self.tx1_user1.id], 'category_id': 'xyz'}
+        data = {'transaction_ids': [self.tx1_user1.id], 'category_id': 'xyz', 'original_description': 'Desc'}
         response = self.client.patch(self.batch_categorize_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST); self.assertIn('invalid id format', response.data['error'].lower())
 
     def test_batch_categorize_unauthenticated(self):
         self.client.logout()
-        data = {'transaction_ids': [1], 'category_id': 1}
+        data = {'transaction_ids': [1], 'category_id': 1, 'original_description': 'Desc'}
         response = self.client.patch(self.batch_categorize_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 

@@ -6,10 +6,10 @@ from datetime import datetime
 from django.db import transaction as db_transaction # Renamed to avoid confusion
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView # Use APIView for custom logic
-from rest_framework.parsers import MultiPartParser, FormParser # For file uploads
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser # For file uploads
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import Category, Transaction # Import Transaction model
+from .models import Category, Transaction, DescriptionMapping # Import Transaction model
 from .serializers import CategorySerializer, TransactionSerializer # Add TransactionSerializer later
 from .permissions import IsOwnerOrSystemReadOnly
 import logging
@@ -26,88 +26,133 @@ logger = logging.getLogger(__name__)
 class BatchCategorizeTransactionView(APIView):
     """
     API endpoint to assign a category to multiple transactions at once.
-    Expects a list of transaction IDs and a category ID in the request body.
+    Optionally creates/updates a DescriptionMapping rule if a clean name is provided.
+    Optionally updates the description of the processed transactions.
+    Expects: {
+        "transaction_ids": [int],
+        "category_id": int,
+        "original_description": "string from CSV used for grouping", // Required
+        "clean_name": "string (optional, user-edited name)" // Optional
+    }
     """
     permission_classes = [permissions.IsAuthenticated]
-    parser_classes = [JSONParser] # <-- *** ADD THIS LINE ***
+    parser_classes = [JSONParser] # Explicitly use JSONParser
 
     def patch(self, request, *args, **kwargs):
         user = request.user
-        # --- Keep Logging ---
         logger.info(f"User {user.id}: Received PATCH request for batch categorization.")
-        logger.info(f"Request data TYPE: {type(request.data)}")
         logger.info(f"Request data CONTENT: {request.data}")
-        # --- End Logging ---
 
+        # --- Extract Data ---
         transaction_ids = request.data.get('transaction_ids')
         category_id = request.data.get('category_id')
+        original_description = request.data.get('original_description')
+        clean_name = request.data.get('clean_name') # Optional
 
         # --- Input Validation ---
         if not isinstance(transaction_ids, list) or not transaction_ids:
             logger.error(f"Validation failed: 'transaction_ids' is not a non-empty list. Value received: {transaction_ids} (Type: {type(transaction_ids)})")
             return Response({'error': 'A non-empty list of "transaction_ids" is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if not category_id:
+        if category_id is None: # Check for None specifically, 0 might be valid?
             return Response({'error': '"category_id" is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not original_description or not isinstance(original_description, str):
+             logger.error(f"Validation failed: 'original_description' is required and must be a string. Value received: {original_description}")
+             return Response({'error': '"original_description" (string) is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if clean_name is not None and not isinstance(clean_name, str):
+             logger.error(f"Validation failed: 'clean_name' must be a string if provided. Value received: {clean_name}")
+             return Response({'error': 'If provided, "clean_name" must be a string.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Ensure all provided IDs are integers
+        # Determine the final name to use for transactions and the rule
+        final_clean_name = clean_name.strip() if clean_name and clean_name.strip() else original_description.strip()
+        if not final_clean_name:
+             return Response({'error': 'Resulting transaction description cannot be empty.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # --- Validate IDs ---
         try:
             transaction_ids = [int(tid) for tid in transaction_ids]
             category_id = int(category_id)
         except (ValueError, TypeError):
-            return Response({'error': 'Invalid ID format provided.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Invalid ID format provided for transaction_ids or category_id.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        logger.info(f"User {user.id}: Attempting to categorize {len(transaction_ids)} transactions with category ID {category_id}.")
+        logger.info(f"User {user.id}: Validated input for categorizing {len(transaction_ids)} transactions (Orig Desc: '{original_description}') with Cat ID {category_id} and Clean Name '{final_clean_name}'.")
 
         # --- Validate Category ---
         try:
-            # User must be able to access the category (System or their own)
-            category_to_assign = Category.objects.get(
-                Q(pk=category_id),
-                Q(user__isnull=True) | Q(user=user)
-            )
-            logger.debug(f"Found category: {category_to_assign.name}")
+            category_to_assign = Category.objects.get( Q(pk=category_id), Q(user__isnull=True) | Q(user=user) )
+            logger.debug(f"Found category to assign: {category_to_assign.name}")
         except Category.DoesNotExist:
             logger.warning(f"User {user.id}: Category ID {category_id} not found or not accessible.")
-            return Response({'error': f'Category with ID {category_id} not found or access denied.'}, status=status.HTTP_404_NOT_FOUND) # Or 400 Bad Request
+            return Response({'error': f'Category with ID {category_id} not found or access denied.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # --- Update Transactions ---
+        # --- Update Transactions FIRST ---
         updated_count = 0
-        not_found_ids = []
-        not_owned_ids = []
-
-        # Filter transactions that belong to the user AND are in the provided list
-        # This prevents users from categorizing transactions they don't own
         queryset = Transaction.objects.filter(
             user=user,
             id__in=transaction_ids
         )
-
-        # Perform the update within a database transaction for atomicity
+        update_fields = {
+            'category': category_to_assign,
+            'description': final_clean_name # Update description to the clean name
+        }
         try:
             with db_transaction.atomic():
-                updated_count = queryset.update(category=category_to_assign)
+                updated_count = queryset.update(**update_fields)
         except Exception as e:
-             logger.error(f"Database error during batch categorization for user {user.id}: {e}")
+             logger.error(f"Database error during transaction batch update for user {user.id}: {e}")
              return Response({"error": "Failed to update transactions due to a database error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        # --- Create/Update Description Mapping Rule ONLY IF transactions were successfully updated ---
+        mapping_rule = None
+        created = False
+        rule_processed_status = "not processed" # For logging/response message
 
-        # --- Verify which IDs were updated (optional but good feedback) ---
+        if updated_count > 0: # Only process rule if relevant transactions were actually found and updated
+            mapping_defaults = {
+                'clean_name': final_clean_name,
+                'assigned_category': category_to_assign
+            }
+            try:
+                # Ensure we use the original description from the request payload for the rule key
+                mapping_rule, created = DescriptionMapping.objects.update_or_create(
+                    user=user,
+                    original_description=original_description, # Use original description for the rule key
+                    defaults=mapping_defaults # Fields to set/update
+                )
+                if created:
+                    logger.info(f"User {user.id}: Created new DescriptionMapping rule for '{original_description}'.")
+                    rule_processed_status = "created"
+                else:
+                    logger.info(f"User {user.id}: Updated existing DescriptionMapping rule for '{original_description}'.")
+                    rule_processed_status = "updated"
+
+            except Exception as e:
+                # Log this error, but don't fail the *entire* request since transactions were updated.
+                # Include a warning in the response.
+                logger.error(f"Database error during DescriptionMapping update/create (transactions WERE updated) for user {user.id}, original desc '{original_description}': {e}")
+                rule_processed_status = "failed" # Update status for response message
+
+        # --- Verification and Logging ---
         if updated_count != len(transaction_ids):
-            logger.warning(f"User {user.id}: Mismatch in updated count. Expected {len(transaction_ids)}, updated {updated_count}.")
-            # Find which requested IDs were not updated (either didn't exist or didn't belong to user)
-            updated_ids = set(queryset.values_list('id', flat=True))
-            all_requested_ids = set(transaction_ids)
-            missing_or_unowned_ids = list(all_requested_ids - updated_ids)
-            logger.warning(f"User {user.id}: IDs not updated (missing or not owned): {missing_or_unowned_ids}")
-            # Potentially split these into truly not found vs not owned if needed, requires more queries
+            logger.warning(f"User {user.id}: Mismatch in updated count. Requested {len(transaction_ids)}, updated {updated_count}.")
+            # Log which ones failed if needed (requires extra query)
 
-        logger.info(f"User {user.id}: Successfully categorized {updated_count} transactions with category '{category_to_assign.name}'.")
+        logger.info(f"User {user.id}: Completed batch categorization. Updated {updated_count} transactions with category '{category_to_assign.name}' and description '{final_clean_name}'. Rule status: {rule_processed_status}.")
+
+        # --- Prepare Response ---
+        message = f'Successfully updated {updated_count} transaction(s).'
+        if rule_processed_status == "created":
+             message += f' Rule for "{original_description}" created.'
+        elif rule_processed_status == "updated":
+             message += f' Rule for "{original_description}" updated.'
+        elif rule_processed_status == "failed":
+             message += f' WARNING: Failed to create/update rule for "{original_description}".'
+
+
         return Response({
-            'message': f'Successfully assigned category "{category_to_assign.name}" to {updated_count} transaction(s).',
+            'message': message,
             'updated_count': updated_count,
-            # 'not_updated_ids': missing_or_unowned_ids # Optionally return IDs that failed
-        }, status=status.HTTP_200_OK)
-
+        }, status=status.HTTP_200_OK) # Return 200 OK as long as transaction update didn't fail
+    
 class UncategorizedTransactionGroupView(APIView):
     """
     API endpoint to list uncategorized transactions for the authenticated user,
@@ -290,11 +335,11 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
 class TransactionCSVUploadView(APIView):
     """
     API endpoint to upload a CSV file containing transactions.
+    Checks for DescriptionMapping rules to auto-categorize and clean names.
     """
     permission_classes = [permissions.IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser] # Support file uploads
+    parser_classes = [MultiPartParser, FormParser]
 
-    # Define expected CSV headers (adjust if your actual file might differ slightly)
     EXPECTED_HEADERS = [
         "Date", "Name / Description", "Account", "Counterparty",
         "Code", "Debit/credit", "Amount (EUR)", "Transaction type",
@@ -303,127 +348,121 @@ class TransactionCSVUploadView(APIView):
 
     def post(self, request, *args, **kwargs):
         logger.info(f"CSV Upload initiated by user: {request.user.username} ({request.user.id})")
-        file_obj = request.FILES.get('file') # 'file' is the expected key in the FormData
+        file_obj = request.FILES.get('file')
 
-        if not file_obj:
-            logger.warning("No file provided in upload request.")
+        if not file_obj: # ... (keep file validation) ...
             return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Basic check for file type (optional but recommended)
-        if not file_obj.name.lower().endswith('.csv'):
-             logger.warning(f"Invalid file type uploaded: {file_obj.name}")
+        if not file_obj.name.lower().endswith('.csv'): # ... (keep file type validation) ...
              return Response({'error': 'Invalid file type. Please upload a CSV file.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Read CSV file content - decode assuming UTF-8
             decoded_file = file_obj.read().decode('utf-8')
-            # Use io.StringIO to treat the string as a file
             io_string = io.StringIO(decoded_file)
-            # Skip the header row during processing if necessary
             reader = csv.reader(io_string)
 
-            # --- Header Validation ---
-            headers = next(reader) # Read the first row as headers
-            # Normalize headers (lowercase, strip whitespace) for comparison
+            headers = next(reader)
+            # ... (keep header validation logic) ...
             normalized_headers = [h.strip().lower() for h in headers]
             normalized_expected = [h.strip().lower() for h in self.EXPECTED_HEADERS]
-
-            # Simple check: Check if number of columns match
-            if len(normalized_headers) != len(normalized_expected):
-                 logger.error(f"CSV header count mismatch. Expected {len(normalized_expected)}, Got {len(normalized_headers)}. Headers: {headers}")
-                 return Response({'error': f'CSV header count mismatch. Expected {len(normalized_expected)} columns.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            # More robust check: Ensure all expected headers are present (order might not matter)
-            # Or enforce exact order if needed. Let's assume order matters for now.
-            if normalized_headers != normalized_expected:
-                logger.error(f"CSV headers do not match expected format. Expected: {self.EXPECTED_HEADERS}, Got: {headers}")
-                # Provide more specific feedback if possible
-                error_detail = f"CSV headers do not match expected format. Expected: '{', '.join(self.EXPECTED_HEADERS)}'. Got: '{', '.join(headers)}'."
-                return Response({'error': error_detail}, status=status.HTTP_400_BAD_REQUEST)
+            if len(normalized_headers) != len(normalized_expected) or normalized_headers != normalized_expected:
+                 # ... (return header error response) ...
+                 error_detail = "CSV headers do not match expected format." # Simplified error
+                 return Response({'error': error_detail}, status=status.HTTP_400_BAD_REQUEST)
 
 
             transactions_to_create = []
             errors = []
             processed_rows = 0
+            applied_rules_count = 0 # Counter for auto-categorized transactions
 
-            for i, row in enumerate(reader, start=1): # Start counting rows from 1 (after header)
+            # --- Pre-fetch user's mappings for efficiency ---
+            # Fetch all mappings for the current user into a dictionary
+            # Key: original_description (lowercase, stripped), Value: DescriptionMapping object
+            user_mappings = {
+                mapping.original_description.strip().lower(): mapping
+                for mapping in DescriptionMapping.objects.filter(user=request.user)
+            }
+            logger.info(f"User {request.user.id}: Loaded {len(user_mappings)} description mappings.")
+            # --- End Pre-fetch ---
+
+
+            for i, row in enumerate(reader, start=1):
                 processed_rows += 1
-                if len(row) != len(self.EXPECTED_HEADERS):
-                    logger.warning(f"Row {i+1}: Incorrect number of columns ({len(row)}), skipping.")
+                if len(row) != len(self.EXPECTED_HEADERS): # ... (keep column count check) ...
                     errors.append(f"Row {i+1}: Incorrect number of columns, skipped.")
-                    continue # Skip row
+                    continue
 
-                # Map row data based on EXPECTED_HEADERS order
                 try:
-                    date_str = row[0].strip()
-                    description = row[1].strip()
-                    account = row[2].strip()
-                    counterparty = row[3].strip()
-                    code = row[4].strip()
-                    debit_credit = row[5].strip().upper() # Normalize to uppercase
-                    amount_str = row[6].strip().replace(',', '.') # Replace comma with dot for Decimal
-                    transaction_type = row[7].strip()
-                    notifications = row[8].strip()
+                    # --- Extract Raw Data ---
+                    raw_date_str = row[0].strip()
+                    raw_description = row[1].strip() # Get the original description
+                    raw_account = row[2].strip()
+                    raw_counterparty = row[3].strip()
+                    raw_code = row[4].strip()
+                    raw_debit_credit = row[5].strip().upper()
+                    raw_amount_str = row[6].strip().replace(',', '.')
+                    raw_transaction_type = row[7].strip()
+                    raw_notifications = row[8].strip()
 
-                    # --- Data Validation and Conversion ---
-                    # Date
-                    try:
-                        transaction_date = datetime.strptime(date_str, '%Y%m%d').date()
-                    except ValueError:
-                        raise ValueError(f"Invalid date format '{date_str}'. Expected YYYYMMDD.")
+                    # --- Data Validation and Conversion (Keep existing logic) ---
+                    try: transaction_date = datetime.strptime(raw_date_str, '%Y%m%d').date()
+                    except ValueError: raise ValueError(f"Invalid date format '{raw_date_str}'.")
+                    try: amount = Decimal(raw_amount_str); assert amount >= 0
+                    except (InvalidOperation, AssertionError): raise ValueError(f"Invalid amount format '{raw_amount_str}'.")
+                    if raw_debit_credit not in ['DEBIT', 'CREDIT']: raise ValueError(f"Invalid direction '{row[5].strip()}'.")
+                    direction = raw_debit_credit
+                    # --- End Validation ---
 
-                    # Amount
-                    try:
-                        amount = Decimal(amount_str)
-                        if amount < 0:
-                             # Amount should always be positive, direction is separate
-                             raise ValueError("Amount cannot be negative.")
-                    except InvalidOperation:
-                        raise ValueError(f"Invalid amount format '{row[6].strip()}'. Expected a number.")
 
-                    # Direction (Debit/Credit)
-                    if debit_credit not in ['DEBIT', 'CREDIT']:
-                        raise ValueError(f"Invalid direction '{row[5].strip()}'. Expected 'Debit' or 'Credit'.")
-                    direction = debit_credit
+                    # --- Apply Mapping Rule (NEW LOGIC) ---
+                    final_description = raw_description # Default to original
+                    assigned_category = None # Default to None
+                    matched_mapping = user_mappings.get(raw_description.strip().lower()) # Check pre-fetched dict
+
+                    if matched_mapping:
+                        logger.debug(f"Row {i+1}: Found mapping for '{raw_description}'. Applying rule.")
+                        final_description = matched_mapping.clean_name # Use the clean name
+                        assigned_category = matched_mapping.assigned_category # Use the pre-assigned category
+                        if assigned_category:
+                            applied_rules_count += 1
+                    # --- End Apply Mapping Rule ---
+
 
                     # --- Prepare Transaction Object ---
                     transactions_to_create.append(
                         Transaction(
-                            user=request.user, # Assign logged-in user
-                            category=None, # Assign category later
+                            user=request.user,
+                            category=assigned_category, # Use category from mapping if found, else None
                             transaction_date=transaction_date,
-                            description=description,
+                            description=final_description, # Use clean name if mapped, else original
                             amount=amount,
                             direction=direction,
-                            # Store optional source fields
-                            source_account_identifier=account or None,
-                            counterparty_identifier=counterparty or None,
-                            source_code=code or None,
-                            source_type=transaction_type or None,
-                            source_notifications=notifications or None,
+                            source_account_identifier=raw_account or None,
+                            counterparty_identifier=raw_counterparty or None,
+                            source_code=raw_code or None,
+                            source_type=raw_transaction_type or None,
+                            source_notifications=raw_notifications or None,
                         )
                     )
                 except ValueError as ve:
                     logger.warning(f"Row {i+1}: Validation Error: {str(ve)}")
                     errors.append(f"Row {i+1}: {str(ve)}")
                 except Exception as e:
-                    # Catch unexpected errors during row processing
                     logger.error(f"Row {i+1}: Unexpected error processing row: {str(e)}. Row data: {row}")
                     errors.append(f"Row {i+1}: Unexpected error skipped.")
 
-            logger.debug(f"Checking transactions before bulk create (sample):")
-            for i, tx_obj in enumerate(transactions_to_create[:3]): # Log first 3
-                logger.debug(f"  - Obj {i}: category={tx_obj.category}")
+            # Remove logging before bulk create if not needed
+            # logger.debug("Checking transactions before bulk create (sample):")
+            # for i, tx_obj in enumerate(transactions_to_create[:3]):
+            #     logger.debug(f"  - Obj {i}: category={tx_obj.category}, description='{tx_obj.description}'")
 
             # --- Bulk Create Transactions ---
             if transactions_to_create:
                 try:
-                    # Use bulk_create for efficiency, wrap in transaction
                     with db_transaction.atomic():
                         Transaction.objects.bulk_create(transactions_to_create)
-                    logger.info(f"Successfully created {len(transactions_to_create)} transactions for user {request.user.id}.")
+                    logger.info(f"Successfully created/saved {len(transactions_to_create)} transactions for user {request.user.id}. {applied_rules_count} auto-categorized.")
                 except Exception as e:
-                    # Catch errors during database insertion
                     logger.error(f"Database error during bulk creation for user {request.user.id}: {str(e)}")
                     return Response({'error': 'Database error occurred during import.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -431,6 +470,8 @@ class TransactionCSVUploadView(APIView):
             success_count = len(transactions_to_create)
             error_count = len(errors)
             message = f"CSV processed. Imported {success_count} out of {processed_rows} transactions."
+            if applied_rules_count > 0:
+                message += f" {applied_rules_count} transaction(s) were automatically categorized based on your rules."
             if errors:
                  message += f" Encountered {error_count} errors."
                  logger.warning(f"CSV Upload for user {request.user.id} finished with {error_count} errors.")
@@ -438,9 +479,10 @@ class TransactionCSVUploadView(APIView):
             return Response({
                 'message': message,
                 'imported_count': success_count,
+                'auto_categorized_count': applied_rules_count, # Add new info
                 'total_rows_processed': processed_rows,
-                'errors': errors # Send back row-specific errors
-            }, status=status.HTTP_201_CREATED if success_count > 0 else status.HTTP_400_BAD_REQUEST) # Return 201 if *any* were created
+                'errors': errors
+            }, status=status.HTTP_201_CREATED if success_count > 0 else status.HTTP_400_BAD_REQUEST)
 
         except UnicodeDecodeError:
             logger.error("CSV Upload failed due to encoding error.")

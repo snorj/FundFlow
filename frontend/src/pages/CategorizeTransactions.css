@@ -145,4 +145,75 @@
     transform: scale(0.95) translateY(-20px);
   }
   
-  /* --- End Card Transition Styles --- */
+/* --- NEW: Description Editing Styles --- */
+.card-header {
+  display: flex;
+  align-items: flex-start; /* Align items to top */
+  justify-content: space-between;
+  margin-bottom: 5px; /* Adjust spacing */
+}
+
+.card-header h3.card-description {
+  flex-grow: 1; /* Allow description to take space */
+  margin-bottom: 0; /* Remove margin from h3 */
+  /* padding-right: 10px; Add padding if needed */
+}
+
+.edit-description-button {
+  background: none;
+  border: none;
+  color: var(--text-muted-dark);
+  cursor: pointer;
+  padding: 5px;
+  margin-left: 10px; /* Space from description */
+  line-height: 0; /* Prevent extra height */
+  border-radius: 4px;
+  flex-shrink: 0; /* Prevent shrinking */
+  transition: color 0.2s, background-color 0.2s;
+}
+.edit-description-button:hover {
+  color: var(--teal);
+  background-color: var(--light-gray);
+}
+
+.description-edit-input-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-grow: 1; /* Take available space in header */
+  margin-bottom: 0; /* Remove default h3 margin */
+}
+
+.description-edit-input-area input[type="text"] {
+  flex-grow: 1;
+  padding: 6px 10px;
+  font-size: 1.1em; /* Match h3 size roughly */
+  border: 1px solid var(--teal); /* Indicate editing */
+  border-radius: 4px;
+  font-weight: 600; /* Match h3 weight */
+}
+
+.description-edit-input-area button {
+  background: none;
+  border: none;
+  padding: 5px;
+  cursor: pointer;
+  line-height: 0;
+  color: var(--text-muted-dark);
+  border-radius: 4px;
+  transition: color 0.2s, background-color 0.2s;
+  flex-shrink: 0;
+}
+.description-edit-input-area button:hover:not(:disabled) {
+   background-color: var(--light-gray);
+}
+.description-edit-input-area button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.description-edit-input-area button:first-of-type:hover:not(:disabled) { /* Save button */
+  color: var(--teal);
+}
+.description-edit-input-area button:last-of-type:hover:not(:disabled) { /* Cancel button */
+   color: var(--warm-orange-darker);
+}
