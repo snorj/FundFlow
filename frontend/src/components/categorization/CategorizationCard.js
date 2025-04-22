@@ -32,7 +32,6 @@ const formatCurrency = (amount, direction) => {
 // Wrap component in forwardRef for react-transition-group nodeRef
 const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableCategories = [], isLoading = false, onCategoriesUpdate }, ref) => {
     const [selectedCategoryId, setSelectedCategoryId] = useState('');
-    const [showIndividual, setShowIndividual] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     // --- NEW: State for Description Editing ---
     const [isEditingDescription, setIsEditingDescription] = useState(false);
@@ -50,17 +49,13 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
     }, [selectedCategoryId, availableCategories]);
 
 
-    // Reset local state when the group prop changes
     useEffect(() => {
         setSelectedCategoryId('');
-        setShowIndividual(false);
         setIsModalOpen(false);
-        // Reset description editing state as well
         setIsEditingDescription(false);
-        setEditedDescription(group?.description || ''); // Initialize with group description
-    }, [group]); // Dependency includes group now
+        setEditedDescription(group?.description || '');
+    }, [group]);
 
-    // Early return check
     if (!group || !group.description || !group.transaction_ids || group.transaction_ids.length === 0) {
         return <div ref={ref} className="categorization-card loading">Loading group...</div>;
     }
@@ -141,114 +136,121 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
     // Component JSX
     return (
         <>
-            {/* Attach ref to the main card div */}
+            {/* Main Card Div */}
             <div ref={ref} className={`categorization-card ${isLoading ? 'is-loading' : ''}`}>
-{/* --- UPDATED Header with Editable Description --- */}
-<div className="card-header">
+                {/* Header with Editable Description */}
+                <div className="card-header">
+                    {/* Display mode */}
                     {!isEditingDescription ? (
                         <>
                             <h3 className="card-description">
                                 <FiTag className="icon" />
-                                {editedDescription || group.description} {/* Show edited or original */}
+                                {/* Show edited description if available, otherwise original */}
+                                {editedDescription || group.description}
                             </h3>
-                            <button onClick={handleEditDescriptionClick} className="edit-description-button" title="Edit description/vendor name">
+                            <button
+                                onClick={handleEditDescriptionClick}
+                                className="edit-description-button"
+                                title="Edit description/vendor name"
+                                disabled={isLoading} // Disable if parent is loading
+                            >
                                 <FiEdit2 size="16"/>
                             </button>
                         </>
                     ) : (
+                    // Editing mode
                         <div className="description-edit-input-area">
                             <input
                                 type="text"
                                 value={editedDescription}
                                 onChange={handleDescriptionChange}
                                 autoFocus
+                                // Save on Enter, Cancel on Escape
                                 onKeyDown={(e) => { if (e.key === 'Enter') handleSaveDescription(); else if (e.key === 'Escape') handleCancelEditDescription();}}
+                                disabled={isLoading} // Disable if parent is loading
                             />
-                            <button onClick={handleSaveDescription} title="Save Description" disabled={!editedDescription.trim()}>
+                            <button
+                                onClick={handleSaveDescription}
+                                title="Save Description"
+                                disabled={!editedDescription.trim() || isLoading} // Disable if empty or parent loading
+                            >
                                 <FiSave size="16"/>
                             </button>
-                            <button onClick={handleCancelEditDescription} title="Cancel Edit">
+                            <button
+                                onClick={handleCancelEditDescription}
+                                title="Cancel Edit"
+                                disabled={isLoading} // Disable if parent is loading
+                            >
                                 <FiXCircle size="16"/>
                             </button>
                         </div>
                     )}
                 </div>
-                 {/* --- END UPDATED Header --- */}
+                {/* End Header */}
+
+                {/* Meta Info */}
                 <p className="card-meta">
                     {group.count} transaction(s)
-                    {/* Add date range only if dates are valid */}
                     {group.earliest_date && ` between ${formatDate(group.earliest_date)} and ${formatDate(group.previews[group.previews.length - 1]?.date || group.earliest_date)}`}
                 </p>
 
-                {/* Transaction Previews */}
-                <div className="transaction-previews">
-                    <p><strong>Recent transactions in this group:</strong></p>
-                    <ul>
+                {/* Scrollable Transaction List */}
+                <div className="transaction-list-scrollable">
+                     <p className="list-title">Transactions in this group:</p>
+                     <ul>
                         {group.previews.map(tx => (
                             <li key={tx.id}>
-                                <span className="preview-date">{formatDate(tx.date)}</span>
-                                <span className={`preview-amount amount-${tx.direction?.toLowerCase()}`}>
+                                <span className="tx-date">{formatDate(tx.date)}</span>
+                                <span className={`tx-amount amount-${tx.direction?.toLowerCase()}`}>
                                     {formatCurrency(tx.amount, tx.direction)}
                                 </span>
                             </li>
                         ))}
                     </ul>
-                    {/* Only show button if there are more transactions than previews */}
-                    {group.count > group.previews.length && (
-                        <button className="view-all-btn" onClick={() => setShowIndividual(!showIndividual)}>
-                            {showIndividual ? <FiChevronUp /> : <FiChevronDown />} View All / Edit Individually ({group.count})
-                        </button>
-                    )}
                 </div>
+                {/* End Scrollable List */}
 
-                {/* Placeholder for individual editing */}
-                {showIndividual && (
-                    <div className="individual-transactions-area">
-                        <p><em>Individual editing UI will go here.</em></p>
+                {/* Categorization Action Area (Always shown now) */}
+                <div className="categorization-action-area">
+                    {/* Display Current Selection & Button to Change */}
+                    <div className="category-selection-display">
+                        <span className="category-label">Selected Category:</span>
+                        <span className={`selected-category-name ${!selectedCategoryId ? 'is-uncategorized' : ''}`}>
+                            {selectedCategoryName}
+                        </span>
+                        <button onClick={openCategoryModal} className="select-category-button" disabled={isLoading}>
+                            {selectedCategoryId ? 'Change' : 'Select'} Category
+                        </button>
                     </div>
-                )}
 
-                {/* Action area shown only if not editing individually */}
-                {!showIndividual && (
-                    <div className="categorization-action-area">
-                        {/* Display Current Selection & Button to Change */}
-                        <div className="category-selection-display">
-                            <span className="category-label">Selected Category:</span>
-                            <span className={`selected-category-name ${!selectedCategoryId ? 'is-uncategorized' : ''}`}>
-                                {selectedCategoryName}
-                            </span>
-                            <button onClick={openCategoryModal} className="select-category-button" disabled={isLoading}>
-                                {selectedCategoryId ? 'Change' : 'Select'} Category
-                            </button>
-                        </div>
-
-                        {/* Apply/Skip Buttons */}
-                        <div className="card-buttons">
-                            <button onClick={handleSkip} className="skip-button" disabled={isLoading}>Skip</button>
-                            <button
-                                onClick={handleApplyCategory}
-                                className="apply-button"
-                                disabled={!selectedCategoryId || isLoading} // Disable if no category selected or parent is loading
-                            >
-                                {isLoading ? <FiLoader className="spinner-inline" /> : <FiCheck />}
-                                Apply to All
-                            </button>
-                        </div>
+                    {/* Apply/Skip Buttons */}
+                    <div className="card-buttons">
+                        <button onClick={handleSkip} className="skip-button" disabled={isLoading}>Skip</button>
+                        <button
+                            onClick={handleApplyCategory}
+                            className="apply-button"
+                            disabled={!selectedCategoryId || isLoading} // Disable if no category selected or parent is loading
+                        >
+                            {isLoading ? <FiLoader className="spinner-inline" /> : <FiCheck />}
+                            Apply to All
+                        </button>
                     </div>
-                )}
-            </div>
+                </div>
+                {/* End Categorization Action Area */}
 
-            {/* --- Render the ACTUAL Modal --- */}
+            </div> {/* End categorization-card div */}
+
+            {/* Modal */}
             <CategorySelectorModal
                 isOpen={isModalOpen}
                 onClose={closeCategoryModal}
                 onSelectCategory={handleCategorySelected}
                 availableCategories={availableCategories}
-                onCategoriesUpdate={onCategoriesUpdate} // <-- *** PROP IS NOW PASSED ***
-                currentSelectedId={selectedCategoryId || null} // Pass current selection as string or null
+                onCategoriesUpdate={onCategoriesUpdate}
+                currentSelectedId={selectedCategoryId || null}
             />
-            {/* --- End Modal --- */}
-        </>
+            {/* End Modal */}
+        </> // End Fragment
     );
 }); // Close forwardRef
 

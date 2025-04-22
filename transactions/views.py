@@ -184,15 +184,28 @@ class UncategorizedTransactionGroupView(APIView):
         # 2. Group transactions by description in Python
         grouped_transactions = {}
         for tx in uncategorized_txs:
-            description = tx.description
+            description = tx.description # Using the original description as key
+
+            # --- ADD THIS CHECK BACK ---
+            # If this description hasn't been seen yet, initialize its entry
             if description not in grouped_transactions:
                 grouped_transactions[description] = {
-                    'description': description,
-                    # Initialize max_date with the first transaction's date found for this group
-                    'max_date': tx.transaction_date,
+                    'description': description, # Store the original description
+                    'max_date': tx.transaction_date, # First one is the most recent due to sorting
                     'transaction_ids': [],
                     'previews': []
                 }
+            # --- END ADD CHECK ---
+
+            # Now it's safe to append because the key exists
+            grouped_transactions[description]['transaction_ids'].append(tx.id)
+            grouped_transactions[description]['previews'].append({
+                 'id': tx.id,
+                 'date': tx.transaction_date,
+                 'amount': tx.amount,
+                 'direction': tx.direction,
+                 'signed_amount': tx.signed_amount
+            })
 
             # --- Track MOST RECENT date ---
             # No need to update if dates are already sorted descending within group

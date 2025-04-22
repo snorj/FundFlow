@@ -36,40 +36,7 @@
     font-size: 0.9em;
     color: var(--text-muted-dark);
     margin-top: 0;
-    margin-bottom: 20px;
-  }
-  
-  .transaction-previews {
-    margin-bottom: 25px;
-    background-color: #f8f9fa; /* Slight background */
-    padding: 15px;
-    border-radius: 5px;
-    border: 1px solid var(--light-gray);
-  }
-  
-  .transaction-previews p {
-    margin-top: 0;
-    margin-bottom: 10px;
-    font-weight: 500;
-    font-size: 0.9em;
-    color: var(--medium-blue);
-  }
-  
-  .transaction-previews ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  
-  .transaction-previews li {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.95em;
-    padding: 6px 0;
-    border-bottom: 1px dashed var(--gray-border);
-  }
-  .transaction-previews li:last-child {
-      border-bottom: none;
+    margin-bottom: 15px;
   }
   
   .preview-date {
@@ -86,38 +53,81 @@
   .amount-debit { color: var(--deep-navy); }
   .amount-credit { color: var(--teal-darker); }
   
-  
-  .view-all-btn {
-      background: none;
-      border: none;
-      color: var(--teal);
-      cursor: pointer;
-      padding: 8px 0;
-      margin-top: 10px;
-      font-size: 0.9em;
-      font-weight: 500;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-  }
-  .view-all-btn:hover {
-      color: var(--teal-darker);
-  }
-  
-  .individual-transactions-area {
-      margin-top: 15px;
-      padding: 15px;
-      border: 1px dashed var(--gray-border);
-      border-radius: 5px;
-      background-color: #fafbfc;
-  }
-  
-  
   .categorization-action-area {
     margin-top: 20px;
     padding-top: 20px;
     border-top: 1px solid var(--light-gray);
   }
+
+  /* --- NEW: Scrollable Transaction List Styles --- */
+.transaction-list-scrollable {
+  max-height: 180px; /* Adjust max height as needed */
+  overflow-y: auto; /* Enable vertical scroll */
+  border: 1px solid var(--light-gray);
+  border-radius: 5px;
+  padding: 10px 15px;
+  margin-bottom: 20px; /* Space before action area */
+  background-color: #fdfdfd; /* Slightly off-white background */
+}
+
+/* Simple scrollbar styling (optional) */
+.transaction-list-scrollable::-webkit-scrollbar { width: 6px; }
+.transaction-list-scrollable::-webkit-scrollbar-thumb { background-color: var(--gray-border); border-radius: 3px; }
+.transaction-list-scrollable::-webkit-scrollbar-track { background-color: transparent; }
+
+.transaction-list-scrollable .list-title {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-weight: 500;
+  font-size: 0.9em;
+  color: var(--medium-blue);
+}
+
+.transaction-list-scrollable ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.transaction-list-scrollable li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9em;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--light-gray);
+}
+.transaction-list-scrollable li:last-child {
+    border-bottom: none;
+}
+
+.transaction-list-scrollable .tx-date {
+  color: var(--text-muted-dark);
+  white-space: nowrap;
+  padding-right: 15px;
+  flex-basis: 100px; /* Give date some fixed space */
+  flex-shrink: 0;
+}
+
+/* Optional: Add back description snippet if backend provides more preview data */
+/* .transaction-list-scrollable .tx-desc-snippet {
+  flex-grow: 1;
+  padding-right: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #555;
+} */
+
+.transaction-list-scrollable .tx-amount {
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* Keep .amount-debit, .amount-credit styles */
+.amount-debit { color: var(--deep-navy); }
+.amount-credit { color: var(--teal-darker); }
+/* --- END Scrollable List Styles --- */
 
   /* --- NEW: Category Selection Display --- */
   .category-selection-display {
