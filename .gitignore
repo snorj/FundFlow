@@ -3,6 +3,9 @@
 # Environment variables
 .env
 
+# Dont track csv data
+*.csv
+
 # Python
 __pycache__/
 *.py[cod]
