@@ -164,93 +164,66 @@ class UncategorizedTransactionGroupView(APIView):
     def get(self, request, *args, **kwargs):
         user = request.user
 
-        # --- NEW: Check if only existence check is needed ---
         check_existence_only = request.query_params.get('check_existence', 'false').lower() == 'true'
-
         if check_existence_only:
              logger.info(f"Checking existence of uncategorized groups for user: {user.username} ({user.id})")
              exists = Transaction.objects.filter(user=user, category__isnull=True).exists()
              return Response({'has_uncategorized': exists}, status=status.HTTP_200_OK)
-        
+
         logger.info(f"Fetching uncategorized transaction groups for user: {user.username} ({user.id})")
 
-        # 1. Filter uncategorized transactions for the user
-        # Order by description first for consistent grouping, then date if needed within group
         uncategorized_txs = Transaction.objects.filter(
             user=user,
             category__isnull=True
-        ).order_by('description', '-transaction_date') # Order date descending within description
+        ).order_by('description', '-transaction_date')
 
-        # 2. Group transactions by description in Python
         grouped_transactions = {}
         for tx in uncategorized_txs:
-            description = tx.description # Using the original description as key
+            description = tx.description
 
-            # --- ADD THIS CHECK BACK ---
-            # If this description hasn't been seen yet, initialize its entry
             if description not in grouped_transactions:
                 grouped_transactions[description] = {
-                    'description': description, # Store the original description
-                    'max_date': tx.transaction_date, # First one is the most recent due to sorting
+                    'description': description,
+                    'max_date': tx.transaction_date,
                     'transaction_ids': [],
-                    'previews': []
+                    'previews': [] # Initialize previews list
                 }
-            # --- END ADD CHECK ---
 
-            # Add more detailed preview data, including source fields
+            # --- ONLY ONE APPEND NEEDED ---
             grouped_transactions[description]['previews'].append({
                  'id': tx.id,
                  'date': tx.transaction_date,
                  'amount': tx.amount,
                  'direction': tx.direction,
                  'signed_amount': tx.signed_amount,
-                 # --- ADD SOURCE FIELDS ---
                  'source_account': tx.source_account_identifier,
                  'counterparty': tx.counterparty_identifier,
                  'code': tx.source_code,
                  'type': tx.source_type,
                  'notifications': tx.source_notifications,
-                 # --- END ADD SOURCE FIELDS ---
             })
 
-            # --- Track MOST RECENT date ---
-            # No need to update if dates are already sorted descending within group
-            # If sorting wasn't guaranteed, you'd do:
-            # if tx.transaction_date > grouped_transactions[description]['max_date']:
-            #     grouped_transactions[description]['max_date'] = tx.transaction_date
-            # Since we ordered by -transaction_date initially, the first tx added
-            # for a group *is* the most recent.
-
-            # Add transaction ID
             grouped_transactions[description]['transaction_ids'].append(tx.id)
 
-            # Add preview data (limit number of previews per group if needed)
-            if len(grouped_transactions[description]['previews']) < 5: # Example limit
-                 grouped_transactions[description]['previews'].append({
-                     'id': tx.id,
-                     'date': tx.transaction_date,
-                     'amount': tx.amount,
-                     'direction': tx.direction,
-                     'signed_amount': tx.signed_amount
-                 })
+            # --- REMOVED THE SECOND, REDUNDANT APPEND BLOCK ---
 
-        # 3. Convert grouped data to a list and sort groups by MOST RECENT date DESCENDING
         sorted_groups = sorted(
             grouped_transactions.values(),
-            key=lambda group: group['max_date'], # Sort using the tracked max_date
-            reverse=True # Newest groups first
+            key=lambda group: group['max_date'],
+            reverse=True
         )
 
-        # Optional: Add count to each group
         for group in sorted_groups:
             group['count'] = len(group['transaction_ids'])
-            # Optionally add earliest date too if needed by frontend, requires extra tracking
-            # group['earliest_date'] = min(tx['date'] for tx in group['previews']) # Simple but less efficient
+            # Find earliest date from the previews we already have
+            if group['previews']: # Check if previews is not empty
+                 group['earliest_date'] = min(p['date'] for p in group['previews'])
+            else:
+                 group['earliest_date'] = None # Or handle as appropriate
 
         logger.info(f"Found {len(sorted_groups)} groups of uncategorized transactions for user {user.id}, sorted by most recent.")
-
         return Response(sorted_groups, status=status.HTTP_200_OK)
-
+    
 # --- NEW TRANSACTION LIST VIEW ---
 class TransactionListView(generics.ListAPIView):
     """

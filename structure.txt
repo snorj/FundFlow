@@ -11,13 +11,15 @@ tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist
 │   ├── migrations
 │   │   ├── 0001_initial.py
 │   │   └── __init__.py
+│   ├── tests
+│   │   ├── __init__.py
+│   │   └── test_api.py
 │   ├── __init__.py
 │   ├── admin.py
 │   ├── api_views.py
 │   ├── apps.py
 │   ├── models.py
 │   ├── serializers.py
-│   ├── tests.py
 │   └── urls.py
 ├── frontend
 │   ├── public
@@ -35,21 +37,27 @@ tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist
 │   │   │   ├── auth
 │   │   │   │   ├── LoginForm.js
 │   │   │   │   └── RegisterForm.js
+│   │   │   ├── categorization
+│   │   │   │   ├── CategorizationCard.css
+│   │   │   │   ├── CategorizationCard.js
+│   │   │   │   ├── CategorySelectorModal.css
+│   │   │   │   ├── CategorySelectorModal.js
+│   │   │   │   └── CategoryTreeNode.js
 │   │   │   └── layout
 │   │   │       ├── MainLayout.css
 │   │   │       └── MainLayout.js
 │   │   ├── pages
-│   │   │   ├── Accounts.css
-│   │   │   ├── Accounts.js
+│   │   │   ├── CategorizeTransactions.css
+│   │   │   ├── CategorizeTransactions.js
 │   │   │   ├── Dashboard.css
 │   │   │   ├── Dashboard.js
 │   │   │   ├── Login.js
-│   │   │   ├── Register.js
-│   │   │   ├── Transactions.css
-│   │   │   └── Transactions.js
+│   │   │   └── Register.js
 │   │   ├── services
 │   │   │   ├── api.js
-│   │   │   └── auth.js
+│   │   │   ├── auth.js
+│   │   │   ├── categories.js
+│   │   │   └── transactions.js
 │   │   ├── styles
 │   │   │   └── auth.css
 │   │   ├── utils
@@ -75,8 +83,27 @@ tree -I "node_modules|__pycache__|*.pyc|*.log|.git|.vscode|*.egg-info|build|dist
 │   │   ├── password_reset_email.html
 │   │   └── password_reset_subject.txt
 │   └── base.html
+├── transactions
+│   ├── migrations
+│   │   ├── 0001_initial.py
+│   │   └── __init__.py
+│   ├── tests
+│   │   ├── __init__.py
+│   │   ├── test_api_categories.py
+│   │   └── test_api_transactions.py
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   ├── permissions.py
+│   ├── serializers.py
+│   ├── urls.py
+│   └── views.py
+├── README.md
 ├── manage.py
+├── newINGTransactions.csv
+├── oldINGTransactions.csv
 ├── requirements.txt
 └── structure.txt
 
-17 directories, 61 files
+22 directories, 83 files
