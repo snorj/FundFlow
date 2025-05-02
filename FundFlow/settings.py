@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     # Add your apps here as you create them
     'accounts',
     'transactions',
+    'integrations.apps.IntegrationsConfig',
     # Third-party apps
     'rest_framework',
     'corsheaders',
