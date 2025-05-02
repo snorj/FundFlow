@@ -310,3 +310,157 @@
   padding: 10px 20px; /* Match other action buttons */
   flex-shrink: 0; /* Prevent button shrinking */
 }
+
+.bank-connection-section {
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+}
+
+.bank-connection-section .section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.bank-connection-section .title-icon {
+  margin-bottom: -2px; /* Align icon better */
+}
+
+.connection-status {
+  padding-top: 0.5rem;
+}
+
+.connection-status.linked .status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-weight: 600;
+  color: var(--teal-600); /* Adjust color */
+}
+
+.connection-status.linked .icon-success {
+  color: var(--teal-500);
+}
+
+.connection-actions {
+  display: flex;
+  flex-wrap: wrap; /* Allow buttons to wrap on small screens */
+  gap: 0.75rem;
+  margin-bottom: 0.5rem; /* Space before feedback */
+}
+
+.sync-button .button-icon,
+.remove-button .button-icon {
+   margin-right: 0.3rem;
+}
+
+.remove-button {
+    background-color: transparent;
+    color: var(--grey-600);
+    border: 1px solid var(--grey-300);
+}
+.remove-button:hover {
+    background-color: var(--red-50);
+    border-color: var(--red-400);
+    color: var(--red-600);
+}
+.remove-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background-color: transparent;
+    color: var(--grey-500);
+    border-color: var(--grey-300);
+}
+
+
+.connection-status.not-linked p {
+  margin-bottom: 0.75rem;
+  color: var(--grey-700);
+}
+
+.connection-status.not-linked .external-link {
+    display: inline-block;
+    margin-bottom: 1rem;
+    font-size: 0.9em;
+    color: var(--teal-600);
+    text-decoration: underline;
+}
+.connection-status.not-linked .external-link:hover {
+    color: var(--teal-700);
+}
+
+.pat-input-area {
+  display: flex;
+  align-items: stretch; /* Make items same height */
+  gap: 0.5rem;
+  margin-bottom: 0.5rem; /* Space before feedback */
+}
+
+.pat-input-area .input-icon {
+    color: var(--grey-400);
+    align-self: center; /* Center vertically */
+    margin-left: 0.5rem; /* Space inside input visual area */
+    position: absolute; /* Position relative to wrapper if needed */
+    z-index: 1;
+}
+
+.pat-input {
+  flex-grow: 1;
+  padding: 0.6rem 0.8rem 0.6rem 2rem; /* Add left padding for icon */
+  border: 1px solid var(--grey-300);
+  border-radius: 4px;
+}
+.pat-input:focus {
+    border-color: var(--teal-500);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.2); /* Teal focus ring */
+}
+
+/* Feedback message styling (shared for PAT save and Sync) */
+.pat-feedback,
+.sync-feedback {
+  font-size: 0.9em;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pat-feedback.error-message,
+.sync-feedback.error-message {
+  background-color: var(--red-50);
+  color: var(--red-700);
+  border: 1px solid var(--red-200);
+}
+.pat-feedback.error-message svg,
+.sync-feedback.error-message svg {
+  color: var(--red-500);
+}
+
+.pat-feedback.success-message,
+.sync-feedback.success-message {
+  background-color: var(--green-50);
+  color: var(--green-700);
+  border: 1px solid var(--green-200);
+}
+.pat-feedback.success-message svg,
+.sync-feedback.success-message svg {
+  color: var(--green-500);
+}
+
+
+/* Minimal Empty State */
+.empty-state-container.minimal {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--grey-500);
+}
+.empty-state-container.minimal svg {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    color: var(--grey-400);
+}

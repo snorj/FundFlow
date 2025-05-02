@@ -19,6 +19,9 @@ urlpatterns = [
 
     # Include Transaction/Category API URLs under '/api/'
     path('api/', include('transactions.urls')), 
+
+    # Include integration app URLs
+    path('api/integrations/', include('integrations.urls')),
 ]
 
 # Note: You might want a catch-all route later to serve your React app's index.html
