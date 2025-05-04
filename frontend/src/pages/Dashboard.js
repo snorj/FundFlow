@@ -57,26 +57,39 @@ const Dashboard = () => {
         setIsLoadingTransactions(true);
     }
     setFetchError(null);
-    setHasUncategorized(false); // Reset check flag
+    setHasUncategorized(false); // Initial reset
 
     try {
+      // checkResponse will be TRUE or FALSE directly from the service
       const [categorizedData, checkResponse] = await Promise.all([
         transactionService.getTransactions({ status: 'categorized' }),
         transactionService.checkUncategorizedExists()
       ]);
+
+      // --- FIX: Use checkResponse directly ---
+      const uncategorizedExists = checkResponse; // It's already the boolean we need!
+
+      // Log the actual value received and the (now correct) calculated value
+      console.log(`[loadDashboardData] checkResponse value from Promise.all:`, checkResponse);
+      console.log(`[loadDashboardData] Calculated uncategorizedExists: ${uncategorizedExists}`);
+
       setTransactions(categorizedData || []);
-      setHasUncategorized(checkResponse?.has_uncategorized || false); // Use optional chaining and default
+      setHasUncategorized(uncategorizedExists); // Use the correct boolean value
+      console.log(`[loadDashboardData] State *after* setHasUncategorized(${uncategorizedExists})`);
+
     } catch (err) {
       console.error("Fetch Dashboard Data Error:", err);
       setFetchError(err.message || 'Could not load dashboard data.');
       setTransactions([]);
       setHasUncategorized(false);
+      console.log("[loadDashboardData] State set to FALSE due to error.");
     } finally {
       if (showLoading) {
           setIsLoadingTransactions(false);
       }
+      console.log("[loadDashboardData] FINALLY block reached.");
     }
-  }, []);
+  }, []); // Keep dependencies as they were
 
   // --- NEW: Fetch Up Link Status ---
   const checkLinkStatus = useCallback(async () => {

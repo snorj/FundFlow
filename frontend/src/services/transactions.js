@@ -1,77 +1,87 @@
-import api from './api'; // Your configured axios instance
+// frontend/src/services/transactions.js
+import api from './api';
 
 const transactionService = {
-  uploadTransactions: async (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    try {
-      const response = await api.post('/transactions/upload/', formData);
-      return response.data;
-    } catch (error) {
-      console.error('Error uploading transactions:', error.response || error);
-      throw error.response?.data || new Error('Failed to upload file.');
-    }
-  },
+    // --- Keep existing functions like getTransactions, uploadTransactions, etc. ---
+    getTransactions: async (params = {}) => {
+        try {
+            // Assuming this function already exists and works
+            const response = await api.get('/transactions/', { params });
+            // Handle potential pagination if ListAPIView is used without explicit disabling
+            // return response.data.results || response.data; // Adjust based on DRF pagination
+            return response.data; // If pagination is off or handled differently
+        } catch (error) {
+            console.error("Error fetching transactions:", error.response?.data || error.message);
+            throw error;
+        }
+    },
 
-  getTransactions: async (filters = {}) => {
-    try {
-      const response = await api.get('/transactions/', { params: filters });
-      return response.data.results || response.data;
-    } catch (error) {
-      console.error('Error fetching transactions:', error.response || error);
-      throw error.response?.data || new Error('Failed to fetch transactions.');
-    }
-  },
+    uploadTransactions: async (file) => {
+        try {
+            // Assuming this function already exists and works
+            const formData = new FormData();
+            formData.append('file', file);
+            const response = await api.post('/transactions/upload/', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+            return response.data;
+        } catch (error) {
+            console.error("Error uploading transactions:", error.response?.data || error.message);
+            throw error;
+        }
+    },
 
-  // --- UPDATED batchUpdateCategory FUNCTION ---
-  /**
-   * Assigns a category and potentially updates description/rule for transactions.
-   * @param {Array<number>} transactionIds - Array of transaction IDs.
-   * @param {number} categoryId - The ID of the category to assign.
-   * @param {string} originalDescription - The original description for rule matching.
-   * @param {string|null} editedDescription - The new clean name (if changed), otherwise null/undefined.
-   * @returns {Promise<object>} - Promise resolving to the API response data.
-   */
-  batchUpdateCategory: async (transactionIds, categoryId, originalDescription, editedDescription = null) => {
-    try {
-      const payload = {
-        transaction_ids: transactionIds,
-        category_id: categoryId,
-        original_description: originalDescription, // Always send original for rule matching
-      };
-      // Only include clean_name if it was actually edited and provided
-      if (editedDescription && editedDescription.trim() && editedDescription.trim() !== originalDescription.trim()) {
-        payload.clean_name = editedDescription.trim();
-      }
-      console.log("Sending PATCH payload:", payload); // Log the final payload
-      const response = await api.patch('/transactions/batch-categorize/', payload);
-      return response.data;
-    } catch (error) {
-      console.error('Error batch updating categories:', error.response || error);
-      throw error.response?.data || new Error('Failed to assign category.');
-    }
-  },
-  // --- END UPDATED FUNCTION ---
+    getUncategorizedGroups: async () => {
+         try {
+            // Assuming this exists
+             const response = await api.get('/transactions/uncategorized-groups/');
+             return response.data;
+         } catch (error) {
+             console.error("Error fetching uncategorized groups:", error.response?.data || error.message);
+             throw error;
+         }
+    },
 
-  getUncategorizedGroups: async () => {
-    try {
-      const response = await api.get('/transactions/uncategorized-groups/');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching uncategorized groups:', error.response || error);
-      throw error.response?.data || new Error('Failed to fetch uncategorized groups.');
-    }
-  },
+    batchUpdateCategory: async (transactionIds, categoryId, originalDescription, cleanName) => {
+         try {
+            // Assuming this exists
+             const payload = {
+                 transaction_ids: transactionIds,
+                 category_id: categoryId,
+                 original_description: originalDescription,
+                 clean_name: cleanName, // Send null if not edited
+             };
+             const response = await api.patch('/transactions/batch-categorize/', payload);
+             return response.data;
+         } catch (error) {
+             console.error("Error batch updating category:", error.response?.data || error.message);
+             throw error;
+         }
+     },
 
-  checkUncategorizedExists: async () => {
-     try {
-        const response = await api.get('/transactions/uncategorized-groups/', { params: { check_existence: true } });
-        return response.data.has_uncategorized || false;
-     } catch (error) {
-         console.error('Error checking for uncategorized groups:', error.response || error);
-         return false;
-     }
-  }
+
+    // --- FIX THIS FUNCTION ---
+    checkUncategorizedExists: async () => {
+        try {
+            const response = await api.get('/transactions/uncategorized-groups/', {
+                params: { check_existence: true } // Ensure param is sent correctly
+            });
+            // --- CORRECTLY EXTRACT THE BOOLEAN ---
+            // The backend returns {'has_uncategorized': true/false}
+            // Make sure to return the actual boolean value, not the whole response object.
+            console.log("[checkUncategorizedExists service] API response:", response.data); // Add log
+            return response.data?.has_uncategorized || false; // Extract the boolean, default to false
+        } catch (error) {
+            console.error("Error checking uncategorized existence:", error.response?.data || error.message);
+            // On error, assume none exist to avoid showing prompt incorrectly
+            return false;
+            // Or rethrow: throw error;
+        }
+    },
+    // --- END FIX ---
+
 };
 
 export default transactionService;

@@ -166,9 +166,11 @@ class UncategorizedTransactionGroupView(APIView):
 
         check_existence_only = request.query_params.get('check_existence', 'false').lower() == 'true'
         if check_existence_only:
-             logger.info(f"Checking existence of uncategorized groups for user: {user.username} ({user.id})")
-             exists = Transaction.objects.filter(user=user, category__isnull=True).exists()
-             return Response({'has_uncategorized': exists}, status=status.HTTP_200_OK)
+            logger.info(f"[Check Uncat] Checking existence for user: {user.username} ({user.id})")
+            logger.debug(f"[Check Uncat] Querying Transaction.objects.filter(user=user, category__isnull=True)...") # Before query
+            exists = Transaction.objects.filter(user=user, category__isnull=True).exists()
+            logger.info(f"[Check Uncat] Existence check result: {exists}") # After query
+            return Response({'has_uncategorized': exists}, status=status.HTTP_200_OK)
 
         logger.info(f"Fetching uncategorized transaction groups for user: {user.username} ({user.id})")
 
