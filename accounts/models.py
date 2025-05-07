@@ -15,6 +15,14 @@ class User(AbstractUser):
     # Even if you don't need custom fields now, having a custom User model
     # from the beginning is considered best practice for Django projects.
     
+    # --- NEW FIELD for Base Currency ---
+    base_currency = models.CharField(
+        max_length=3,
+        default='AUD', # Default base currency set to AUD
+        help_text="The user's preferred base currency for reporting (e.g., AUD, USD, EUR)."
+    )
+    # --- END NEW FIELD ---
+
     def __str__(self):
         """String representation of the user."""
         return self.email if self.email else self.username

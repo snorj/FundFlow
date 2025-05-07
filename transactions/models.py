@@ -1,4 +1,5 @@
 # transactions/models.py
+from decimal import Decimal
 from django.db import models
 from django.conf import settings # To reference the User model safely
 
@@ -41,84 +42,88 @@ class Category(models.Model):
         return self.name
 
 class Transaction(models.Model):
-    """
-    Represents a single financial transaction uploaded or entered by a user.
-    """
-    # Choices for the new source field
     SOURCE_CHOICES = [
         ('csv', 'CSV Upload'),
         ('up_bank', 'Up Bank API'),
-        # Add more sources here later if needed
     ]
+    DIRECTION_CHOICES = [('DEBIT', 'Debit'), ('CREDIT', 'Credit'),]
 
-    DIRECTION_CHOICES = [
-        ('DEBIT', 'Debit'),
-        ('CREDIT', 'Credit'),
-    ]
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions', db_index=True)
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions', db_index=True)
+    transaction_date = models.DateField(db_index=True)
+    description = models.TextField(help_text="Description of the transaction (e.g., merchant name, notes).")
 
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='transactions',
-        db_index=True
+    # --- RENAMED and NEW Currency Fields ---
+    original_amount = models.DecimalField( # RENAMED from 'amount'
+        max_digits=12,
+        decimal_places=2,
+        help_text="The amount of the transaction in the original currency."
     )
-    category = models.ForeignKey(
-        Category,
-        on_delete=models.SET_NULL,
+    original_currency = models.CharField( # NEW Field
+        max_length=3,
+        db_index=True,
+        help_text="ISO 4217 currency code of the original transaction (e.g., AUD, EUR)."
+        # No default here, must be set during creation or migration
+    )
+    direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES) # Kept direction field
+    aud_amount = models.DecimalField( # NEW Field for AUD equivalent
+        max_digits=12,      # Match original_amount or adjust if needed
+        decimal_places=2,
+        null=True,          # Allow NULL if conversion fails or for old data
+        blank=True,
+        help_text="The equivalent amount of the transaction in AUD, converted using the rate on the transaction date."
+    )
+    exchange_rate_to_aud = models.DecimalField( # NEW Field for the rate
+        max_digits=18,      # Allow for sufficient precision in exchange rates
+        decimal_places=9,   # Allow for sufficient precision
         null=True,
         blank=True,
-        related_name='transactions',
-        db_index=True
+        help_text="Exchange rate used to convert original_amount to aud_amount (Original Currency to AUD)."
     )
-    transaction_date = models.DateField(db_index=True)
-    description = models.TextField(
-        help_text="Description of the transaction (e.g., merchant name, notes)."
-    )
-    amount = models.DecimalField(max_digits=12, decimal_places=2)
-    direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES)
+    # --- END RENAMED and NEW Currency Fields ---
 
-    # --- Fields from CSV/Bank (Optional/Source Specific) ---
+    # --- Fields from CSV/Bank (Keep as is) ---
     source_account_identifier = models.CharField(max_length=50, null=True, blank=True)
     counterparty_identifier = models.CharField(max_length=50, null=True, blank=True)
     source_code = models.CharField(max_length=10, null=True, blank=True)
     source_type = models.CharField(max_length=50, null=True, blank=True)
     source_notifications = models.TextField(null=True, blank=True)
 
-    # --- NEW FIELDS for Integration ---
-    source = models.CharField(
-        max_length=20,
-        choices=SOURCE_CHOICES,
-        default='csv', # Default to CSV for existing/manual data
-        db_index=True,
-        help_text="Source from which this transaction was created."
-    )
-    bank_transaction_id = models.CharField(
-        max_length=255, # Up IDs are UUIDs (36 chars), but allow flexibility
-        null=True,      # Allow null for CSV/manual transactions
-        blank=True,
-        db_index=True,  # Crucial for duplicate checking performance
-        # unique=True,  # DO NOT add unique=True yet. Handle uniqueness in code.
-        help_text="Unique transaction ID provided by the bank API (if applicable)."
-    )
-    # --- END NEW FIELDS ---
+    # --- Fields for Integration/Metadata (Keep as is) ---
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='csv', db_index=True, help_text="Source from which this transaction was created.")
+    bank_transaction_id = models.CharField(max_length=255, null=True, blank=True, db_index=True, help_text="Unique transaction ID provided by the bank API (if applicable).")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-transaction_date', '-created_at']
-        # Consider adding a unique_together constraint later if needed,
-        # AFTER handling uniqueness in code robustly.
-        # Example: unique_together = ('user', 'bank_transaction_id')
-        # but requires bank_transaction_id to be non-null for the constraint.
 
     def __str__(self):
+        # Update string representation if desired
         direction_symbol = '-' if self.direction == 'DEBIT' else '+'
-        return f"{self.transaction_date} | {self.user.username} | {self.description[:30]} | {direction_symbol}{self.amount} ({self.source})"
+        # Display original amount/currency
+        orig_display = f"{direction_symbol}{self.original_amount} {self.original_currency or '???'}"
+        # Optionally add AUD amount if different and available
+        aud_display = ""
+        if self.original_currency != 'AUD' and self.aud_amount is not None:
+            aud_display = f" (~{direction_symbol}{self.aud_amount} AUD)"
+        return f"{self.transaction_date} | {self.user.username} | {self.description[:30]} | {orig_display}{aud_display} ({self.source})"
 
     @property
-    def signed_amount(self):
-        return -self.amount if self.direction == 'DEBIT' else self.amount
+    def signed_original_amount(self):
+        """Returns the original amount with correct sign based on direction."""
+        # Ensure original_amount is Decimal before negation
+        amount = self.original_amount if isinstance(self.original_amount, Decimal) else Decimal(0)
+        return -amount if self.direction == 'DEBIT' else amount
+
+    @property
+    def signed_aud_amount(self):
+        """Returns the AUD amount with correct sign, or None."""
+        if self.aud_amount is None:
+            return None
+        amount = self.aud_amount # Already Decimal
+        return -amount if self.direction == 'DEBIT' else amount
 
 # --- Keep existing DescriptionMapping model ---
 class DescriptionMapping(models.Model):
