@@ -15,10 +15,10 @@ const formatDate = (dateString) => {
       return new Date(dateString + 'T00:00:00').toLocaleDateString(undefined, options);
     } catch (e) { return dateString; }
 };
-const formatCurrency = (amount, direction) => {
+const formatCurrency = (amount, direction, currency = 'EUR') => { // Added currency param
     const numAmount = Number(amount);
     if (isNaN(numAmount)) return 'N/A';
-    const options = { style: 'currency', currency: 'EUR' }; // Or derive currency
+    const options = { style: 'currency', currency: currency }; // Use passed currency
     const formatted = Math.abs(numAmount).toLocaleString(undefined, options);
     return direction?.toUpperCase() === 'DEBIT' ? `- ${formatted}` : `+ ${formatted}`;
 };
@@ -35,18 +35,19 @@ const Dashboard = () => {
   const [uploadError, setUploadError] = useState(null);
   const [uploadSuccess, setUploadSuccess] = useState(null);
 
-  // --- NEW State for Up Integration ---
+  // --- State for Up Integration ---
   const [isUpLinked, setIsUpLinked] = useState(false);
-  const [isLoadingUpStatus, setIsLoadingUpStatus] = useState(true); // Loading status for the link check
+  const [isLoadingUpStatus, setIsLoadingUpStatus] = useState(true);
   const [upPatInput, setUpPatInput] = useState('');
   const [isSavingPat, setIsSavingPat] = useState(false);
   const [savePatError, setSavePatError] = useState(null);
-  const [savePatSuccess, setSavePatSuccess] = useState(null); // Can use this for success message briefly
+  const [savePatSuccess, setSavePatSuccess] = useState(null);
+  const [isRemovingLink, setIsRemovingLink] = useState(false);
+  // Sync state will be used in Stage 6
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
   const [syncSuccessMessage, setSyncSuccessMessage] = useState(null);
-  const [isRemovingLink, setIsRemovingLink] = useState(false); // Loading state for removal
-  // --- End NEW State ---
+  // --- End Integration State ---
 
   const navigate = useNavigate();
 
@@ -91,24 +92,21 @@ const Dashboard = () => {
     }
   }, []); // Keep dependencies as they were
 
-  // --- NEW: Fetch Up Link Status ---
+  // --- Fetch Up Link Status ---
   const checkLinkStatus = useCallback(async () => {
       setIsLoadingUpStatus(true);
-      setSavePatError(null); // Clear previous errors on check
-      setSavePatSuccess(null);
+      setSavePatError(null); setSavePatSuccess(null); setSyncError(null); setSyncSuccessMessage(null); // Clear messages
       try {
           const statusResult = await integrationsService.checkUpLinkStatus();
           setIsUpLinked(statusResult?.is_linked || false);
-          console.log("Up Link Status:", statusResult);
       } catch (error) {
-          console.error("Error checking Up link status:", error);
-          // Handle error - maybe show a message? For now, assume not linked on error.
           setIsUpLinked(false);
-          setSavePatError("Could not verify Up Bank connection status.");
+          // Display a persistent error? Maybe not on initial check unless critical
+          console.error("Error checking Up link status:", error);
       } finally {
           setIsLoadingUpStatus(false);
       }
-  }, []); // No dependencies needed
+  }, []);
 
   // Initial Data Load on Mount
   useEffect(() => {
@@ -172,53 +170,68 @@ const Dashboard = () => {
   };
 
   const handleRemoveLink = async () => {
-      // Optional: Add confirmation dialog here
-      if (!window.confirm("Are you sure you want to remove the link to your Up Bank account?")) {
-          return;
-      }
-      setIsRemovingLink(true); // Use isSavingPat or add new state if simultaneous actions possible
-      setSavePatError(null); // Clear other messages
-      setSavePatSuccess(null);
-      setSyncError(null);
-      setSyncSuccessMessage(null);
+      if (!window.confirm("Are you sure you want to remove the link to your Up Bank account? This will delete the stored access token.")) { return; }
+      setIsRemovingLink(true);
+      setSavePatError(null); setSavePatSuccess(null); setSyncError(null); setSyncSuccessMessage(null); // Clear all messages
       try {
           await integrationsService.removeUpLink();
-          setIsUpLinked(false);
-          // Optionally show a success message for removal
+          setIsUpLinked(false); // Update state
+          // Optionally add a temporary success message for removal
+          setSavePatSuccess("Up Bank link removed.");
+          setTimeout(() => setSavePatSuccess(null), 5000);
       } catch (error) {
-           console.error("Error removing link:", error);
-           // Use savePatError to display link removal error
            setSavePatError(error.response?.data?.error || "Could not remove Up Bank link.");
       } finally {
            setIsRemovingLink(false);
       }
   };
 
+  // --- FINAL Up Integration Sync Handler ---
   const handleTriggerSync = async () => {
-      setIsSyncing(true);
-      setSyncError(null);
-      setSyncSuccessMessage(null);
-      try {
-          const result = await integrationsService.triggerUpSync();
-          setSyncSuccessMessage(result.message || "Sync completed."); // Use message from backend
-           // Refresh dashboard data to show prompt/updated list
-           await loadDashboardData(false); // Refresh without full page loading indicator
-           // Optionally clear message after timeout
-           setTimeout(() => setSyncSuccessMessage(null), 8000);
-      } catch (error) {
-           console.error("Error triggering sync:", error);
-           const backendError = error.response?.data?.error;
-           setSyncError(backendError || "Sync failed. Please try again.");
-           if (error.response?.status === 401) {
-                // Token became invalid, update link status and prompt user
-                setIsUpLinked(false);
-                setSavePatError("Your Up Bank token is invalid. Please enter a new one.");
-           }
-      } finally {
-           setIsSyncing(false);
-      }
-  };
-  // --- End NEW Handlers ---
+    setIsSyncing(true); // Show loading state
+    setSyncError(null); // Clear previous messages
+    setSyncSuccessMessage(null);
+    console.log("Sync Triggered! Calling backend API...");
+
+    try {
+        // Call the actual API service function
+        const result = await integrationsService.triggerUpSync();
+
+        // Display success message from backend response
+        setSyncSuccessMessage(result.message || "Sync completed successfully."); // Use backend message
+        console.log("Sync successful:", result);
+
+        // Refresh dashboard data (transactions and uncategorized check)
+        // to show any newly imported transactions and update the prompt.
+        // Pass false to prevent the main transaction list from showing a loading spinner.
+        await loadDashboardData(false);
+
+        // Optional: Clear success message after a delay
+        setTimeout(() => setSyncSuccessMessage(null), 8000);
+
+    } catch (error) {
+         console.error("Error triggering sync:", error);
+         // Extract specific error message from backend if available
+         const backendError = error.response?.data?.error;
+         setSyncError(backendError || "Sync failed. Please try again later.");
+
+         // Specific handling if the token became invalid during the sync attempt
+         if (error.response?.status === 401) {
+              // Token is invalid, force user to relink
+              setIsUpLinked(false); // Update UI to show "Not Linked" state
+              // Display error message near the PAT input area now
+              setSavePatError("Your Up Bank token is invalid or expired. Please link again.");
+              // Clear sync-specific messages as the main issue is the link now
+              setSyncError(null);
+              setSyncSuccessMessage(null);
+         }
+         // Optional: Clear error message after a delay? Or keep it until next action?
+         // setTimeout(() => setSyncError(null), 10000);
+    } finally {
+         setIsSyncing(false); // Hide loading state regardless of outcome
+    }
+};
+// --- End Sync Handler ---
 
 
   // --- Render Logic ---
@@ -255,41 +268,43 @@ const Dashboard = () => {
                      <FiCheckCircle className="icon-success"/>
                      <span>Up Bank Account Linked</span>
                  </div>
+                 {/* Display general success/error messages related to this section */}
+                 {savePatSuccess && !isRemovingLink && <div className="pat-feedback success-message"><FiCheckCircle /> {savePatSuccess}</div>}
+                 {savePatError && !isRemovingLink && <div className="pat-feedback error-message"><FiAlertCircle /> {savePatError}</div>}
+                 {syncSuccessMessage && <div className="sync-feedback success-message"><FiCheckCircle /> {syncSuccessMessage}</div>}
+                 {syncError && <div className="sync-feedback error-message"><FiAlertCircle /> {syncError}</div>}
+
                  <div className="connection-actions">
+                     {/* Sync Button - Placeholder Action for now */}
                      <button onClick={handleTriggerSync} className="action-button teal-button sync-button" disabled={isSyncing || isRemovingLink}>
                          {isSyncing ? <FiLoader className="button-icon spinner"/> : <FiRefreshCw className="button-icon"/>}
                          Sync Now
                      </button>
+                     {/* Remove Link Button */}
                      <button onClick={handleRemoveLink} className="action-button plain-button remove-button" disabled={isSyncing || isRemovingLink}>
                          {isRemovingLink ? <FiLoader className="button-icon spinner"/> : <FiTrash2 className="button-icon"/>}
                          Remove Link
                      </button>
                  </div>
-                 {/* Sync Feedback */}
-                 {syncError && <div className="sync-feedback error-message"><FiAlertCircle /> {syncError}</div>}
-                 {syncSuccessMessage && <div className="sync-feedback success-message"><FiCheckCircle /> {syncSuccessMessage}</div>}
-                 {/* Display savePatError here too, in case remove link fails */}
-                 {savePatError && <div className="sync-feedback error-message"><FiAlertCircle /> {savePatError}</div>}
              </div>
          ) : (
              // --- Not Linked State ---
              <div className="connection-status not-linked">
                  <p>Connect your Up Bank account using a Personal Access Token to automatically sync transactions.</p>
-                 {/* Add instructions or link to Up docs on getting a PAT */}
-                 <a href="https://developer.up.com.au/#personal_access_tokens" target="_blank" rel="noopener noreferrer" className="external-link">How to get your Up token?</a>
+                 <a href="https://api.up.com.au/getting_started" target="_blank" rel="noopener noreferrer" className="external-link">How to get your Up token?</a>
                  <div className="pat-input-area">
                      <FiKey className="input-icon"/>
                      <input
-                         type="password" // Use password type for sensitive token
-                         placeholder="Enter your Up Personal Access Token (up:yeah:...)"
+                         type="password"
+                         placeholder="Paste your Up Personal Access Token here"
                          value={upPatInput}
                          onChange={handlePatInputChange}
                          disabled={isSavingPat}
                          className="pat-input"
                      />
                      <button onClick={handleSavePat} disabled={isSavingPat || !upPatInput.trim()} className="action-button teal-button">
-                         {isSavingPat ? <FiLoader className="button-icon spinner"/> : <FiCheck className="button-icon"/>}
-                         Save & Verify Token
+                         {isSavingPat ? <FiLoader className="button-icon spinner"/> : <FiLink className="button-icon"/>}
+                         Link Account
                      </button>
                  </div>
                  {/* PAT Save Feedback */}

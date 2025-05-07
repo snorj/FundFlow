@@ -166,38 +166,42 @@ class UncategorizedTransactionGroupView(APIView):
 
         check_existence_only = request.query_params.get('check_existence', 'false').lower() == 'true'
         if check_existence_only:
-            logger.info(f"[Check Uncat] Checking existence for user: {user.username} ({user.id})")
-            logger.debug(f"[Check Uncat] Querying Transaction.objects.filter(user=user, category__isnull=True)...") # Before query
-            exists = Transaction.objects.filter(user=user, category__isnull=True).exists()
-            logger.info(f"[Check Uncat] Existence check result: {exists}") # After query
-            return Response({'has_uncategorized': exists}, status=status.HTTP_200_OK)
+             # ... (Keep existence check logic) ...
+             exists = Transaction.objects.filter(user=user, category__isnull=True).exists()
+             return Response({'has_uncategorized': exists}, status=status.HTTP_200_OK)
+
 
         logger.info(f"Fetching uncategorized transaction groups for user: {user.username} ({user.id})")
 
         uncategorized_txs = Transaction.objects.filter(
             user=user,
             category__isnull=True
-        ).order_by('description', '-transaction_date')
+        ).order_by('description', '-transaction_date') # Order needed for grouping and getting max_date easily
 
         grouped_transactions = {}
         for tx in uncategorized_txs:
-            description = tx.description
+            description = tx.description # Use the actual description from the DB
 
             if description not in grouped_transactions:
                 grouped_transactions[description] = {
                     'description': description,
-                    'max_date': tx.transaction_date,
+                    'max_date': tx.transaction_date, # First one in sorted group is max
                     'transaction_ids': [],
-                    'previews': [] # Initialize previews list
+                    'previews': []
                 }
 
-            # --- ONLY ONE APPEND NEEDED ---
+            # --- Build Preview Data ---
             grouped_transactions[description]['previews'].append({
                  'id': tx.id,
                  'date': tx.transaction_date,
-                 'amount': tx.amount,
+                 # --- FIX: Use original_amount ---
+                 'amount': tx.original_amount,
+                 # --- FIX: Use original_currency ---
+                 'currency': tx.original_currency, # Add currency info
                  'direction': tx.direction,
-                 'signed_amount': tx.signed_amount,
+                 # --- FIX: Use model property ---
+                 'signed_amount': tx.signed_original_amount, # Use property for signed value
+                 # Keep other source fields if needed by frontend details modal
                  'source_account': tx.source_account_identifier,
                  'counterparty': tx.counterparty_identifier,
                  'code': tx.source_code,
@@ -207,21 +211,22 @@ class UncategorizedTransactionGroupView(APIView):
 
             grouped_transactions[description]['transaction_ids'].append(tx.id)
 
-            # --- REMOVED THE SECOND, REDUNDANT APPEND BLOCK ---
+            # --- NO SECOND APPEND (already removed) ---
 
+        # Convert dict to list and sort by date
         sorted_groups = sorted(
             grouped_transactions.values(),
             key=lambda group: group['max_date'],
             reverse=True
         )
 
+        # Add counts and earliest date
         for group in sorted_groups:
             group['count'] = len(group['transaction_ids'])
-            # Find earliest date from the previews we already have
-            if group['previews']: # Check if previews is not empty
+            if group['previews']:
                  group['earliest_date'] = min(p['date'] for p in group['previews'])
             else:
-                 group['earliest_date'] = None # Or handle as appropriate
+                 group['earliest_date'] = None
 
         logger.info(f"Found {len(sorted_groups)} groups of uncategorized transactions for user {user.id}, sorted by most recent.")
         return Response(sorted_groups, status=status.HTTP_200_OK)
@@ -436,24 +441,29 @@ class TransactionCSVUploadView(APIView):
 
             # --- Phase 2: Query Existing Transactions & Build Lookup Set ---
             existing_keys = set()
-            if potential_transactions_data: # Only query if CSV had processable rows
+            if potential_transactions_data: # Only query if CSV had valid rows
                 logger.info(f"User {current_user.id}: Phase 2 - Querying database for existing transactions...")
-                # Optimize query using date range
                 queryset = Transaction.objects.filter(user=current_user)
                 if min_date and max_date:
                     queryset = queryset.filter(transaction_date__range=(min_date, max_date))
                     logger.debug(f"User {current_user.id}: Querying existing transactions between {min_date} and {max_date}")
 
-                # Fetch only necessary fields for building the key set
+                # Build set of tuples from DB: (date, amount, direction, description)
+                # Using the description stored in the database for comparison
                 existing_keys = set(
-                    (tx.transaction_date, tx.amount, tx.direction, tx.description)
+                    (tx.transaction_date, tx.original_amount, tx.direction, tx.description) # <-- Use the object attribute here
+                    # --- FIX: Update field name in .only() call ---
                     for tx in queryset.only(
-                        'transaction_date', 'amount', 'direction', 'description' # Django optimization
+                        'transaction_date',
+                        'original_amount', # Changed from 'amount'
+                        'direction',
+                        'description'
                     )
+                    # --- End FIX ---
                 )
-                logger.info(f"User {current_user.id}: Phase 2 Complete - Found {len(existing_keys)} potentially relevant existing transaction keys.")
+                logger.info(f"User {current_user.id}: Phase 2 Complete - Found {len(existing_keys)} potentially relevant existing transaction keys for user.")
             else:
-                 logger.info(f"User {current_user.id}: Phase 2 Skipped - No processable data from CSV.")
+                 logger.info(f"User {current_user.id}: Phase 2 Skipped - No potential transactions from CSV.")
 
             # --- Phase 3: Filter Duplicates, Apply Rules, Build Final List ---
             logger.info(f"User {current_user.id}: Phase 3 - Filtering duplicates, applying rules, building create list...")

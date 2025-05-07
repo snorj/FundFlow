@@ -4,29 +4,7 @@ import './CategorizationCard.css';
 // Add FiInfo and update FiX import path if needed (assuming FiXCircle is used for description cancel)
 import { FiTag, FiCheck, FiLoader, FiEdit2, FiSave, FiXCircle, FiInfo, FiX } from 'react-icons/fi';
 import CategorySelectorModal from './CategorySelectorModal';
-
-// Helper Functions
-const formatDate = (dateString) => {
-  if (!dateString) return 'N/A';
-  try {
-    const options = { year: 'numeric', month: 'short', day: 'numeric' };
-    // Ensure date parsing is robust, adding time avoids timezone shifts from midnight UTC
-    return new Date(dateString + 'T00:00:00').toLocaleDateString(undefined, options);
-  } catch (e) {
-    console.warn("Error formatting date:", dateString, e);
-    return dateString;
-  }
-};
-
-const formatCurrency = (amount, direction) => {
-  const numAmount = Number(amount);
-  if (isNaN(numAmount)) return 'N/A';
-  // Consider making currency dynamic later ('USD', 'EUR', etc.)
-  const options = { style: 'currency', currency: 'EUR' };
-  const formatted = Math.abs(numAmount).toLocaleString(undefined, options);
-  // Ensure direction is handled case-insensitively and defaults reasonably
-  return direction?.toUpperCase() === 'DEBIT' ? `- ${formatted}` : `+ ${formatted}`;
-};
+import { formatDate, formatCurrency } from '../../utils/formatting'; // Adjust path based on file structure
 
 // --- NEW: Helper to display detail field nicely ---
 const DetailField = ({ label, value }) => {
@@ -228,7 +206,7 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
                             <li key={tx.id}>
                                 <span className="tx-date">{formatDate(tx.date)}</span>
                                 <span className={`tx-amount amount-${tx.direction?.toLowerCase()}`}>
-                                    {formatCurrency(tx.amount, tx.direction)}
+                                    {formatCurrency(tx.amount, tx.direction, tx.currency)}
                                 </span>
                                 {/* --- Add Info Button --- */}
                                 <button
@@ -300,7 +278,7 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
                              {/* Use the DetailField helper */}
                              <DetailField label="Date" value={formatDate(viewingTxDetails.date)} />
                              <DetailField label="Description" value={editedDescription || group.description} /> {/* Show potentially edited name */}
-                             <DetailField label="Amount" value={formatCurrency(viewingTxDetails.amount, viewingTxDetails.direction)} />
+                             <DetailField label="Amount" value={formatCurrency(viewingTxDetails.amount, viewingTxDetails.direction, viewingTxDetails.currency)} />
                              <DetailField label="Direction" value={viewingTxDetails.direction} />
                              <hr className="detail-separator" />
                              <DetailField label="Source Account" value={viewingTxDetails.source_account} />
