@@ -1,4 +1,5 @@
 # integrations/services.py
+from decimal import Decimal
 import requests
 import os
 import logging
@@ -170,3 +171,64 @@ def get_transactions(token: str, since_iso: str = None, page_size: int = 100) ->
 
     logger.info(f"Finished transaction fetch. Total transactions retrieved: {len(all_transactions)}")
     return all_transactions
+
+# --- NEW: Currency Exchange Rate Service ---
+# Base URL for the Fawazahmed0 Currency API (using a CDN link)
+# Using 'latest' in the path will ensure we always point to the most recent API version available at this CDN.
+CURRENCY_API_BASE_URL = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/"
+
+def get_historical_exchange_rate(date_str: str, from_currency: str, to_currency: str) -> Decimal | None:
+    """
+    Fetches the historical exchange rate for a given date, from_currency, and to_currency.
+    Uses the Fawazahmed0 Currency API.
+
+    Args:
+        date_str (str): The date for the historical rate in 'YYYY-MM-DD' format.
+        from_currency (str): The ISO 4217 currency code to convert from (e.g., 'EUR').
+        to_currency (str): The ISO 4217 currency code to convert to (e.g., 'AUD').
+
+    Returns:
+        Decimal | None: The exchange rate (how many units of `to_currency` for one unit of `from_currency`),
+                        or None if the rate cannot be fetched.
+    """
+    if from_currency.upper() == to_currency.upper():
+        return Decimal("1.0") # Rate is 1 if currencies are the same
+
+    # API endpoint format: /{date}/currencies/{from_currency_lowercase}.json
+    # The API returns rates *relative to* the from_currency.
+    # So, we need to get the rate of to_currency_lowercase based on from_currency_lowercase.
+    endpoint = f"{date_str}/currencies/{from_currency.lower()}.json"
+    url = urljoin(CURRENCY_API_BASE_URL, endpoint)
+
+    logger.debug(f"Fetching exchange rate: {from_currency} to {to_currency} for date {date_str} from {url}")
+
+    try:
+        response = requests.get(url, timeout=10) # Add a timeout
+        response.raise_for_status() # Check for HTTP errors
+        data = response.json()
+
+        # The actual rates are nested under the 'from_currency' key in the response
+        # e.g. if from_currency is 'eur', data['eur']['aud'] gives EUR to AUD rate
+        rate_value = data.get(from_currency.lower(), {}).get(to_currency.lower())
+
+        if rate_value is not None:
+            try:
+                rate = Decimal(str(rate_value)) # Convert to Decimal robustly
+                logger.info(f"Fetched rate {from_currency}->{to_currency} on {date_str}: {rate}")
+                return rate
+            except Exception: # Handle potential conversion error for rate_value
+                logger.error(f"Could not convert rate value '{rate_value}' to Decimal.")
+                return None
+        else:
+            logger.warning(f"Rate for {to_currency.lower()} not found in response for base {from_currency.lower()} on {date_str}. Response data: {data}")
+            return None
+
+    except RequestException as e:
+        logger.error(f"Network error fetching exchange rate for {date_str}, {from_currency}->{to_currency}: {e}")
+        return None
+    except HTTPError as e:
+        logger.error(f"HTTP error fetching exchange rate for {date_str}, {from_currency}->{to_currency}: {e.response.status_code} - {e.response.text[:200]}")
+        return None
+    except Exception as e: # Catch any other errors like JSONDecodeError
+        logger.exception(f"Unexpected error fetching exchange rate for {date_str}, {from_currency}->{to_currency}: {e}")
+        return None
