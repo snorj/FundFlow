@@ -6,7 +6,7 @@ from django.test import override_settings
 from cryptography.fernet import Fernet
 
 # Import the functions to test
-from .utils import encrypt_token, decrypt_token, FERNET_INSTANCE # Import FERNET_INSTANCE if needed for specific tests
+from ..utils import encrypt_token, decrypt_token, FERNET_INSTANCE # Import FERNET_INSTANCE if needed for specific tests
 
 # Generate a known key JUST for testing purposes.
 # DO NOT use your real production key here.

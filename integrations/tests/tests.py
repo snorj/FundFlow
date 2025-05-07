@@ -9,7 +9,7 @@ import requests # Import requests itself for exception types
 from requests.exceptions import RequestException, HTTPError
 
 # Import the functions/module to test
-from . import services
+from .. import services
 
 # Example data
 MOCK_BASE_URL = "https://mockapi.test.com/api/v1/" # Base URL for testing
