@@ -3,26 +3,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Dashboard.css';
 // Add/update icons
-import { FiUpload, FiLink, FiLoader, FiCheckCircle, FiAlertCircle, FiInbox, FiEdit, FiTrash2, FiRefreshCw, FiKey, FiCheck, FiX } from 'react-icons/fi';
+import { FiUpload, FiLink, FiLoader, FiCheckCircle, FiAlertCircle, FiInbox, FiEdit, FiTrash2, FiRefreshCw, FiKey } from 'react-icons/fi';
 import transactionService from '../services/transactions';
 import integrationsService from '../services/integrations'; // <-- Import new service
-
-// --- Helper Functions (Keep as is) ---
-const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-      const options = { year: 'numeric', month: 'short', day: 'numeric' };
-      return new Date(dateString + 'T00:00:00').toLocaleDateString(undefined, options);
-    } catch (e) { return dateString; }
-};
-const formatCurrency = (amount, direction, currency = 'EUR') => { // Added currency param
-    const numAmount = Number(amount);
-    if (isNaN(numAmount)) return 'N/A';
-    const options = { style: 'currency', currency: currency }; // Use passed currency
-    const formatted = Math.abs(numAmount).toLocaleString(undefined, options);
-    return direction?.toUpperCase() === 'DEBIT' ? `- ${formatted}` : `+ ${formatted}`;
-};
-// --- End Helper Functions ---
+import { formatDate, formatCurrency } from '../utils/formatting'; // Corrected path
 
 const Dashboard = () => {
   // --- Existing State ---

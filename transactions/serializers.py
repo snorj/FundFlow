@@ -83,38 +83,60 @@ class CategorySerializer(serializers.ModelSerializer):
 
         return value.strip() # Return cleaned value
     
-# --- NEW TRANSACTION SERIALIZER ---
 class TransactionSerializer(serializers.ModelSerializer):
     """
     Serializer for the Transaction model.
-    Includes category details nested (or just ID depending on need).
+    Includes new currency fields and uses renamed 'original_amount'.
     """
-    # To show category name instead of just ID in API responses:
     category_name = serializers.CharField(source='category.name', read_only=True, allow_null=True)
-    # Or use nested serializer:
-    # category = CategorySerializer(read_only=True) # If you want full category object
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
 
-    user = serializers.PrimaryKeyRelatedField(read_only=True) # User assigned internally
+    # --- NEW/UPDATED: SerializerMethodFields for signed amounts ---
+    # Expose the signed original amount
+    signed_original_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    # Expose the signed AUD amount (can be null)
+    signed_aud_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, allow_null=True)
+    # --- END NEW/UPDATED ---
 
     class Meta:
         model = Transaction
         fields = [
             'id',
             'user',
-            'category', # ID for writing (if updating later)
-            'category_name', # Read-only name display
+            'category',             # For writing category ID
+            'category_name',        # For reading category name
             'transaction_date',
             'description',
-            'amount',
+
+            # --- UPDATED: Use new field names ---
+            'original_amount',
+            'original_currency',
             'direction',
-            'signed_amount', # Include the property if useful for frontend
-            # Optional source fields if needed by frontend
+            'aud_amount',           # Converted AUD amount (can be null)
+            'exchange_rate_to_aud', # Rate used (can be null)
+            # --- END UPDATED ---
+
+            # --- Include new signed amount fields ---
+            'signed_original_amount',
+            'signed_aud_amount',
+            # --- End new signed amount fields ---
+
+            'source',               # Added source field
+            'bank_transaction_id',  # Added bank_transaction_id
+
+            # Optional source fields from CSV/API
             'source_account_identifier',
             'counterparty_identifier',
             'source_code',
             'source_type',
             'source_notifications',
+
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'user', 'category_name', 'signed_amount', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id', 'user', 'category_name',
+            'signed_original_amount', 'signed_aud_amount', # These are read-only
+            'aud_amount', 'exchange_rate_to_aud', # Calculated by backend
+            'created_at', 'updated_at'
+        ]
