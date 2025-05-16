@@ -1,7 +1,7 @@
 # transactions/views.py
 import csv
 import io # To handle in-memory text stream
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime
 from django.db import transaction as db_transaction # Renamed to avoid confusion
 from rest_framework import generics, permissions, status
@@ -18,6 +18,9 @@ from django.shortcuts import get_object_or_404 # Useful for getting the Category
 from transactions import serializers # Added logging
 from django.db.models import Max # Import Max for aggregation
 from rest_framework.parsers import JSONParser
+from integrations.services import get_historical_exchange_rate
+from integrations.logic import BASE_CURRENCY_FOR_CONVERSION # AUD
+
 
 logger = logging.getLogger(__name__)
 
@@ -331,16 +334,9 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
         return {'request': self.request}
     
 class TransactionCSVUploadView(APIView):
-    """
-    API endpoint to upload a CSV file containing transactions.
-    Checks for DescriptionMapping rules to auto-categorize and clean names.
-    Checks for and skips duplicate transactions based on user, date, amount,
-    direction, and the final description (after potential cleaning).
-    """
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
-    # Define expected CSV headers (adjust if your format differs)
     EXPECTED_HEADERS = [
         "Date", "Name / Description", "Account", "Counterparty",
         "Code", "Debit/credit", "Amount (EUR)", "Transaction type",
@@ -351,242 +347,189 @@ class TransactionCSVUploadView(APIView):
         logger.info(f"CSV Upload initiated by user: {request.user.username} ({request.user.id})")
         file_obj = request.FILES.get('file')
         current_user = request.user
+        
+        # --- CSV Currency is Hardcoded to EUR ---
+        CSV_FILE_CURRENCY = 'EUR'
+        # --- End Currency Hardcoding ---
 
-        # --- Basic File Validation ---
-        if not file_obj:
+        if not file_obj: # ... (file validation as before) ...
             return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
         if not file_obj.name.lower().endswith('.csv'):
              return Response({'error': 'Invalid file type. Please upload a CSV file.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # --- Read and Decode File ---
             decoded_file = file_obj.read().decode('utf-8')
             io_string = io.StringIO(decoded_file)
             reader = csv.reader(io_string)
-
-            # --- Header Validation ---
             try:
                 headers = next(reader)
             except StopIteration:
                  return Response({'error': 'CSV file is empty or contains only headers.'}, status=status.HTTP_400_BAD_REQUEST)
-
+            # ... (header validation logic remains the same) ...
             normalized_headers = [h.strip().lower() for h in headers]
             normalized_expected = [h.strip().lower() for h in self.EXPECTED_HEADERS]
             if normalized_headers != normalized_expected:
-                 logger.warning(f"CSV header mismatch for user {current_user.id}. Expected: {normalized_expected}, Got: {normalized_headers}")
                  error_detail = "CSV headers do not match expected format. Please ensure columns are: " + ", ".join(self.EXPECTED_HEADERS)
                  return Response({'error': error_detail}, status=status.HTTP_400_BAD_REQUEST)
 
-            # --- Data Processing Structures ---
-            potential_transactions_data = [] # Store validated data from CSV rows
-            errors = []                      # Store row-level processing errors
+            potential_transactions_data = []
+            errors = []
             processed_rows = 0
-            min_date, max_date = None, None  # To optimize DB query
+            min_date, max_date = None, None
 
-            # --- Phase 1: Parse CSV, Validate Rows, Collect Potential Data ---
-            logger.info(f"User {current_user.id}: Phase 1 - Parsing CSV...")
-            for i, row in enumerate(reader, start=1): # Start from 1 for user-friendly row numbers
+            logger.info(f"User {current_user.id}: Phase 1 - Parsing CSV (Assumed Currency: {CSV_FILE_CURRENCY})...")
+            for i, row in enumerate(reader, start=1):
                 processed_rows += 1
-                # Basic row structure check
-                if len(row) != len(self.EXPECTED_HEADERS):
+                if len(row) != len(self.EXPECTED_HEADERS): # ... (skip row logic) ...
                     errors.append(f"Row {i+1}: Incorrect number of columns ({len(row)}), expected {len(self.EXPECTED_HEADERS)}. Row skipped.")
                     continue
-
                 try:
-                    # Extract Raw Data (adjust indices if your CSV differs)
-                    raw_date_str = row[0].strip()
-                    raw_description = row[1].strip()
-                    raw_account = row[2].strip()
-                    raw_counterparty = row[3].strip()
-                    raw_code = row[4].strip()
-                    raw_debit_credit = row[5].strip().upper()
-                    raw_amount_str = row[6].strip().replace(',', '.') # Handle comma decimal separator
-                    raw_transaction_type = row[7].strip()
-                    raw_notifications = row[8].strip()
-
-                    # Data Validation and Conversion
-                    try: transaction_date = datetime.strptime(raw_date_str, '%Y%m%d').date()
-                    except ValueError: raise ValueError(f"Invalid date format '{raw_date_str}' (expected YYYYMMDD).")
-                    try: amount = Decimal(raw_amount_str); assert amount >= 0 # Ensure non-negative
-                    except (InvalidOperation, AssertionError): raise ValueError(f"Invalid or negative amount format '{raw_amount_str}'.")
-                    if raw_debit_credit not in ['DEBIT', 'CREDIT']: raise ValueError(f"Invalid Debit/credit value '{row[5].strip()}' (expected DEBIT or CREDIT).")
+                    raw_date_str, raw_description, raw_account, raw_counterparty, raw_code, raw_debit_credit_str, raw_amount_str, raw_type, raw_notify = [r.strip() for r in row]
+                    raw_debit_credit = raw_debit_credit_str.upper()
+                    
+                    transaction_date_obj = datetime.strptime(raw_date_str, '%Y%m%d').date()
+                    parsed_amount = Decimal(raw_amount_str.replace(',', '.'))
+                    if parsed_amount < 0: raise ValueError("Amount in CSV should be positive.")
+                    if raw_debit_credit not in ['DEBIT', 'CREDIT']: raise ValueError("Invalid direction.")
                     direction = raw_debit_credit
+                    
+                    if min_date is None or transaction_date_obj < min_date: min_date = transaction_date_obj
+                    if max_date is None or transaction_date_obj > max_date: max_date = transaction_date_obj
 
-                    # Track date range for optimization
-                    if min_date is None or transaction_date < min_date: min_date = transaction_date
-                    if max_date is None or transaction_date > max_date: max_date = transaction_date
-
-                    # Store validated data needed for duplicate check and final object creation
                     potential_transactions_data.append({
-                        'row_num': i + 1, # Store row number for error reporting
+                        'row_num': i + 1,
+                        'transaction_date': transaction_date_obj,
                         'raw_description': raw_description,
-                        'transaction_date': transaction_date,
-                        'amount': amount,
+                        'original_amount': parsed_amount,
+                        'original_currency': CSV_FILE_CURRENCY, # Hardcoded EUR
                         'direction': direction,
                         'source_account_identifier': raw_account or None,
                         'counterparty_identifier': raw_counterparty or None,
                         'source_code': raw_code or None,
-                        'source_type': raw_transaction_type or None,
-                        'source_notifications': raw_notifications or None,
+                        'source_type': raw_type or None,
+                        'source_notifications': raw_notify or None,
                     })
-
-                except ValueError as ve:
-                    logger.warning(f"User {current_user.id} - Row {i+1}: Validation Error: {str(ve)}")
-                    errors.append(f"Row {i+1}: {str(ve)}")
-                except Exception as e: # Catch unexpected errors during row processing
-                    logger.error(f"User {current_user.id} - Row {i+1}: Unexpected error processing row: {str(e)}. Row data: {row}")
-                    errors.append(f"Row {i+1}: Unexpected processing error. Row skipped.")
+                except ValueError as ve: errors.append(f"Row {i+1}: {str(ve)}")
+                except Exception as e:
+                    errors.append(f"Row {i+1}: Unexpected processing error.")
+                    logger.error(f"Row {i+1} CSV processing error: {e}", exc_info=True)
 
             logger.info(f"User {current_user.id}: Phase 1 Complete - Processed {processed_rows} data rows from CSV.")
 
-            # --- Phase 2: Query Existing Transactions & Build Lookup Set ---
-            existing_keys = set()
-            if potential_transactions_data: # Only query if CSV had valid rows
-                logger.info(f"User {current_user.id}: Phase 2 - Querying database for existing transactions...")
-                queryset = Transaction.objects.filter(user=current_user)
-                if min_date and max_date:
-                    queryset = queryset.filter(transaction_date__range=(min_date, max_date))
-                    logger.debug(f"User {current_user.id}: Querying existing transactions between {min_date} and {max_date}")
-
-                # Build set of tuples from DB: (date, amount, direction, description)
-                # Using the description stored in the database for comparison
-                existing_keys = set(
-                    (tx.transaction_date, tx.original_amount, tx.direction, tx.description) # <-- Use the object attribute here
-                    # --- FIX: Update field name in .only() call ---
-                    for tx in queryset.only(
-                        'transaction_date',
-                        'original_amount', # Changed from 'amount'
-                        'direction',
-                        'description'
-                    )
-                    # --- End FIX ---
+            # --- Phase 2: Query Existing (Duplicate Check) ---
+            # ... (duplicate check logic remains the same, uses 'original_amount' and 'original_currency') ...
+            existing_keys_for_duplicate_check = set()
+            if potential_transactions_data:
+                logger.info(f"User {current_user.id}: Phase 2 - Querying database for potential duplicates...")
+                queryset = Transaction.objects.filter(user=current_user, source='csv')
+                if min_date and max_date: queryset = queryset.filter(transaction_date__range=(min_date, max_date))
+                existing_keys_for_duplicate_check = set(
+                    (tx.transaction_date, tx.original_amount, tx.direction, tx.description, tx.original_currency)
+                    for tx in queryset.only('transaction_date', 'original_amount', 'direction', 'description', 'original_currency')
                 )
-                logger.info(f"User {current_user.id}: Phase 2 Complete - Found {len(existing_keys)} potentially relevant existing transaction keys for user.")
-            else:
-                 logger.info(f"User {current_user.id}: Phase 2 Skipped - No potential transactions from CSV.")
+                logger.info(f"User {current_user.id}: Phase 2 Complete - Found {len(existing_keys_for_duplicate_check)} potentially relevant existing CSV transaction keys.")
 
-            # --- Phase 3: Filter Duplicates, Apply Rules, Build Final List ---
-            logger.info(f"User {current_user.id}: Phase 3 - Filtering duplicates, applying rules, building create list...")
+
+            # --- Phase 3: Filter, Convert, Build Final List ---
+            # ... (logic for description mapping, duplicate check using key, and currency conversion is largely the same) ...
+            # ... (The original_currency for conversion will now always be CSV_FILE_CURRENCY for items from this view) ...
+            logger.info(f"User {current_user.id}: Phase 3 - Filtering, converting, building transaction list...")
             transactions_to_create = []
             duplicate_count = 0
+            skipped_conversion_error_count = 0
             applied_rules_count = 0
+            user_mappings = { m.original_description.strip().lower(): m for m in DescriptionMapping.objects.filter(user=current_user) }
 
-            # Pre-fetch user's description mappings for efficiency
-            user_mappings = {
-                mapping.original_description.strip().lower(): mapping
-                for mapping in DescriptionMapping.objects.filter(user=current_user)
-            }
-            logger.debug(f"User {current_user.id}: Loaded {len(user_mappings)} description mappings.")
-
-            for data in potential_transactions_data:
-                raw_description = data['raw_description']
-
-                # Apply Mapping Rule FIRST to get the final_description
-                final_description = raw_description # Default to original description
+            for data_item in potential_transactions_data:
+                raw_description = data_item['raw_description'] # Corrected from data_item['description']
+                final_description = raw_description
                 assigned_category = None
                 matched_mapping = user_mappings.get(raw_description.strip().lower())
-
                 if matched_mapping:
-                    final_description = matched_mapping.clean_name # Use cleaned name if rule exists
-                    assigned_category = matched_mapping.assigned_category # Use assigned category if rule exists
+                    final_description = matched_mapping.clean_name
+                    assigned_category = matched_mapping.assigned_category
+                    if assigned_category: applied_rules_count += 1
 
-                # --- Generate Check Key using the FINAL description ---
-                # This key is what we compare against the database's stored transaction
-                check_key = (
-                    data['transaction_date'],
-                    data['amount'],
-                    data['direction'],
-                    final_description # Use the description *as it would be saved*
+                duplicate_check_key = (
+                    data_item['transaction_date'], data_item['original_amount'],
+                    data_item['direction'], final_description, data_item['original_currency']
                 )
-
-                # --- Check for Duplicates ---
-                if check_key in existing_keys:
+                if duplicate_check_key in existing_keys_for_duplicate_check:
                     duplicate_count += 1
-                    logger.debug(f"User {current_user.id} - Row {data['row_num']}: Skipping duplicate: {check_key}")
-                    continue # Skip to the next potential transaction
+                    continue
 
-                # --- Not a duplicate, build the Transaction object ---
-                if assigned_category: # Count rule application only if category actually assigned
-                    applied_rules_count += 1
+                aud_amount_val, exchange_rate_val = None, None
+                original_currency_code = data_item['original_currency'] # Will be 'EUR'
+
+                if original_currency_code == BASE_CURRENCY_FOR_CONVERSION: # e.g., if 'EUR' == 'AUD' (false)
+                    aud_amount_val = data_item['original_amount']
+                    exchange_rate_val = Decimal("1.0")
+                else:
+                    rate = get_historical_exchange_rate(
+                        data_item['transaction_date'].strftime('%Y-%m-%d'),
+                        original_currency_code, BASE_CURRENCY_FOR_CONVERSION
+                    )
+                    if rate is not None:
+                        aud_amount_val = (data_item['original_amount'] * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                        exchange_rate_val = rate
+                    else:
+                        skipped_conversion_error_count += 1
+                        logger.warning(f"User {current_user.id} - Row {data_item['row_num']}: Rate fetch failed {original_currency_code}->{BASE_CURRENCY_FOR_CONVERSION} on {data_item['transaction_date']}.")
 
                 transactions_to_create.append(
                     Transaction(
-                        user=current_user,
-                        category=assigned_category,
-                        description=final_description, # Save the final (potentially cleaned) description
-                        transaction_date=data['transaction_date'],
-                        amount=data['amount'],
-                        direction=data['direction'],
-                        source_account_identifier=data['source_account_identifier'],
-                        counterparty_identifier=data['counterparty_identifier'],
-                        source_code=data['source_code'],
-                        source_type=data['source_type'],
-                        source_notifications=data['source_notifications'],
+                        user=current_user, category=assigned_category, description=final_description,
+                        transaction_date=data_item['transaction_date'],
+                        original_amount=data_item['original_amount'], original_currency=original_currency_code,
+                        direction=data_item['direction'], aud_amount=aud_amount_val, exchange_rate_to_aud=exchange_rate_val,
+                        source='csv', bank_transaction_id=None,
+                        source_account_identifier=data_item['source_account_identifier'],
+                        counterparty_identifier=data_item['counterparty_identifier'],
+                        source_code=data_item['source_code'], source_type=data_item['source_type'],
+                        source_notifications=data_item['source_notifications'],
                     )
                 )
-
-            logger.info(f"User {current_user.id}: Phase 3 Complete - Found {duplicate_count} duplicates. Prepared {len(transactions_to_create)} new transactions.")
-
-            # --- Phase 4: Bulk Create Non-Duplicate Transactions ---
+            # ... (Phase 4: Bulk Create and Phase 5: Prepare Response - logic remains the same) ...
+            logger.info(f"User {current_user.id}: Phase 3 Complete. Dups: {duplicate_count}. New: {len(transactions_to_create)}. Convert Errors: {skipped_conversion_error_count}.")
             created_count = 0
             if transactions_to_create:
-                logger.info(f"User {current_user.id}: Phase 4 - Performing bulk create for {len(transactions_to_create)} transactions...")
                 try:
                     with db_transaction.atomic():
-                        # bulk_create returns the list of created objects in Django 3+
                         created_objects = Transaction.objects.bulk_create(transactions_to_create)
                         created_count = len(created_objects)
-                    logger.info(f"User {current_user.id}: Phase 4 Complete - Successfully created {created_count} transactions. {applied_rules_count} were auto-categorized.")
+                    logger.info(f"User {current_user.id}: Phase 4 Complete - Created {created_count} transactions from CSV.")
                 except Exception as e:
-                    logger.error(f"User {current_user.id}: Database error during bulk creation: {str(e)}")
-                    # Add the DB error to the list of errors reported to the user
-                    errors.append(f"Database error during final import step: {str(e)}. Some transactions might not have been saved.")
-                    # Depending on severity, you might return 500 or just report in the message
-                    # For now, we'll report it in the message and potentially return a different status if needed.
-            else:
-                logger.info(f"User {current_user.id}: Phase 4 Skipped - No new transactions to create.")
+                    errors.append(f"Database error: {str(e)}.")
+                    logger.error(f"User {current_user.id}: DB error CSV txns: {e}", exc_info=True)
 
-            # --- Phase 5: Prepare Response ---
-            logger.info(f"User {current_user.id}: Phase 5 - Preparing response...")
-            error_count = len(errors) # Recalculate in case DB error was added
+            error_count = len(errors)
+            message = f"CSV (Assumed {CSV_FILE_CURRENCY}) processed. Found {processed_rows} data rows."
+            if created_count > 0: message += f" Imported {created_count} new transactions."
+            else: message += " No new transactions were imported."
+            if duplicate_count > 0: message += f" Skipped {duplicate_count} potential duplicates."
+            if applied_rules_count > 0: message += f" Applied {applied_rules_count} description rules."
+            if skipped_conversion_error_count > 0: message += f" Failed to convert currency for {skipped_conversion_error_count} transactions to {BASE_CURRENCY_FOR_CONVERSION}."
+            if error_count > 0: message += f" Encountered {error_count} errors."
 
-            message = f"CSV processed. Found {processed_rows} data rows."
-            if created_count > 0:
-                 message += f" Imported {created_count} new transactions."
-            else:
-                 message += " No new transactions were imported."
-
-            if duplicate_count > 0:
-                 message += f" Skipped {duplicate_count} duplicate transaction(s)."
-            if applied_rules_count > 0 and created_count > 0: # Only mention rules if new tx were created
-                # Refine message slightly: rules apply to *newly imported* transactions
-                message += f" {applied_rules_count} of the newly imported transaction(s) were automatically categorized."
-            if error_count > 0:
-                 message += f" Encountered {error_count} errors processing rows (see details)."
-
-            # Determine appropriate status code
-            response_status = status.HTTP_200_OK # Default to OK
-            if created_count > 0:
-                response_status = status.HTTP_201_CREATED # Indicate resource creation
-            elif error_count > 0 and created_count == 0 and duplicate_count == 0 and processed_rows > 0 :
-                 response_status = status.HTTP_400_BAD_REQUEST # Errors occurred, nothing imported
+            response_status = status.HTTP_200_OK
+            if created_count > 0: response_status = status.HTTP_201_CREATED
+            elif error_count > 0 and not transactions_to_create and processed_rows > 0: response_status = status.HTTP_400_BAD_REQUEST
 
             return Response({
-                'message': message,
-                'imported_count': created_count,
-                'duplicate_count': duplicate_count,
-                'auto_categorized_count': applied_rules_count,
-                'total_rows_processed': processed_rows,
-                'errors': errors # Return list of errors
+                'message': message, 'imported_count': created_count, 'duplicate_count': duplicate_count,
+                'auto_categorized_count': applied_rules_count, 'conversion_error_count': skipped_conversion_error_count,
+                'total_rows_processed': processed_rows, 'errors': errors
             }, status=response_status)
 
-        except UnicodeDecodeError:
+        except UnicodeDecodeError: # ... (exception handling as before) ...
             logger.error(f"User {current_user.id}: CSV Upload failed due to encoding error.")
             return Response({'error': 'Failed to decode file. Please ensure it is UTF-8 encoded.'}, status=status.HTTP_400_BAD_REQUEST)
         except csv.Error as e:
             logger.error(f"User {current_user.id}: CSV parsing error: {e}")
             return Response({'error': f'Error parsing CSV file: {e}'}, status=status.HTTP_400_BAD_REQUEST)
+        except StopIteration:
+             logger.warning(f"User {current_user.id}: CSV file was empty after headers.")
+             return Response({'error': 'CSV file appears to be empty or contain only headers.'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            # Catch any other unexpected errors (e.g., reading file before loop)
-            logger.exception(f"User {current_user.id}: Unexpected error during CSV upload processing: {str(e)}") # Use exception for full traceback
-            return Response({'error': 'An unexpected server error occurred during processing.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.exception(f"User {current_user.id}: Unexpected error during CSV upload processing: {str(e)}")
+            return Response({'error': 'An unexpected server error occurred during CSV processing.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

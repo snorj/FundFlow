@@ -1,7 +1,7 @@
 # integrations/logic.py
 import logging
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, ROUND_HALF_UP # For rounding
+from decimal import Decimal, ROUND_HALF_UP
 from dateutil.parser import isoparse
 
 from django.contrib.auth import get_user_model
@@ -10,50 +10,43 @@ from requests.exceptions import RequestException, HTTPError
 
 from .models import UpIntegration
 from .utils import decrypt_token
-# Import BOTH Up API services and the new exchange rate service
 from .services import get_transactions as get_up_transactions, get_historical_exchange_rate
-from transactions.models import Transaction # Your app's Transaction model
+from transactions.models import Transaction
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
 DEFAULT_INITIAL_SYNC_DAYS = 90
-BASE_CURRENCY_FOR_CONVERSION = 'AUD' # Hardcoded as per our decision
+BASE_CURRENCY_FOR_CONVERSION = 'AUD'
 
 def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, custom_since_iso: str = None) -> dict:
-    """
-    Fetches transactions from Up Bank API for a given user, converts to AUD,
-    checks for duplicates, and saves new transactions to the FundFlow database.
-    """
+    # ... (user, integration, PAT decryption, 'since' filter logic remains the same as before) ...
     try:
         user = User.objects.get(pk=user_id)
-        # Assuming User model has 'base_currency' field, though we hardcode conversion to AUD
-        # user_base_currency = user.base_currency # Not used for conversion if hardcoded
         integration = UpIntegration.objects.select_related('user').get(user=user)
         logger.info(f"[Sync User {user_id}]: Starting sync (Source: Up Bank). Initial: {initial_sync}.")
-    except User.DoesNotExist: # ... (error handling as before)
+    except User.DoesNotExist:
         logger.error(f"[Sync User {user_id}]: User not found.")
         return {'success': False, 'message': 'User not found.', 'created_count': 0, 'duplicate_count': 0, 'skipped_conversion_error':0, 'error': 'user_not_found'}
-    except UpIntegration.DoesNotExist: # ... (error handling as before)
+    except UpIntegration.DoesNotExist:
         logger.warning(f"[Sync User {user_id}]: Up Integration record not found.")
         return {'success': False, 'message': 'Up Bank account not linked.', 'created_count': 0, 'duplicate_count': 0, 'skipped_conversion_error':0, 'error': 'integration_not_found'}
 
     pat = decrypt_token(integration.personal_access_token_encrypted)
-    if not pat: # ... (error handling as before)
+    if not pat:
         logger.error(f"[Sync User {user_id}]: Failed to decrypt PAT.")
         return {'success': False, 'message': 'Internal error: Could not access token.', 'created_count': 0, 'duplicate_count': 0, 'skipped_conversion_error':0, 'error': 'decryption_failed'}
 
     sync_start_time = datetime.now(timezone.utc)
-    since_filter_iso = None
-    min_date_for_db_query = None # To optimize duplicate check query scope
+    since_filter_iso = None # Defined further down based on sync type
+    min_date_for_db_query = None # For optimizing duplicate check
 
-    if initial_sync: # ... (logic for 'since' as before) ...
+    if initial_sync:
         if custom_since_iso:
             try:
                 parsed_custom_date = isoparse(custom_since_iso)
                 since_filter_iso = parsed_custom_date.isoformat()
                 min_date_for_db_query = parsed_custom_date.date()
-                logger.info(f"[Sync User {user_id}]: Initial sync using custom start date: {since_filter_iso}")
             except ValueError:
                 fallback_since = sync_start_time - timedelta(days=DEFAULT_INITIAL_SYNC_DAYS)
                 since_filter_iso = fallback_since.isoformat()
@@ -63,49 +56,45 @@ def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, cust
             default_since = sync_start_time - timedelta(days=DEFAULT_INITIAL_SYNC_DAYS)
             since_filter_iso = default_since.isoformat()
             min_date_for_db_query = default_since.date()
-            logger.info(f"[Sync User {user_id}]: Initial sync using default {DEFAULT_INITIAL_SYNC_DAYS}-day lookback: {since_filter_iso}")
+        logger.info(f"[Sync User {user_id}]: Initial sync, fetching since: {since_filter_iso}")
     elif integration.last_synced_at:
-        since_filter_iso = (integration.last_synced_at + timedelta(seconds=1)).isoformat() # Add 1 sec buffer
+        since_filter_iso = (integration.last_synced_at + timedelta(seconds=1)).isoformat()
         min_date_for_db_query = integration.last_synced_at.date()
         logger.info(f"[Sync User {user_id}]: Subsequent sync, fetching since: {since_filter_iso}")
-    else: # Fallback if last_synced_at is somehow null but not initial_sync
+    else:
         default_since = sync_start_time - timedelta(days=DEFAULT_INITIAL_SYNC_DAYS)
         since_filter_iso = default_since.isoformat()
         min_date_for_db_query = default_since.date()
         logger.warning(f"[Sync User {user_id}]: last_synced_at is null. Defaulting to {DEFAULT_INITIAL_SYNC_DAYS}-day lookback: {since_filter_iso}")
 
-
     try:
         logger.info(f"[Sync User {user_id}]: Calling get_up_transactions service (since={since_filter_iso})...")
-        up_transactions_data = get_up_transactions(pat, since_iso=since_filter_iso) # Use alias
+        up_transactions_data = get_up_transactions(pat, since_iso=since_filter_iso)
         logger.info(f"[Sync User {user_id}]: Fetched {len(up_transactions_data)} transactions from Up API.")
-    except HTTPError as e: # ... (error handling as before, add skipped_conversion_error) ...
+    except HTTPError as e: # ... (error handling as before, with skipped_conversion_error) ...
         error_code = 'api_http_error'
         message = f"Error communicating with Up Bank (HTTP {e.response.status_code})."
         if e.response.status_code == 401: message, error_code = "Up Bank token is invalid or expired. Please relink.", 'invalid_token'
         logger.error(f"[Sync User {user_id}]: HTTP error fetching Up transactions: {e.response.status_code} - {e.response.text[:200]}")
         return {'success': False, 'message': message, 'created_count': 0, 'duplicate_count': 0, 'skipped_conversion_error':0, 'error': error_code}
-    except RequestException as e: # ... (error handling as before, add skipped_conversion_error) ...
+    except RequestException as e: # ... (error handling as before, with skipped_conversion_error) ...
         logger.error(f"[Sync User {user_id}]: Network error fetching Up transactions: {e}")
         return {'success': False, 'message': 'Network error connecting to Up Bank.', 'created_count': 0, 'duplicate_count': 0, 'skipped_conversion_error':0, 'error': 'api_network_error'}
     except Exception as e:
         logger.exception(f"[Sync User {user_id}]: Unexpected error during Up transaction fetch: {e}")
         return {'success': False, 'message': 'An unexpected error occurred during sync.', 'created_count': 0, 'duplicate_count': 0, 'skipped_conversion_error':0, 'error': 'sync_fetch_error'}
 
-
-    if not up_transactions_data:
+    if not up_transactions_data: # ... (handling as before) ...
         logger.info(f"[Sync User {user_id}]: No new Up transactions found since {since_filter_iso}.")
-        integration.last_synced_at = sync_start_time # Update even if no new txns
+        integration.last_synced_at = sync_start_time
         integration.save(update_fields=['last_synced_at'])
         return {'success': True, 'message': 'No new transactions from Up Bank found.', 'created_count': 0, 'duplicate_count': 0, 'skipped_conversion_error':0, 'error': None}
 
-    # --- Duplicate Check Preparation ---
+
     fetched_bank_ids = {tx['id'] for tx in up_transactions_data}
     existing_bank_ids_in_db = set(
         Transaction.objects.filter(
-            user=user,
-            source='up_bank', # Important: only check against other Up Bank transactions
-            bank_transaction_id__in=fetched_bank_ids
+            user=user, source='up_bank', bank_transaction_id__in=fetched_bank_ids
         ).values_list('bank_transaction_id', flat=True)
     )
     logger.info(f"[Sync User {user_id}]: Found {len(existing_bank_ids_in_db)} existing Up transaction IDs in DB matching fetched IDs.")
@@ -131,62 +120,63 @@ def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, cust
             if latest_transaction_api_created_at is None or api_created_at_dt > latest_transaction_api_created_at:
                 latest_transaction_api_created_at = api_created_at_dt
 
-            original_amount_details = attributes['amount']
-            original_amount_val = Decimal(original_amount_details['valueInBaseUnits']) / 100
-            original_currency_code = original_amount_details['currencyCode'].upper() # From API
-            
-            direction = 'DEBIT' if original_amount_val < 0 else 'CREDIT'
-            abs_original_amount = abs(original_amount_val)
+            # --- UPDATED: Logic to get original amount and currency from Up API ---
+            original_amount_details = attributes.get('foreignAmount') # Prioritize foreignAmount
+            if original_amount_details and original_amount_details.get('valueInBaseUnits') is not None:
+                # This was a foreign currency transaction
+                original_amount_val_cents = original_amount_details['valueInBaseUnits']
+                original_currency_code = original_amount_details['currencyCode'].upper()
+                logger.debug(f"[Sync User {user_id}]: Tx {bank_id} is foreign: {original_amount_val_cents} {original_currency_code}")
+            else:
+                # Domestic transaction or foreignAmount is null/incomplete
+                original_amount_details = attributes['amount'] # Fallback to primary amount
+                original_amount_val_cents = original_amount_details['valueInBaseUnits']
+                original_currency_code = original_amount_details['currencyCode'].upper()
+                logger.debug(f"[Sync User {user_id}]: Tx {bank_id} is domestic/primary: {original_amount_val_cents} {original_currency_code}")
+            # --- END UPDATED ---
+
+            original_amount_decimal = Decimal(original_amount_val_cents) / 100
+            direction = 'DEBIT' if original_amount_decimal < 0 else 'CREDIT'
+            abs_original_amount = abs(original_amount_decimal)
             
             description = attributes['description']
 
-            # --- Currency Conversion ---
             aud_amount_val = None
             exchange_rate_val = None
 
-            if original_currency_code == BASE_CURRENCY_FOR_CONVERSION:
+            if original_currency_code == BASE_CURRENCY_FOR_CONVERSION: # 'AUD'
                 aud_amount_val = abs_original_amount
                 exchange_rate_val = Decimal("1.0")
             else:
                 rate = get_historical_exchange_rate(
                     transaction_date_obj.strftime('%Y-%m-%d'),
                     original_currency_code,
-                    BASE_CURRENCY_FOR_CONVERSION
+                    BASE_CURRENCY_FOR_CONVERSION # 'AUD'
                 )
                 if rate is not None:
-                    # Round to 2 decimal places for monetary values
                     aud_amount_val = (abs_original_amount * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
                     exchange_rate_val = rate
                 else:
-                    logger.warning(f"[Sync User {user_id}]: Could not get exchange rate for {original_currency_code} to {BASE_CURRENCY_FOR_CONVERSION} on {transaction_date_obj} for bank_id {bank_id}.")
                     skipped_conversion_error_count +=1
-                    # Transaction will be saved with original details, aud_amount will be None
-
+                    logger.warning(f"[Sync User {user_id}]: Could not get rate for {original_currency_code}->{BASE_CURRENCY_FOR_CONVERSION} on {transaction_date_obj} for bank_id {bank_id}.")
+            
             new_tx = Transaction(
-                user=user,
-                bank_transaction_id=bank_id,
-                source='up_bank',
-                transaction_date=transaction_date_obj,
-                description=description,
-                original_amount=abs_original_amount,
-                original_currency=original_currency_code,
-                direction=direction,
-                aud_amount=aud_amount_val, # Will be None if conversion failed
-                exchange_rate_to_aud=exchange_rate_val, # Will be None if conversion failed
-                # Map other fields from 'attributes' if needed
-                # e.g., source_type=attributes.get('transactionType'), etc.
+                user=user, bank_transaction_id=bank_id, source='up_bank',
+                transaction_date=transaction_date_obj, description=description,
+                original_amount=abs_original_amount, original_currency=original_currency_code,
+                direction=direction, aud_amount=aud_amount_val, exchange_rate_to_aud=exchange_rate_val
             )
             transactions_to_create.append(new_tx)
 
         except (KeyError, TypeError, ValueError) as e:
             logger.error(f"[Sync User {user_id}]: Error transforming Up transaction data for bank_id {bank_id}: {e}. Data: {attributes}", exc_info=True)
-            skipped_conversion_error_count +=1 # Count as a type of processing error for this tx
+            skipped_conversion_error_count +=1
             continue
 
-    logger.info(f"[Sync User {user_id}]: Processed API data. Duplicates: {duplicate_count}. New to create: {len(transactions_to_create)}. Conversion errors: {skipped_conversion_error_count}.")
+    logger.info(f"[Sync User {user_id}]: Processed API data. Duplicates: {duplicate_count}. New: {len(transactions_to_create)}. Conversion errors: {skipped_conversion_error_count}.")
 
     created_count = 0
-    if transactions_to_create:
+    if transactions_to_create: # ... (bulk create logic as before) ...
         try:
             with db_transaction.atomic():
                 created_objects = Transaction.objects.bulk_create(transactions_to_create)
@@ -196,10 +186,7 @@ def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, cust
             logger.exception(f"[Sync User {user_id}]: Database error during bulk creation: {e}")
             return {'success': False, 'message': 'Database error saving new transactions.', 'created_count': 0, 'duplicate_count': duplicate_count, 'skipped_conversion_error': skipped_conversion_error_count, 'error': 'db_bulk_create_error'}
 
-    # --- Update Sync Timestamp ---
-    try:
-        # Use the *latest createdAt timestamp* from the *successfully processed batch* from API
-        # Or fallback to the time the sync started if no tx were processed/found with timestamps
+    try: # ... (update last_synced_at logic as before) ...
         timestamp_to_save = latest_transaction_api_created_at if latest_transaction_api_created_at else sync_start_time
         integration.last_synced_at = timestamp_to_save
         integration.save(update_fields=['last_synced_at'])
@@ -207,13 +194,10 @@ def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, cust
     except Exception as e:
         logger.exception(f"[Sync User {user_id}]: Failed to update last_synced_at: {e}")
 
-
-    message = f"Up Bank sync complete. Imported {created_count} new transactions."
+    message = f"Up Bank sync complete. Imported {created_count} new transactions." # ... (message building as before) ...
     if duplicate_count > 0: message += f" Skipped {duplicate_count} duplicates."
     if skipped_conversion_error_count > 0: message += f" {skipped_conversion_error_count} transactions could not be converted to {BASE_CURRENCY_FOR_CONVERSION} due to missing exchange rates."
-
     return {
-        'success': True, 'message': message,
-        'created_count': created_count, 'duplicate_count': duplicate_count,
-        'skipped_conversion_error': skipped_conversion_error_count, 'error': None
+        'success': True, 'message': message, 'created_count': created_count,
+        'duplicate_count': duplicate_count, 'skipped_conversion_error': skipped_conversion_error_count, 'error': None
     }
