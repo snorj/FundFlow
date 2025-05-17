@@ -307,6 +307,7 @@ class CategoryListCreateView(generics.ListCreateAPIView):
     """
     API endpoint to list accessible categories (System + User's Own)
     and create new custom categories for the authenticated user.
+    It now also includes 'vendor' nodes derived from DescriptionMappings.
     """
     serializer_class = CategorySerializer
     permission_classes = [permissions.IsAuthenticated] # Must be logged in
@@ -315,10 +316,51 @@ class CategoryListCreateView(generics.ListCreateAPIView):
         """
         This view should return a list of all system categories
         plus categories owned by the currently authenticated user.
+        Prefetch related description mappings for efficiency when constructing vendor nodes.
         """
         user = self.request.user
         # Use Q objects for OR condition: user is None OR user is the current user
-        return Category.objects.filter(Q(user__isnull=True) | Q(user=user)).distinct()
+        # Prefetch description mappings assigned to these categories
+        return Category.objects.filter(
+            Q(user__isnull=True) | Q(user=user)
+        ).distinct().prefetch_related('mapped_descriptions')
+
+    def list(self, request, *args, **kwargs):
+        user = request.user
+        queryset = self.filter_queryset(self.get_queryset()) # Gets categories
+
+        category_serializer = self.get_serializer(queryset, many=True)
+        categories_data = category_serializer.data
+
+        # Add type: 'category' to all category objects
+        for cat_data in categories_data:
+            cat_data['type'] = 'category'
+            # Ensure 'is_custom' is present. Assuming serializer provides 'user'.
+            # If not, it can be derived: cat_data['is_custom'] = cat_data.get('user') is not None
+
+        # Fetch DescriptionMapping objects for the user that are assigned to a category.
+        # We could use the prefetched data if available on category instances,
+        # or do a separate query. For simplicity and to ensure all user's mappings are caught
+        # (even if a category was somehow missed in the initial queryset but mapping exists),
+        # a direct query for mappings is robust.
+        mappings = DescriptionMapping.objects.filter(user=user, assigned_category__isnull=False)
+
+        vendor_nodes = []
+        for dm in mappings:
+            vendor_nodes.append({
+                'id': f"vendor-{dm.id}", 
+                'name': dm.clean_name, # Display name for the vendor node
+                'original_description': dm.original_description, # Additional info
+                'type': 'vendor',
+                'parent': dm.assigned_category_id, # ID of the parent category
+                'user': user.id, # Mimicking category structure; useful for consistency
+                'is_custom': True, # All vendor nodes are treated as 'custom' items
+                # 'notes': None, # If categories have notes and vendors should too
+            })
+
+        combined_data = categories_data + vendor_nodes
+        
+        return Response(combined_data, status=status.HTTP_200_OK)
 
     def perform_create(self, serializer):
         """

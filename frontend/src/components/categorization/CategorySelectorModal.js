@@ -31,14 +31,21 @@ const CategorySelectorModal = ({
       }
   }, [isOpen, currentSelectedId]);
 
+  // Filter out vendors, as this modal is only for selecting categories.
+  const categoriesOnly = useMemo(() => 
+    availableCategories.filter(item => !item.type || item.type === 'category')
+  , [availableCategories]);
 
-  const systemRootCategories = useMemo(() => availableCategories.filter(cat => !cat.parent && !cat.is_custom), [availableCategories]);
-  const userRootCategories = useMemo(() => availableCategories.filter(cat => !cat.parent && cat.is_custom), [availableCategories]);
-
+  const systemRootCategories = useMemo(() => 
+    categoriesOnly.filter(cat => !cat.parent && !cat.is_custom)
+  , [categoriesOnly]);
+  
+  const userRootCategories = useMemo(() => 
+    categoriesOnly.filter(cat => !cat.parent && cat.is_custom)
+  , [categoriesOnly]);
 
   const handleNodeSelect = (categoryId) => { setPendingSelectionId(categoryId); };
   const handleConfirm = () => { onSelectCategory(pendingSelectionId); };
-
 
   // --- NEW: Category Creation Handler ---
   const handleCreateCategory = useCallback(async (name, parentId = null) => {
@@ -54,9 +61,8 @@ const CategorySelectorModal = ({
           // Alternatively, just add the new one to the existing list for faster UI update
           // const updatedCategories = [...availableCategories, createdCategory];
           // onCategoriesUpdate(updatedCategories); // Call parent update function
-          const categoriesData = await categoryService.getCategories();
-          onCategoriesUpdate(categoriesData || []); // Update parent state
-
+          const updatedCategoriesData = await categoryService.getCategories();
+          onCategoriesUpdate(updatedCategoriesData || []); // Update parent state
 
           // Reset top-level input if it was used
           setShowTopLevelInput(false);
@@ -92,7 +98,7 @@ const CategorySelectorModal = ({
 
   if (!isOpen) { return null; }
 
-  const pendingCategory = availableCategories.find(c => c.id === pendingSelectionId);
+  const pendingCategory = categoriesOnly.find(c => c.id === pendingSelectionId);
   const pendingCategoryName = pendingCategory ? pendingCategory.name : 'None';
 
   return (
@@ -140,9 +146,9 @@ const CategorySelectorModal = ({
              {systemRootCategories.map(rootCat => (
                  <CategoryTreeNode
                      key={rootCat.id} 
-                     category={rootCat} 
-                     allCategories={availableCategories}
-                     visibleCategoryIds={null} // Explicitly pass null as no filter in modal
+                     item={rootCat} 
+                     allItems={categoriesOnly}
+                     visibleItemIds={null} // Explicitly pass null as no filter in modal
                      onSelectNode={handleNodeSelect} 
                      pendingSelectionId={pendingSelectionId}
                      onCreateCategory={handleCreateCategory} 
@@ -153,9 +159,9 @@ const CategorySelectorModal = ({
              {userRootCategories.map(rootCat => (
                  <CategoryTreeNode
                      key={rootCat.id} 
-                     category={rootCat} 
-                     allCategories={availableCategories}
-                     visibleCategoryIds={null} // Explicitly pass null as no filter in modal
+                     item={rootCat} 
+                     allItems={categoriesOnly}
+                     visibleItemIds={null} // Explicitly pass null as no filter in modal
                      onSelectNode={handleNodeSelect} 
                      pendingSelectionId={pendingSelectionId}
                      onCreateCategory={handleCreateCategory} 
@@ -168,7 +174,7 @@ const CategorySelectorModal = ({
 
         <div className="modal-footer">
           <button onClick={onClose} className="modal-button cancel" disabled={isCreating}>Cancel</button>
-          <button onClick={handleConfirm} className="modal-button confirm" disabled={isCreating || pendingSelectionId === currentSelectedId}>
+          <button onClick={handleConfirm} className="modal-button confirm" disabled={isCreating || pendingSelectionId === currentSelectedId || !pendingSelectionId}>
             Confirm Selection
           </button>
         </div>

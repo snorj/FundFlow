@@ -1,48 +1,53 @@
 import React, { useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
-// --- Add FiSave, FiXCircle, FiTrash2 ---
-import { FiChevronRight, FiChevronDown, FiPlusCircle, FiSave, FiXCircle, FiLoader, FiTrash2 } from 'react-icons/fi';
+// FiTag for vendors, FiSave, FiXCircle, FiTrash2 for categories
+import { FiChevronRight, FiChevronDown, FiPlusCircle, FiSave, FiXCircle, FiLoader, FiTrash2, FiTag } from 'react-icons/fi';
 
 const CategoryTreeNode = ({
-  category,
-  allCategories,
-  visibleCategoryIds,
+  item, // Renamed from category
+  allItems, // Renamed from allCategories
+  visibleItemIds, // Renamed from visibleCategoryIds
   level = 0,
   onSelectNode = () => {},
   pendingSelectionId = null,
-  // --- NEW PROP: Handler for creating category ---
-  onCreateCategory, // Expects function like: async (name, parentId) => { /* API call & refresh */ }
-  onDeleteCategory, // NEW: Handler for deleting a category
-  isCreating, // Flag from parent indicating a creation is in progress globally
-  isDeleting, // NEW: Flag from parent indicating a delete is in progress for THIS category
+  onCreateCategory, // For categories only
+  onDeleteCategory, // For categories only
+  isCreating, // Global flag for category creation
+  isDeleting, // Is this specific ITEM (category) being deleted?
 }) => {
-  const [isExpanded, setIsExpanded] = useState(level < 1);
-  // --- NEW State for inline adding ---
+  const [isExpanded, setIsExpanded] = useState(level < 1 && item.type === 'category'); // Only expand categories by default
   const [showAddInput, setShowAddInput] = useState(false);
   const [newChildName, setNewChildName] = useState('');
-  const [isSavingChild, setIsSavingChild] = useState(false); // Local saving state
+  const [isSavingChild, setIsSavingChild] = useState(false);
   const [addChildError, setAddChildError] = useState(null);
-  // --- End New State ---
 
   // Determine which children to display
   const displayChildren = useMemo(() => {
-    const potentialChildren = allCategories.filter(c => c.parent === category.id);
-    if (visibleCategoryIds === null) {
-      // No search filter active, show all potential children
+    if (item.type === 'vendor') return []; // Vendors don't have children in this model
+
+    const potentialChildren = allItems.filter(child => child.parent === item.id);
+    if (visibleItemIds === null) {
       return potentialChildren;
     }
-    // Search filter active, only show children that are in the visible set
-    return potentialChildren.filter(child => visibleCategoryIds.has(child.id));
-  }, [allCategories, category.id, visibleCategoryIds]);
+    return potentialChildren.filter(child => visibleItemIds.has(child.id));
+  }, [allItems, item.id, item.type, visibleItemIds]);
 
-  const handleToggleExpand = (e) => { e.stopPropagation(); setIsExpanded(!isExpanded); };
-  const handleSelect = () => { onSelectNode(category.id); };
+  const handleToggleExpand = (e) => { e.stopPropagation(); if (item.type === 'category') setIsExpanded(!isExpanded); };
+  const handleSelect = () => { 
+    // Selection might be relevant for vendors later (e.g. to edit mapping)
+    // For now, only categories are selectable in the modal context. CategorisePage doesn't use onSelectNode.
+    if (item.type === 'category') {
+        onSelectNode(item.id); 
+    }
+    // If vendors need to be selectable for other purposes, adjust here.
+  };
 
   const handleAddChildClick = (e) => {
      e.stopPropagation();
-     setShowAddInput(true); // Show the input field below this node
-     setNewChildName(''); // Reset name
-     setAddChildError(null); // Clear errors
+     if (item.type !== 'category') return;
+     setShowAddInput(true);
+     setNewChildName('');
+     setAddChildError(null);
   }
 
   const handleCancelAddChild = () => {
@@ -57,15 +62,14 @@ const CategoryTreeNode = ({
   }
 
   const handleSaveNewChild = async (e) => {
-      e.stopPropagation(); // Prevent node selection
-      if (!newChildName.trim() || isSavingChild || isCreating || isDeleting) return; // Prevent empty/double submit
+      e.stopPropagation();
+      if (item.type !== 'category' || !newChildName.trim() || isSavingChild || isCreating || isDeleting) return;
+      if (!onCreateCategory) return; // Should not happen if button is shown
 
       setIsSavingChild(true);
       setAddChildError(null);
       try {
-          // Call the creation handler passed from the modal
-          await onCreateCategory(newChildName.trim(), category.id); // Pass name and *this* node's ID as parent
-          // Success! Clear fields and hide input. Parent handles refresh.
+          await onCreateCategory(newChildName.trim(), item.id);
           handleCancelAddChild();
       } catch (error) {
           console.error("Error saving child category:", error);
@@ -75,72 +79,78 @@ const CategoryTreeNode = ({
       }
   }
 
-  // --- NEW: Delete Handler ---
   const handleDeleteClick = (e) => {
     e.stopPropagation();
-    if (isDeleting || isCreating) return;
-    // Confirmation dialog
+    if (item.type !== 'category' || isDeleting || isCreating) return;
+    if (!onDeleteCategory) return; // Should not happen if button is shown
+
     const confirmDelete = window.confirm(
-      `Are you sure you want to delete the category "${category.name}"?\n\n` +
+      `Are you sure you want to delete the category "${item.name}"?\n\n` +
       `- Transactions in this category will become uncategorized.\n` +
       `- Sub-categories will be moved up one level.\n` +
       `- Mapping rules pointing to this category will be unassigned.`
     );
     if (confirmDelete) {
-      onDeleteCategory(category.id);
+      onDeleteCategory(item.id);
     }
   };
-  // --- END NEW ---
 
-  const isSelected = pendingSelectionId === category.id;
-  // Disable interactions if a global creation/save is happening
-  const isDisabled = isCreating || isSavingChild || isDeleting;
-  const isUserCategory = category.user !== null; // Check if it's a user-owned category
+  const isSelected = pendingSelectionId === item.id;
+  const isDisabled = isCreating || isSavingChild || (item.type === 'category' && isDeleting); 
+  // User-owned categories can be deleted/have children added.
+  // item.user might be user ID for categories, or the parent category's user ID for vendors for consistency.
+  // item.is_custom might be true for user categories and vendors.
+  const isUserOwnedContext = item.user !== null && item.is_custom === true; 
 
-  // If a search is active and this node itself is not in visibleCategoryIds, don't render it.
-  // This check is actually primarily handled by the parent (CategorisePage) when it decides which root nodes to render.
-  // However, this component should not render if, for some reason, it receives a category not in the visible set
-  // when a filter is active. This acts as a safeguard, though typically CategorisePage won't call it.
-  if (visibleCategoryIds !== null && !visibleCategoryIds.has(category.id)) {
+  if (visibleItemIds !== null && !visibleItemIds.has(item.id)) {
     return null; 
   }
 
   return (
-    <div className="category-tree-node" style={{ paddingLeft: `${level * 20}px` }}>
-      <div className={`node-content ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}`} onClick={!isDisabled ? handleSelect : undefined}>
-        <span className="expand-icon" onClick={!isDisabled ? handleToggleExpand : undefined}>
-          {/* Show expand icon only if there are children to display based on the filter */}
-          {displayChildren.length > 0 ? ( isExpanded ? <FiChevronDown size="14" /> : <FiChevronRight size="14" /> ) : ( <span className="spacer"></span> )}
+    <div className={`category-tree-node item-type-${item.type}`} style={{ paddingLeft: `${level * 20}px` }}>
+      <div className={`node-content ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}`} onClick={!isDisabled && item.type === 'category' ? handleSelect : undefined}>
+        <span className="expand-icon" onClick={!isDisabled && item.type === 'category' ? handleToggleExpand : undefined}>
+          {item.type === 'category' && displayChildren.length > 0 ? 
+            (isExpanded ? <FiChevronDown size="14" /> : <FiChevronRight size="14" />) : 
+            (<span className="spacer"></span>)
+          }
         </span>
-        <span className="node-name">{category.name}</span>
-        <div className="node-actions">
-          {isUserCategory && !isDeleting && (
-            <button 
-              className="action-button-icon delete-category-button" 
-              title={`Delete category ${category.name}`}
-              onClick={handleDeleteClick} 
-              disabled={isDisabled}
-            >
-              <FiTrash2 size="14"/>
-            </button>
-          )}
-          {isUserCategory && isDeleting && (
-            <FiLoader size="14" className="spinner-inline" title="Deleting..."/>
-          )}
-          <button 
-            className="action-button-icon add-child-button" 
-            title={`Add sub-category to ${category.name}`} 
-            onClick={!isDisabled ? handleAddChildClick : undefined} 
-            disabled={isDisabled}
-          >
-            <FiPlusCircle size="14"/>
-          </button>
-        </div>
+        
+        {item.type === 'vendor' && <FiTag size="14" className="node-icon vendor-icon" title="Vendor/Merchant Rule"/>}
+        <span className="node-name">{item.name}</span>
+        
+        {item.type === 'category' && (
+          <div className="node-actions">
+            {isUserOwnedContext && !isDeleting && (
+              <button 
+                className="action-button-icon delete-category-button" 
+                title={`Delete category ${item.name}`}
+                onClick={handleDeleteClick} 
+                disabled={isDisabled}
+              >
+                <FiTrash2 size="14"/>
+              </button>
+            )}
+            {isUserOwnedContext && isDeleting && (
+              <FiLoader size="14" className="spinner-inline" title="Deleting..."/>
+            )}
+            {/* Add child button only for categories, isUserOwnedContext might also apply if system categories can't have user children */}
+            {isUserOwnedContext && (
+                 <button 
+                    className="action-button-icon add-child-button" 
+                    title={`Add sub-category to ${item.name}`} 
+                    onClick={!isDisabled ? handleAddChildClick : undefined} 
+                    disabled={isDisabled}
+                >
+                    <FiPlusCircle size="14"/>
+                </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* --- Inline Add Input Area --- */}
-      {showAddInput && (
-          <div className="add-child-input-area" style={{ paddingLeft: `${(level + 1) * 10}px` }}> {/* Indent slightly more */}
+      {item.type === 'category' && showAddInput && (
+          <div className="add-child-input-area" style={{ paddingLeft: `${(level + 1) * 10}px` }}>
               <input
                   type="text"
                   value={newChildName}
@@ -158,23 +168,31 @@ const CategoryTreeNode = ({
               {addChildError && <span className="inline-error-text">{addChildError}</span>}
           </div>
       )}
-      {/* --- End Inline Add --- */}
 
-      {isExpanded && displayChildren.length > 0 && (
+      {item.type === 'category' && isExpanded && displayChildren.length > 0 && (
         <div className="node-children">
-          {displayChildren.map(child => (
+          {displayChildren.map(childItem => (
             <CategoryTreeNode
-              key={child.id}
-              category={child}
-              allCategories={allCategories}
-              visibleCategoryIds={visibleCategoryIds}
+              key={childItem.id}
+              item={childItem} // Pass childItem as item
+              allItems={allItems}
+              visibleItemIds={visibleItemIds}
               level={level + 1}
               onSelectNode={onSelectNode}
               pendingSelectionId={pendingSelectionId}
-              onCreateCategory={onCreateCategory}
-              onDeleteCategory={onDeleteCategory}
-              isCreating={isCreating}
-              isDeleting={isDeleting}
+              onCreateCategory={onCreateCategory} // Pass down for further nesting
+              onDeleteCategory={onDeleteCategory} // Pass down for further nesting
+              isCreating={isCreating} // Pass down global creating flag
+              // isDeleting for child is true if deletingCategoryId matches childItem.id AND childItem.type is 'category'
+              // The parent (CategorisePage) sets isDeleting only for the item directly being deleted.
+              // So, we rely on the top-level isDeleting for the specific item.
+              isDeleting={childItem.type === 'category' && onDeleteCategory ? isDeleting : false} 
+              // This is tricky. The `isDeleting` prop is specific to THIS node instance. 
+              // The parent passes `isDeleting={deletingCategoryId === item.id}`.
+              // So, when rendering children, their `isDeleting` prop should be derived from parent state.
+              // This should be `isDeleting={deletingCategoryIdFromParent === childItem.id}` which is what CategorisePage does.
+              // The current `isDeleting` in this component refers to `item.id`.
+              // For children, CategorisePage will pass the correct `isDeleting` based on `deletingCategoryId` state.
             />
           ))}
         </div>
@@ -184,22 +202,24 @@ const CategoryTreeNode = ({
 };
 
 CategoryTreeNode.propTypes = {
-  category: PropTypes.shape({
-    id: PropTypes.number.isRequired,
+  item: PropTypes.shape({
+    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
     name: PropTypes.string.isRequired,
-    parent: PropTypes.number, // null or number
-    user: PropTypes.number, // null or number
+    parent: PropTypes.oneOfType([PropTypes.string, PropTypes.number]), 
+    user: PropTypes.number, // User ID or null for system categories
+    is_custom: PropTypes.bool, // True for user categories and vendors
+    type: PropTypes.oneOf(['category', 'vendor']).isRequired,
+    // Vendors might have original_description, etc.
   }).isRequired,
-  allCategories: PropTypes.array.isRequired,
-  visibleCategoryIds: PropTypes.instanceOf(Set), // Can be a Set or null
+  allItems: PropTypes.array.isRequired,
+  visibleItemIds: PropTypes.instanceOf(Set), 
   level: PropTypes.number,
-  onSelectNode: PropTypes.func, // Made optional for CategorisePage context
+  onSelectNode: PropTypes.func,
   pendingSelectionId: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.oneOf([null])]),
-  // onInitiateAddChild: PropTypes.func.isRequired,
-  onCreateCategory: PropTypes.func.isRequired, // Add new prop type
-  onDeleteCategory: PropTypes.func.isRequired, // Added onDeleteCategory prop type
-  isCreating: PropTypes.bool, // Add new prop type
-  isDeleting: PropTypes.bool, // Added isDeleting prop type (for this specific node)
+  onCreateCategory: PropTypes.func, // Now optional, only used if item.type is category
+  onDeleteCategory: PropTypes.func, // Now optional, only used if item.type is category
+  isCreating: PropTypes.bool, 
+  isDeleting: PropTypes.bool, // Is this specific item being deleted?
 };
 
 export default CategoryTreeNode;

@@ -267,4 +267,33 @@
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* Styles for Vendor nodes in Category Tree */
+.category-tree-node.item-type-vendor .node-name {
+  /* Slightly different style for vendor names, e.g., italic */
+  /* font-style: italic; */
+  color: var(--text-secondary); /* Make them appear a bit more subdued */
+}
+
+.category-tree-node.item-type-vendor .node-content {
+  /* Prevent hover effects if they are not interactive */
+  cursor: default;
+}
+
+.vendor-icon {
+  margin-right: 4px; /* Space between icon and name */
+  color: var(--text-tertiary); /* Icon color */
+  flex-shrink: 0; /* Prevent icon from shrinking */
+}
+
+.category-tree-node.item-type-vendor .expand-icon .spacer {
+    display: inline-block; /* Ensure spacer takes up space like an icon would */
+    width: 14px; /* Match size of other icons if needed */
+}
+
+/* Ensure node actions (add/delete) are not accidentally shown for vendors 
+   if CSS somehow overrides JS (though JS should prevent this) */
+.category-tree-node.item-type-vendor .node-actions {
+    display: none !important; 
 } 
