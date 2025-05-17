@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
 // --- Add FiSave, FiXCircle ---
 import { FiChevronRight, FiChevronDown, FiPlusCircle, FiSave, FiXCircle, FiLoader } from 'react-icons/fi';
@@ -6,9 +6,10 @@ import { FiChevronRight, FiChevronDown, FiPlusCircle, FiSave, FiXCircle, FiLoade
 const CategoryTreeNode = ({
   category,
   allCategories,
+  visibleCategoryIds,
   level = 0,
-  onSelectNode,
-  pendingSelectionId,
+  onSelectNode = () => {},
+  pendingSelectionId = null,
   // --- NEW PROP: Handler for creating category ---
   onCreateCategory, // Expects function like: async (name, parentId) => { /* API call & refresh */ }
   isCreating, // Flag from parent indicating a creation is in progress globally
@@ -21,7 +22,16 @@ const CategoryTreeNode = ({
   const [addChildError, setAddChildError] = useState(null);
   // --- End New State ---
 
-  const children = allCategories.filter(c => c.parent === category.id);
+  // Determine which children to display
+  const displayChildren = useMemo(() => {
+    const potentialChildren = allCategories.filter(c => c.parent === category.id);
+    if (visibleCategoryIds === null) {
+      // No search filter active, show all potential children
+      return potentialChildren;
+    }
+    // Search filter active, only show children that are in the visible set
+    return potentialChildren.filter(child => visibleCategoryIds.has(child.id));
+  }, [allCategories, category.id, visibleCategoryIds]);
 
   const handleToggleExpand = (e) => { e.stopPropagation(); setIsExpanded(!isExpanded); };
   const handleSelect = () => { onSelectNode(category.id); };
@@ -63,16 +73,24 @@ const CategoryTreeNode = ({
       }
   }
 
-
   const isSelected = pendingSelectionId === category.id;
   // Disable interactions if a global creation/save is happening
   const isDisabled = isCreating || isSavingChild;
+
+  // If a search is active and this node itself is not in visibleCategoryIds, don't render it.
+  // This check is actually primarily handled by the parent (CategorisePage) when it decides which root nodes to render.
+  // However, this component should not render if, for some reason, it receives a category not in the visible set
+  // when a filter is active. This acts as a safeguard, though typically CategorisePage won't call it.
+  if (visibleCategoryIds !== null && !visibleCategoryIds.has(category.id)) {
+    return null; 
+  }
 
   return (
     <div className="category-tree-node" style={{ paddingLeft: `${level * 20}px` }}>
       <div className={`node-content ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}`} onClick={!isDisabled ? handleSelect : undefined}>
         <span className="expand-icon" onClick={!isDisabled ? handleToggleExpand : undefined}>
-          {children.length > 0 ? ( isExpanded ? <FiChevronDown size="14" /> : <FiChevronRight size="14" /> ) : ( <span className="spacer"></span> )}
+          {/* Show expand icon only if there are children to display based on the filter */}
+          {displayChildren.length > 0 ? ( isExpanded ? <FiChevronDown size="14" /> : <FiChevronRight size="14" /> ) : ( <span className="spacer"></span> )}
         </span>
         <span className="node-name">{category.name}</span>
         <button className="add-child-button" title={`Add sub-category to ${category.name}`} onClick={!isDisabled ? handleAddChildClick : undefined} disabled={isDisabled}>
@@ -102,19 +120,19 @@ const CategoryTreeNode = ({
       )}
       {/* --- End Inline Add --- */}
 
-
-      {isExpanded && children.length > 0 && (
+      {isExpanded && displayChildren.length > 0 && (
         <div className="node-children">
-          {children.map(child => (
+          {displayChildren.map(child => (
             <CategoryTreeNode
               key={child.id}
               category={child}
               allCategories={allCategories}
+              visibleCategoryIds={visibleCategoryIds}
               level={level + 1}
               onSelectNode={onSelectNode}
               pendingSelectionId={pendingSelectionId}
-              onCreateCategory={onCreateCategory} // Pass handler down
-              isCreating={isCreating} // Pass global loading state down
+              onCreateCategory={onCreateCategory}
+              isCreating={isCreating}
             />
           ))}
         </div>
@@ -122,7 +140,6 @@ const CategoryTreeNode = ({
     </div>
   );
 };
-
 
 CategoryTreeNode.propTypes = {
   category: PropTypes.shape({
@@ -132,8 +149,9 @@ CategoryTreeNode.propTypes = {
     user: PropTypes.number, // null or number
   }).isRequired,
   allCategories: PropTypes.array.isRequired,
+  visibleCategoryIds: PropTypes.instanceOf(Set), // Can be a Set or null
   level: PropTypes.number,
-  onSelectNode: PropTypes.func.isRequired,
+  onSelectNode: PropTypes.func, // Made optional for CategorisePage context
   pendingSelectionId: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.oneOf([null])]),
   // onInitiateAddChild: PropTypes.func.isRequired,
   onCreateCategory: PropTypes.func.isRequired, // Add new prop type

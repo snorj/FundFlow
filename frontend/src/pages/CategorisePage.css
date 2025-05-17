@@ -37,40 +37,90 @@
   padding: 20px;
   border-radius: var(--border-radius-large);
   box-shadow: var(--shadow-medium);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.category-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--border-color-soft);
+  flex-wrap: wrap;
+}
+
+.search-categories-input-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: var(--background-elevated);
+  padding: 6px 10px;
+  border-radius: var(--border-radius-standard);
+  border: 1px solid var(--border-color-medium);
+  flex-grow: 1;
+  min-width: 250px;
+}
+
+.search-categories-input-container .search-icon {
+  color: var(--text-tertiary);
+}
+
+.search-categories-input {
+  border: none;
+  outline: none;
+  background-color: transparent;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  width: 100%;
+}
+
+.search-categories-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.search-categories-input-container:focus-within {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px var(--accent-color-translucent);
 }
 
 .category-management-area h2 {
   margin-top: 0;
-  margin-bottom: 10px;
+  margin-bottom: 0;
   color: var(--text-primary);
 }
 
 .category-instructions {
   font-size: 0.9rem;
   color: var(--text-secondary);
-  margin-bottom: 20px;
+  margin-bottom: 5px;
 }
 
-.top-level-actions {
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid var(--border-color-soft);
+.add-category-input-area.top-level-add-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 0;
+  padding: 10px 0;
 }
 
 .add-category-button {
   background-color: var(--teal-600, #0D9488);
   color: var(--white, #ffffff);
-  padding: 10px 18px;
+  padding: 8px 15px;
   border: none;
   border-radius: var(--border-radius-standard, 6px);
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 500;
   transition: background-color 0.2s ease;
   box-shadow: var(--shadow-small, 0 1px 2px 0 rgba(0, 0, 0, 0.05));
+  white-space: nowrap;
 }
 
 .add-category-button:hover {
@@ -82,13 +132,6 @@
   color: var(--text-disabled, #9CA3AF);
   cursor: not-allowed;
   box-shadow: none;
-}
-
-.add-category-input-area {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
 }
 
 .add-category-input-area input[type="text"] {
@@ -123,16 +166,15 @@
   cursor: not-allowed;
 }
 
-/* .category-tree-view {
-  /* Styles for the tree container itself if needed */
-  /* For example, to add some padding if CategoryTreeNode doesn't handle it all */
+.category-tree-view {
+  margin-top: 10px;
+}
 
 .disabled-tree {
   opacity: 0.7;
   pointer-events: none;
 }
 
-/* General page loading/error states (can be shared) */
 .page-loading-state, .page-error-state {
   display: flex;
   flex-direction: column;
@@ -164,9 +206,15 @@
     color: var(--error-color-darker);
     font-size: 0.85rem;
     margin-top: 5px;
+    width: 100%;
+    text-align: left;
 }
 
-/* Ensuring spinner-inline is defined if used */
+.add-category-input-area.top-level-add-form .inline-error-text.error-message {
+    flex-basis: 100%;
+    margin-top: 8px;
+}
+
 .spinner-inline {
   animation: spin 1s linear infinite;
 }

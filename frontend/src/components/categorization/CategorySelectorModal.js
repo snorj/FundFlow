@@ -139,17 +139,27 @@ const CategorySelectorModal = ({
              {/* Render System Root Nodes */}
              {systemRootCategories.map(rootCat => (
                  <CategoryTreeNode
-                     key={rootCat.id} category={rootCat} allCategories={availableCategories}
-                     onSelectNode={handleNodeSelect} pendingSelectionId={pendingSelectionId}
-                     onCreateCategory={handleCreateCategory} isCreating={isCreating} // Pass down handler & state
+                     key={rootCat.id} 
+                     category={rootCat} 
+                     allCategories={availableCategories}
+                     visibleCategoryIds={null} // Explicitly pass null as no filter in modal
+                     onSelectNode={handleNodeSelect} 
+                     pendingSelectionId={pendingSelectionId}
+                     onCreateCategory={handleCreateCategory} 
+                     isCreating={isCreating}
                  />
              ))}
              {/* Render User Root Nodes */}
              {userRootCategories.map(rootCat => (
                  <CategoryTreeNode
-                     key={rootCat.id} category={rootCat} allCategories={availableCategories}
-                     onSelectNode={handleNodeSelect} pendingSelectionId={pendingSelectionId}
-                     onCreateCategory={handleCreateCategory} isCreating={isCreating} // Pass down handler & state
+                     key={rootCat.id} 
+                     category={rootCat} 
+                     allCategories={availableCategories}
+                     visibleCategoryIds={null} // Explicitly pass null as no filter in modal
+                     onSelectNode={handleNodeSelect} 
+                     pendingSelectionId={pendingSelectionId}
+                     onCreateCategory={handleCreateCategory} 
+                     isCreating={isCreating}
                  />
              ))}
              {/* ... no categories message ... */}

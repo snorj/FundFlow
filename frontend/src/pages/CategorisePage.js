@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CategoryTreeNode from '../components/categorization/CategoryTreeNode';
 import categoryService from '../services/categories';
-import { FiPlus, FiLoader, FiAlertCircle, FiEdit, FiArrowRight } from 'react-icons/fi';
+import { FiPlus, FiLoader, FiAlertCircle, FiEdit, FiArrowRight, FiSearch } from 'react-icons/fi';
 import './CategorisePage.css'; // We'll create this CSS file next
 
 const CategorisePage = () => {
@@ -10,6 +10,8 @@ const CategorisePage = () => {
   const [availableCategories, setAvailableCategories] = useState([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [error, setError] = useState(null);
+
+  const [searchTerm, setSearchTerm] = useState('');
 
   const [showTopLevelInput, setShowTopLevelInput] = useState(false);
   const [newTopLevelName, setNewTopLevelName] = useState('');
@@ -40,7 +42,6 @@ const CategorisePage = () => {
     try {
       const newCategoryData = { name, parent: parentId };
       await categoryService.createCategory(newCategoryData);
-      // Refresh categories after creation
       await fetchCategories(); 
       setShowTopLevelInput(false);
       setNewTopLevelName('');
@@ -51,10 +52,56 @@ const CategorisePage = () => {
     } finally {
       setIsCreating(false);
     }
-  }, [fetchCategories]); // Added fetchCategories to dependency array
+  }, [fetchCategories]);
 
-  const systemRootCategories = useMemo(() => availableCategories.filter(cat => !cat.parent && !cat.is_custom), [availableCategories]);
-  const userRootCategories = useMemo(() => availableCategories.filter(cat => !cat.parent && cat.is_custom), [availableCategories]);
+  const categoriesById = useMemo(() => 
+    new Map(availableCategories.map(cat => [cat.id, cat]))
+  , [availableCategories]);
+
+  const visibleCategoryIds = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return null; // No filter, all are visible conceptually
+    }
+    const lowerSearchTerm = searchTerm.toLowerCase();
+    const directMatches = new Set();
+
+    availableCategories.forEach(category => {
+      if (category.name.toLowerCase().includes(lowerSearchTerm)) {
+        directMatches.add(category.id);
+      }
+    });
+
+    if (directMatches.size === 0) {
+      return new Set(); // Search term present, but no direct matches
+    }
+
+    const visibleIds = new Set(directMatches);
+    directMatches.forEach(matchId => {
+      let currentId = categoriesById.get(matchId)?.parent;
+      while (currentId) {
+        visibleIds.add(currentId);
+        const parentCategory = categoriesById.get(currentId);
+        currentId = parentCategory ? parentCategory.parent : null;
+      }
+    });
+    return visibleIds;
+  }, [availableCategories, searchTerm, categoriesById]);
+
+  const systemRootCategories = useMemo(() => 
+    availableCategories.filter(cat => 
+      !cat.parent && 
+      !cat.is_custom &&
+      (visibleCategoryIds === null || visibleCategoryIds.has(cat.id))
+    )
+  , [availableCategories, visibleCategoryIds]);
+
+  const userRootCategories = useMemo(() => 
+    availableCategories.filter(cat => 
+      !cat.parent && 
+      cat.is_custom &&
+      (visibleCategoryIds === null || visibleCategoryIds.has(cat.id))
+    )
+  , [availableCategories, visibleCategoryIds]);
 
   const handleAddTopLevelClick = () => {
     setShowTopLevelInput(true);
@@ -88,6 +135,8 @@ const CategorisePage = () => {
     return <div className="page-error-state"><FiAlertCircle /> <p>Error: {error}</p><button onClick={fetchCategories}>Retry</button></div>;
   }
 
+  const noResultsFromSearch = searchTerm.trim() && visibleCategoryIds && visibleCategoryIds.size === 0;
+
   return (
     <div className="categorise-page-container">
       <div className="categorise-header-bar">
@@ -98,49 +147,63 @@ const CategorisePage = () => {
       </div>
 
       <div className="category-management-area card-style">
-        <h2>Category Tree</h2>
+        <div className="category-toolbar">
+          <div className="search-categories-input-container">
+            <FiSearch className="search-icon" />
+            <input
+              type="text"
+              placeholder="Search categories..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="search-categories-input"
+            />
+          </div>
+          {!showTopLevelInput && (
+            <button className="add-category-button" onClick={handleAddTopLevelClick} disabled={isCreating}>
+              <FiPlus /> Add Top-Level Category
+            </button>
+          )}
+        </div>
+        
+        {showTopLevelInput && (
+          <div className="add-category-input-area top-level-add-form">
+            <input
+              type="text"
+              value={newTopLevelName}
+              onChange={(e) => {
+                setNewTopLevelName(e.target.value);
+                if (createError) setCreateError(null);
+              }}
+              placeholder="New top-level category name..."
+              disabled={isCreating}
+              autoFocus
+            />
+            <button onClick={handleSaveTopLevel} disabled={!newTopLevelName.trim() || isCreating} title="Save">
+              {isCreating ? <FiLoader className="spinner-inline"/> : <FiPlus />}
+            </button>
+            <button onClick={handleCancelTopLevel} disabled={isCreating} title="Cancel">Cancel</button>
+            {createError && <p className="inline-error-text error-message">{createError}</p>}
+          </div>
+        )}
+        
         <p className="category-instructions">
           View your category structure below. Add new top-level categories or sub-categories directly in the tree.
         </p>
         
-        <div className="top-level-actions">
-          {!showTopLevelInput ? (
-            <button className="add-category-button" onClick={handleAddTopLevelClick} disabled={isCreating}>
-              <FiPlus /> Add Top-Level Category
-            </button>
-          ) : (
-            <div className="add-category-input-area">
-              <input
-                type="text"
-                value={newTopLevelName}
-                onChange={(e) => {
-                  setNewTopLevelName(e.target.value);
-                  if (createError) setCreateError(null); // Clear error on type
-                }}
-                placeholder="New top-level category name..."
-                disabled={isCreating}
-                autoFocus
-              />
-              <button onClick={handleSaveTopLevel} disabled={!newTopLevelName.trim() || isCreating} title="Save">
-                {isCreating && showTopLevelInput ? <FiLoader className="spinner-inline"/> : <FiPlus />}
-              </button>
-              <button onClick={handleCancelTopLevel} disabled={isCreating} title="Cancel">Cancel</button>
-            </div>
-          )}
-          {createError && showTopLevelInput && <p className="inline-error-text error-message">{createError}</p>}
-        </div>
-
         <div className={`category-tree-view ${isCreating ? 'disabled-tree' : ''}`}>
-          {systemRootCategories.length === 0 && userRootCategories.length === 0 && !showTopLevelInput && (
+          {(systemRootCategories.length === 0 && userRootCategories.length === 0 && !showTopLevelInput && !searchTerm.trim()) && (
             <p>No categories found. Add a top-level category to get started.</p>
+          )}
+          {noResultsFromSearch && (
+            <p>No categories match your search term "{searchTerm}".</p>
           )}
           {systemRootCategories.map(rootCat => (
             <CategoryTreeNode
               key={rootCat.id}
               category={rootCat}
               allCategories={availableCategories}
-              onSelectNode={() => {}} // No selection action on this page
-              pendingSelectionId={null} // No pending selection
+              visibleCategoryIds={visibleCategoryIds}
+              level={0}
               onCreateCategory={handleCreateCategory}
               isCreating={isCreating}
             />
@@ -150,8 +213,8 @@ const CategorisePage = () => {
               key={rootCat.id}
               category={rootCat}
               allCategories={availableCategories}
-              onSelectNode={() => {}} // No selection action on this page
-              pendingSelectionId={null} // No pending selection
+              visibleCategoryIds={visibleCategoryIds}
+              level={0}
               onCreateCategory={handleCreateCategory}
               isCreating={isCreating}
             />
