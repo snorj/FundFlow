@@ -1,45 +1,36 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-// Import Transition components
 import { TransitionGroup, CSSTransition } from 'react-transition-group';
-// Correctly import the Card component from its location
 import CategorizationCard from '../components/categorization/CategorizationCard';
-// Import services
 import transactionService from '../services/transactions';
 import categoryService from '../services/categories';
-// Import this page's CSS
-import './CategorizeTransactions.css';
-// Import necessary icons
+import './CategoriseTransactions.css'; // Assuming CSS file is named this or similar
 import { FiLoader, FiInbox, FiAlertCircle } from 'react-icons/fi';
 
-
-const CategorizeTransactions = () => {
+// Renamed component to CategoriseTransactionsPage
+const CategoriseTransactionsPage = () => {
     const [groupedTransactions, setGroupedTransactions] = useState([]);
     const [availableCategories, setAvailableCategories] = useState([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isLoadingGroups, setIsLoadingGroups] = useState(true);
     const [isLoadingCategories, setIsLoadingCategories] = useState(true);
-    const [isSubmitting, setIsSubmitting] = useState(false); // Loading state for applying category
-    const [error, setError] = useState(null); // For general loading errors
-    const [submitError, setSubmitError] = useState(null); // For submission errors
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState(null);
+    const [submitError, setSubmitError] = useState(null);
     const navigate = useNavigate();
-    const nodeRef = useRef(null); // Ref for CSSTransition
+    const nodeRef = useRef(null);
 
-    // Callback passed down to modal (via card) to refresh category list
     const handleCategoriesUpdate = useCallback(async () => {
         console.log("Refreshing categories list after update...");
-        // Optionally set a category-specific loading state here if needed
         try {
             const categoriesData = await categoryService.getCategories();
             setAvailableCategories(categoriesData || []);
         } catch (err) {
             console.error("Error refreshing categories:", err);
-            // Set a general submit error or a specific category error state
             setSubmitError("Could not refresh category list after update.");
         }
-    }, []); // Dependency array is empty as it relies on categoryService
+    }, []);
 
-    // Fetch initial data (groups and categories)
     const fetchData = useCallback(async () => {
         setIsLoadingGroups(true);
         setIsLoadingCategories(true);
@@ -63,29 +54,23 @@ const CategorizeTransactions = () => {
             setIsLoadingGroups(false);
             setIsLoadingCategories(false);
         }
-    // Include handleCategoriesUpdate here ONLY if fetchData *needs* the latest categories
-    // which it doesn't currently, as it fetches them fresh.
-    // }, [handleCategoriesUpdate]);
-    }, [handleCategoriesUpdate]); // Keep dependency array empty for now
+    }, [handleCategoriesUpdate]); // ensure handleCategoriesUpdate is stable or included if it changes
 
-    // Fetch data on component mount
     useEffect(() => {
         fetchData();
     }, [fetchData]);
 
-    // --- UPDATED handleCategorizeGroup ---
     const handleCategorizeGroup = async (transactionIds, categoryId, originalDescription, editedDescription) => {
-        if (!categoryId) { /* ... */ return; }
+        if (!categoryId) return;
         console.log(`Parent: Attempting to categorize IDs: ${transactionIds} with Category ID: ${categoryId}, OrigDesc: ${originalDescription}, EditedDesc: ${editedDescription}`);
         setIsSubmitting(true);
         setSubmitError(null);
         try {
-             // Pass all necessary arguments to the service function
              const response = await transactionService.batchUpdateCategory(
                  transactionIds,
                  parseInt(categoryId, 10),
                  originalDescription,
-                 editedDescription // Pass null or the actual edited string
+                 editedDescription
                 );
              console.log("Batch categorize response:", response);
              handleNextCard();
@@ -97,14 +82,12 @@ const CategorizeTransactions = () => {
         }
     };
     
-    // Handler for when the card signals to skip a group
     const handleSkipGroup = (transactionIds) => {
         console.log(`Parent: Skipping IDs: ${transactionIds}`);
         setSubmitError(null);
         handleNextCard();
     };
 
-    // Logic to advance to the next card or navigate away
     const handleNextCard = () => {
         console.log(`handleNextCard called. Current Index: ${currentIndex}, Total Groups: ${groupedTransactions.length}`);
         if (currentIndex < groupedTransactions.length - 1) {
@@ -115,18 +98,17 @@ const CategorizeTransactions = () => {
             });
         } else {
             console.log("Categorization complete! Navigating...");
-            navigate('/dashboard'); // Navigate back to dashboard after finishing
+            // Consider navigating to a different page or showing a success message here
+            // For now, it navigates to the new dashboard page.
+            navigate('/dashboard'); 
         }
     };
 
-    // --- Render Logic ---
     const currentGroup = groupedTransactions[currentIndex];
     const totalGroups = groupedTransactions.length;
     const isLoading = isLoadingGroups || isLoadingCategories;
+    const animationTimeout = 300;
 
-    const animationTimeout = 300; // Matches CSS transition duration
-
-    // Loading State
     if (isLoading) {
         return (
             <div className="categorization-page loading-state">
@@ -136,7 +118,6 @@ const CategorizeTransactions = () => {
         );
     }
 
-    // General Error State (for initial data load)
     if (error && !isLoading) {
          return (
             <div className="categorization-page error-state">
@@ -147,7 +128,6 @@ const CategorizeTransactions = () => {
         );
     }
 
-    // All Done/Empty State (after loading, no errors)
     if (!isLoading && !error && totalGroups === 0) {
          return (
             <div className="categorization-page empty-state">
@@ -161,12 +141,11 @@ const CategorizeTransactions = () => {
          );
     }
 
-    // Main Render: Show Header, Errors, and Animated Card
     return (
         <div className="categorization-page">
             <div className="categorization-header">
-                <h1>Categorize Transactions</h1>
-                {/* Show progress only if there are groups to process */}
+                {/* Title can be adjusted if this page is only for processing */}
+                <h1>Review Uncategorized Transactions</h1> 
                 {totalGroups > 0 && currentGroup && (
                     <span className="progress-indicator">
                         Group {currentIndex + 1} of {totalGroups}
@@ -174,34 +153,29 @@ const CategorizeTransactions = () => {
                 )}
             </div>
 
-             {/* Display submission errors (errors during categorization action) */}
              {submitError && (
                 <div className="categorization-error error-message">
                    <FiAlertCircle /> {submitError}
                 </div>
              )}
 
-            {/* Animation Wrapper */}
             <TransitionGroup className="categorization-card-container">
-                {/* Render CSSTransition ONLY if currentGroup exists */}
                 {currentGroup && (
                     <CSSTransition
-                        // Using a key that changes ensures animation triggers
                         key={currentGroup.description + '-' + currentGroup.transaction_ids[0]}
                         timeout={animationTimeout}
                         classNames="card-transition"
                         unmountOnExit
-                        nodeRef={nodeRef} // Pass the ref for CSSTransition
+                        nodeRef={nodeRef}
                     >
-                         {/* Pass ref and the category update handler down */}
                         <CategorizationCard
-                            ref={nodeRef} // Assign the ref to the card
+                            ref={nodeRef}
                             group={currentGroup}
                             onCategorize={handleCategorizeGroup}
                             onSkip={handleSkipGroup}
                             availableCategories={availableCategories}
-                            isLoading={isSubmitting} // Pass submitting state for apply button
-                            onCategoriesUpdate={handleCategoriesUpdate} // Pass the refresh function
+                            isLoading={isSubmitting}
+                            onCategoriesUpdate={handleCategoriesUpdate}
                         />
                     </CSSTransition>
                 )}
@@ -210,4 +184,4 @@ const CategorizeTransactions = () => {
     );
 };
 
-export default CategorizeTransactions;
+export default CategoriseTransactionsPage; // Renamed export 

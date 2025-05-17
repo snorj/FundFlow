@@ -1,0 +1,126 @@
+:root {
+  --sidebar-width: 250px;
+  --sidebar-background: var(--background-darker, #1a1d24); /* Darker background for sidebar */
+  --sidebar-text-color: var(--text-light, #e0e0e0);
+  --sidebar-hover-background: var(--background-medium-dark, #2c313a);
+  --sidebar-active-background: var(--accent-color, #007bff);
+  --sidebar-active-text-color: var(--text-on-accent, #ffffff);
+  --sidebar-icon-size: 1.2rem;
+  --sidebar-border-color: var(--border-color-dark, #303030);
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  height: 100vh; /* Full viewport height */
+  background-color: var(--sidebar-background);
+  color: var(--sidebar-text-color);
+  display: flex;
+  flex-direction: column;
+  position: fixed; /* Fixed position */
+  left: 0;
+  top: 0;
+  z-index: 1000; /* Ensure it's above other content */
+  box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+  border-right: 1px solid var(--sidebar-border-color);
+}
+
+.sidebar-header {
+  padding: 20px 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center; /* Center logo if no title */
+  /* border-bottom: 1px solid var(--sidebar-border-color); */
+  margin-bottom: 10px; /* Space before nav items */
+}
+
+.sidebar-logo {
+  height: 40px; /* Adjust as needed */
+  margin-right: 10px; /* Space between logo and title if present */
+}
+
+.sidebar-title {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--sidebar-text-color);
+}
+
+.sidebar-nav {
+  flex-grow: 1; /* Allows nav to take available space */
+}
+
+.sidebar-nav ul {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sidebar-nav li {
+  /* No specific styles needed here unless for borders etc. */
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  color: var(--sidebar-text-color);
+  text-decoration: none;
+  font-size: 1rem;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  border-left: 3px solid transparent; /* For active indicator */
+  margin: 5px 10px; /* Vertical margin and some horizontal for rounding */
+  border-radius: var(--border-radius-standard);
+}
+
+.sidebar-link:hover {
+  background-color: var(--sidebar-hover-background);
+  /* border-left-color: var(--accent-color-light); */ /* Subtle hover indicator */
+}
+
+.sidebar-link.active {
+  background-color: var(--sidebar-active-background);
+  color: var(--sidebar-active-text-color);
+  font-weight: 500;
+  border-left-color: var(--accent-color-darker); /* Prominent active indicator */
+}
+
+.sidebar-icon {
+  margin-right: 15px;
+  font-size: var(--sidebar-icon-size);
+  min-width: 20px; /* Ensure icons align */
+  display: inline-flex;
+  align-items: center;
+}
+
+.sidebar-label {
+  flex-grow: 1;
+}
+
+/* Styles for a potential footer if you add one */
+.sidebar-footer {
+  padding: 20px;
+  border-top: 1px solid var(--sidebar-border-color);
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+/* Responsive considerations (optional for now) */
+/* @media (max-width: 768px) {
+  .sidebar {
+    width: 60px; 
+  }
+  .sidebar-label {
+    display: none;
+  }
+  .sidebar-header {
+    justify-content: center;
+  }
+  .sidebar-logo {
+    margin-right: 0;
+  }
+  .sidebar-link {
+    justify-content: center;
+  }
+  .sidebar-icon {
+    margin-right: 0;
+  }
+} */ 

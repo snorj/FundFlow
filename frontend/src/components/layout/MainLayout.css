@@ -1,37 +1,46 @@
 /* frontend/src/components/layout/MainLayout.css */
 
-/* Using variables from :root in index.css */
-
-.app-container-no-sidebar {
-  display: flex; /* Keep flex for main content structure */
-  min-height: 100vh;
-  background-color: var(--light-gray);
+/* Define --sidebar-width if not already globally defined (it is in Sidebar.css, but good for clarity) */
+:root {
+  --sidebar-width: 250px; /* Ensure this matches Sidebar.css */
+  --header-height: 60px; /* Or your existing header height */
+  --header-background: var(--background-elevated, #ffffff);
+  --header-border-color: var(--border-color-light, #e0e0e0);
+  --header-icon-size: 1.3rem;
+  --content-padding: 20px; /* Consistent padding for content areas */
 }
 
-/* ===== Main Content Styles ===== */
-.main-content-full-width {
-  flex-grow: 1; /* Takes full width */
+/* Main app container with sidebar */
+.app-container-with-sidebar {
+  display: flex;
+  height: 100vh;
+  overflow: hidden; /* Prevent double scrollbars if content overflows */
+}
+
+/* Area to the right of the sidebar, containing header and page content */
+.main-content-area {
+  flex-grow: 1;
+  margin-left: var(--sidebar-width); /* Offset by sidebar width */
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-  width: 100%;
+  height: 100vh; /* Full height of the viewport */
+  overflow-y: auto; /* Allow scrolling for this content area only */
+  background-color: var(--background-primary, #f4f7fa); /* Background for the content area */
 }
 
-/* ===== Header Styles ===== */
+/* Sticky Header */
 .main-header {
   height: var(--header-height);
-  background-color: var(--deep-navy);
-  border-bottom: 1px solid var(--medium-blue);
+  background-color: var(--header-background);
+  border-bottom: 1px solid var(--header-border-color);
   display: flex;
   align-items: center;
-  justify-content: space-between; /* Pushes left and right divs apart */
-  padding: 0 25px; /* Header horizontal padding */
-  position: sticky;
+  justify-content: space-between; /* Space out left and right sections */
+  padding: 0 var(--content-padding);
+  position: sticky; /* Make header sticky */
   top: 0;
-  z-index: 900;
-  flex-shrink: 0;
-  color: var(--white);
+  z-index: 900; /* Below sidebar but above page content */
+  box-shadow: var(--shadow-soft);
 }
 
 .header-left {
@@ -39,66 +48,97 @@
   align-items: center;
 }
 
+/* If you decide to keep the logo in the header */
 .header-logo-link {
-  display: flex;
+  display: inline-flex; /* Or flex if you need alignment within it */
   align-items: center;
 }
-
 .header-logo {
-  display: block;
-  height: var(--header-logo-height);
-  width: auto;
+  height: calc(var(--header-height) - 28px); /* Example: slightly smaller than header */
+  max-height: 35px;
+}
+
+.header-page-title {
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  /* If logo is removed from header, you might want margin here */
+  /* margin-left: 10px; */ 
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 10px; /* Space if more icons are added later */
 }
 
-/* Styles for the Logout Button in Header */
 .header-action-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px; /* Space between icon and text */
-    background: none;
-    border: none;
-    color: var(--light-gray);
-    padding: 8px 12px; /* Adjust padding */
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background-color 0.2s, color 0.2s;
-    font-family: var(--font-family-sans); /* Ensure font consistency */
-    font-size: 14px; /* Adjust font size */
-    font-weight: 500;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 8px;
+  border-radius: var(--border-radius-standard);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .header-action-button:hover {
-    background-color: var(--medium-blue);
-    color: var(--white);
+  background-color: var(--background-medium-light);
+  color: var(--text-primary);
 }
 
-.header-action-button svg {
-    display: block;
-    width: var(--header-icon-size);
-    height: var(--header-icon-size);
+.header-logout-button svg {
+  width: var(--header-icon-size);
+  height: var(--header-icon-size);
 }
 
-/* Hide logout text on smaller screens (optional) */
 .logout-text {
-    display: inline; /* Default show */
+  font-size: 0.9rem;
+  /* display: none; /* Hide by default, show on larger screens */
 }
 
+/* @media (min-width: 600px) {
+  .logout-text {
+    display: inline;
+  }
+} */
 
-/* ===== Content Area Styles ===== */
+/* Main content area for the <Outlet /> */
+.page-content {
+  flex-grow: 1; /* Takes remaining vertical space */
+  /* overflow-y: auto; /* Scroll independently if header is fixed and content is large */
+  /* Padding is now on content-container if you want it per-page, or here for global content area */
+}
+
 .content-container {
-  padding: 30px;
-  overflow-y: auto; /* Allow content area to scroll */
-  flex-grow: 1; /* Take remaining space */
-  background-color: var(--light-gray); /* Use Light Gray */
+  padding: var(--content-padding); /* Consistent padding for pages */
+  /* max-width: 1200px; /* Optional: constrain content width */
+  /* margin: 0 auto; /* Center if max-width is set */
 }
 
+
+/* Fallback styles for the old layout (no sidebar) in case they are needed */
+/* Or if you have a toggleable sidebar and need to switch between these states */
+.app-container-no-sidebar {
+  display: flex;
+  flex-direction: column; /* Header on top, then main content */
+  height: 100vh;
+}
+
+.main-content-full-width {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto; /* For scrolling within the main area if content exceeds viewport */
+  background-color: var(--background-primary, #f4f7fa); /* Consistent background */
+}
+
+/* Ensure .main-header styles (defined above) work well here too */
+/* .main-header in this context would span full width */
+
+/* .content-container within .main-content-full-width would also use padding */
 
 /* ===== Responsive Styles ===== */
 @media (max-width: 768px) { /* Example breakpoint to hide text */
