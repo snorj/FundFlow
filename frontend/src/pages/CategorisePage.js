@@ -18,9 +18,16 @@ const CategorisePage = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
 
+  // --- NEW: State for delete operation ---
+  const [deletingCategoryId, setDeletingCategoryId] = useState(null); // ID of category being deleted
+  const [deleteError, setDeleteError] = useState(null); // Error for delete operation
+  // --- END NEW ---
+
   const fetchCategories = useCallback(async () => {
     setIsLoadingCategories(true);
     setError(null);
+    setDeleteError(null); // Clear delete error on refresh
+    setCreateError(null); // Clear create error on refresh
     try {
       const categoriesData = await categoryService.getCategories();
       setAvailableCategories(categoriesData || []);
@@ -39,6 +46,7 @@ const CategorisePage = () => {
   const handleCreateCategory = useCallback(async (name, parentId = null) => {
     setIsCreating(true);
     setCreateError(null);
+    setDeleteError(null); // Clear delete error
     try {
       const newCategoryData = { name, parent: parentId };
       await categoryService.createCategory(newCategoryData);
@@ -48,11 +56,32 @@ const CategorisePage = () => {
     } catch (error) {
       console.error("Failed to create category:", error);
       setCreateError(error.message || "Failed to create category.");
-      throw error; // Re-throw for CategoryTreeNode to handle inline errors
+      // No re-throw here, error is handled by displaying createError
     } finally {
       setIsCreating(false);
     }
   }, [fetchCategories]);
+
+  // --- NEW: Delete Category Handler ---
+  const handleDeleteCategory = useCallback(async (categoryId) => {
+    setDeletingCategoryId(categoryId);
+    setDeleteError(null); // Clear previous delete error
+    setCreateError(null); // Clear create error
+    try {
+      await categoryService.deleteCategory(categoryId);
+      // Optimistically remove or just refetch?
+      // Refetching is simpler and ensures consistency if other users are making changes.
+      await fetchCategories(); 
+    } catch (err) {
+      console.error(`Error deleting category ${categoryId}:`, err);
+      // Attempt to parse backend error message
+      const backendError = err.response?.data?.error || err.message || "Failed to delete category.";
+      setDeleteError(backendError);
+    } finally {
+      setDeletingCategoryId(null); // Clear deleting state regardless of outcome
+    }
+  }, [fetchCategories]);
+  // --- END NEW ---
 
   const categoriesById = useMemo(() => 
     new Map(availableCategories.map(cat => [cat.id, cat]))
@@ -107,6 +136,7 @@ const CategorisePage = () => {
     setShowTopLevelInput(true);
     setNewTopLevelName('');
     setCreateError(null);
+    setDeleteError(null);
   };
 
   const handleSaveTopLevel = () => {
@@ -127,12 +157,16 @@ const CategorisePage = () => {
     navigate('/categorise/transactions');
   };
 
-  if (isLoadingCategories) {
+  // Combined loading state for major operations
+  const isPageBusy = isLoadingCategories || isCreating || deletingCategoryId !== null;
+
+  if (isLoadingCategories && !deletingCategoryId && !isCreating) { // Initial load
     return <div className="page-loading-state"><FiLoader className="spinner" /> <p>Loading Categories...</p></div>;
   }
 
-  if (error) {
-    return <div className="page-error-state"><FiAlertCircle /> <p>Error: {error}</p><button onClick={fetchCategories}>Retry</button></div>;
+  // Show general fetch error if not related to a specific create/delete action already showing an error
+  if (error && !createError && !deleteError) {
+    return <div className="page-error-state"><FiAlertCircle /> <p>Error: {error}</p><button onClick={fetchCategories} disabled={isPageBusy}>Retry</button></div>;
   }
 
   const noResultsFromSearch = searchTerm.trim() && visibleCategoryIds && visibleCategoryIds.size === 0;
@@ -141,12 +175,20 @@ const CategorisePage = () => {
     <div className="categorise-page-container">
       <div className="categorise-header-bar">
         <h1>Manage Categories</h1>
-        <button onClick={goToCategoriseTransactions} className="action-button teal-button navigate-button">
+        <button onClick={goToCategoriseTransactions} className="action-button teal-button navigate-button" disabled={isPageBusy}>
             <FiEdit className="button-icon"/> Review Uncategorized Transactions <FiArrowRight className="button-icon-right"/>
         </button>
       </div>
 
-      <div className="category-management-area card-style">
+      {/* Display general delete error at the top of the management area */} 
+      {deleteError && (
+        <div className="page-error-state banner-error">
+            <FiAlertCircle /> <p>{deleteError}</p>
+            <button onClick={() => setDeleteError(null)} className="dismiss-error-button">Dismiss</button>
+        </div>
+      )}
+
+      <div className={`category-management-area card-style ${isPageBusy ? 'busy-state' : ''}`}>
         <div className="category-toolbar">
           <div className="search-categories-input-container">
             <FiSearch className="search-icon" />
@@ -156,10 +198,11 @@ const CategorisePage = () => {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="search-categories-input"
+              disabled={isPageBusy}
             />
           </div>
           {!showTopLevelInput && (
-            <button className="add-category-button" onClick={handleAddTopLevelClick} disabled={isCreating}>
+            <button className="add-category-button" onClick={handleAddTopLevelClick} disabled={isPageBusy}>
               <FiPlus /> Add Top-Level Category
             </button>
           )}
@@ -175,23 +218,23 @@ const CategorisePage = () => {
                 if (createError) setCreateError(null);
               }}
               placeholder="New top-level category name..."
-              disabled={isCreating}
+              disabled={isCreating || deletingCategoryId !== null} // Disable if creating or any delete is in progress
               autoFocus
             />
-            <button onClick={handleSaveTopLevel} disabled={!newTopLevelName.trim() || isCreating} title="Save">
+            <button onClick={handleSaveTopLevel} disabled={!newTopLevelName.trim() || isCreating || deletingCategoryId !== null} title="Save">
               {isCreating ? <FiLoader className="spinner-inline"/> : <FiPlus />}
             </button>
-            <button onClick={handleCancelTopLevel} disabled={isCreating} title="Cancel">Cancel</button>
+            <button onClick={handleCancelTopLevel} disabled={isCreating || deletingCategoryId !== null} title="Cancel">Cancel</button>
             {createError && <p className="inline-error-text error-message">{createError}</p>}
           </div>
         )}
         
         <p className="category-instructions">
-          View your category structure below. Add new top-level categories or sub-categories directly in the tree.
+          View your category structure below. Add or delete categories directly in the tree.
         </p>
         
-        <div className={`category-tree-view ${isCreating ? 'disabled-tree' : ''}`}>
-          {(systemRootCategories.length === 0 && userRootCategories.length === 0 && !showTopLevelInput && !searchTerm.trim()) && (
+        <div className={`category-tree-view ${isPageBusy ? 'disabled-tree' : ''}`}>
+          {(systemRootCategories.length === 0 && userRootCategories.length === 0 && !showTopLevelInput && !searchTerm.trim() && !isLoadingCategories) && (
             <p>No categories found. Add a top-level category to get started.</p>
           )}
           {noResultsFromSearch && (
@@ -205,7 +248,9 @@ const CategorisePage = () => {
               visibleCategoryIds={visibleCategoryIds}
               level={0}
               onCreateCategory={handleCreateCategory}
+              onDeleteCategory={handleDeleteCategory}
               isCreating={isCreating}
+              isDeleting={deletingCategoryId === rootCat.id}
             />
           ))}
           {userRootCategories.map(rootCat => (
@@ -216,7 +261,9 @@ const CategorisePage = () => {
               visibleCategoryIds={visibleCategoryIds}
               level={0}
               onCreateCategory={handleCreateCategory}
+              onDeleteCategory={handleDeleteCategory}
               isCreating={isCreating}
+              isDeleting={deletingCategoryId === rootCat.id}
             />
           ))}
         </div>

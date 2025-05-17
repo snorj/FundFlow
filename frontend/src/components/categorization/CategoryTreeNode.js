@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import PropTypes from 'prop-types';
-// --- Add FiSave, FiXCircle ---
-import { FiChevronRight, FiChevronDown, FiPlusCircle, FiSave, FiXCircle, FiLoader } from 'react-icons/fi';
+// --- Add FiSave, FiXCircle, FiTrash2 ---
+import { FiChevronRight, FiChevronDown, FiPlusCircle, FiSave, FiXCircle, FiLoader, FiTrash2 } from 'react-icons/fi';
 
 const CategoryTreeNode = ({
   category,
@@ -12,7 +12,9 @@ const CategoryTreeNode = ({
   pendingSelectionId = null,
   // --- NEW PROP: Handler for creating category ---
   onCreateCategory, // Expects function like: async (name, parentId) => { /* API call & refresh */ }
+  onDeleteCategory, // NEW: Handler for deleting a category
   isCreating, // Flag from parent indicating a creation is in progress globally
+  isDeleting, // NEW: Flag from parent indicating a delete is in progress for THIS category
 }) => {
   const [isExpanded, setIsExpanded] = useState(level < 1);
   // --- NEW State for inline adding ---
@@ -56,7 +58,7 @@ const CategoryTreeNode = ({
 
   const handleSaveNewChild = async (e) => {
       e.stopPropagation(); // Prevent node selection
-      if (!newChildName.trim() || isSavingChild || isCreating) return; // Prevent empty/double submit
+      if (!newChildName.trim() || isSavingChild || isCreating || isDeleting) return; // Prevent empty/double submit
 
       setIsSavingChild(true);
       setAddChildError(null);
@@ -73,9 +75,27 @@ const CategoryTreeNode = ({
       }
   }
 
+  // --- NEW: Delete Handler ---
+  const handleDeleteClick = (e) => {
+    e.stopPropagation();
+    if (isDeleting || isCreating) return;
+    // Confirmation dialog
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete the category "${category.name}"?\n\n` +
+      `- Transactions in this category will become uncategorized.\n` +
+      `- Sub-categories will be moved up one level.\n` +
+      `- Mapping rules pointing to this category will be unassigned.`
+    );
+    if (confirmDelete) {
+      onDeleteCategory(category.id);
+    }
+  };
+  // --- END NEW ---
+
   const isSelected = pendingSelectionId === category.id;
   // Disable interactions if a global creation/save is happening
-  const isDisabled = isCreating || isSavingChild;
+  const isDisabled = isCreating || isSavingChild || isDeleting;
+  const isUserCategory = category.user !== null; // Check if it's a user-owned category
 
   // If a search is active and this node itself is not in visibleCategoryIds, don't render it.
   // This check is actually primarily handled by the parent (CategorisePage) when it decides which root nodes to render.
@@ -93,9 +113,29 @@ const CategoryTreeNode = ({
           {displayChildren.length > 0 ? ( isExpanded ? <FiChevronDown size="14" /> : <FiChevronRight size="14" /> ) : ( <span className="spacer"></span> )}
         </span>
         <span className="node-name">{category.name}</span>
-        <button className="add-child-button" title={`Add sub-category to ${category.name}`} onClick={!isDisabled ? handleAddChildClick : undefined} disabled={isDisabled}>
+        <div className="node-actions">
+          {isUserCategory && !isDeleting && (
+            <button 
+              className="action-button-icon delete-category-button" 
+              title={`Delete category ${category.name}`}
+              onClick={handleDeleteClick} 
+              disabled={isDisabled}
+            >
+              <FiTrash2 size="14"/>
+            </button>
+          )}
+          {isUserCategory && isDeleting && (
+            <FiLoader size="14" className="spinner-inline" title="Deleting..."/>
+          )}
+          <button 
+            className="action-button-icon add-child-button" 
+            title={`Add sub-category to ${category.name}`} 
+            onClick={!isDisabled ? handleAddChildClick : undefined} 
+            disabled={isDisabled}
+          >
             <FiPlusCircle size="14"/>
-        </button>
+          </button>
+        </div>
       </div>
 
       {/* --- Inline Add Input Area --- */}
@@ -106,13 +146,13 @@ const CategoryTreeNode = ({
                   value={newChildName}
                   onChange={handleNewChildNameChange}
                   placeholder="New sub-category name..."
-                  disabled={isSavingChild || isCreating}
+                  disabled={isSavingChild || isCreating || isDeleting}
                   autoFocus
               />
-              <button onClick={handleSaveNewChild} disabled={!newChildName.trim() || isSavingChild || isCreating} title="Save">
+              <button onClick={handleSaveNewChild} disabled={!newChildName.trim() || isSavingChild || isCreating || isDeleting} title="Save">
                   {isSavingChild ? <FiLoader size="14" className="spinner-inline"/> : <FiSave size="14"/>}
               </button>
-              <button onClick={handleCancelAddChild} disabled={isSavingChild || isCreating} title="Cancel">
+              <button onClick={handleCancelAddChild} disabled={isSavingChild || isCreating || isDeleting} title="Cancel">
                   <FiXCircle size="14"/>
               </button>
               {addChildError && <span className="inline-error-text">{addChildError}</span>}
@@ -132,7 +172,9 @@ const CategoryTreeNode = ({
               onSelectNode={onSelectNode}
               pendingSelectionId={pendingSelectionId}
               onCreateCategory={onCreateCategory}
+              onDeleteCategory={onDeleteCategory}
               isCreating={isCreating}
+              isDeleting={isDeleting}
             />
           ))}
         </div>
@@ -155,7 +197,9 @@ CategoryTreeNode.propTypes = {
   pendingSelectionId: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.oneOf([null])]),
   // onInitiateAddChild: PropTypes.func.isRequired,
   onCreateCategory: PropTypes.func.isRequired, // Add new prop type
+  onDeleteCategory: PropTypes.func.isRequired, // Added onDeleteCategory prop type
   isCreating: PropTypes.bool, // Add new prop type
+  isDeleting: PropTypes.bool, // Added isDeleting prop type (for this specific node)
 };
 
 export default CategoryTreeNode;

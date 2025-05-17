@@ -2,7 +2,7 @@
 import csv
 import io # To handle in-memory text stream
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from datetime import datetime
+from datetime import datetime, timezone
 from django.db import transaction as db_transaction # Renamed to avoid confusion
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView # Use APIView for custom logic
@@ -364,7 +364,48 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_serializer_context(self):
         """Pass request to serializer context for validation."""
         return {'request': self.request}
-    
+
+    def destroy(self, request, *args, **kwargs):
+        category_to_delete = self.get_object() # Checks permissions via get_queryset
+        user = request.user
+
+        # Permission IsOwnerOrSystemReadOnly already ensures only owned custom categories can be deleted.
+        # System categories (category_to_delete.user is None) will be blocked by the permission class.
+        
+        logger.info(f"User {user.id}: Attempting to delete category ID {category_to_delete.id} ('{category_to_delete.name}')")
+
+        try:
+            with db_transaction.atomic():
+                # 1. Handle Transactions: Set category to null
+                transactions_updated_count = Transaction.objects.filter(category=category_to_delete).update(category=None, updated_at=datetime.now(timezone.utc))
+                logger.info(f"User {user.id}: Unassigned {transactions_updated_count} transactions from deleted category '{category_to_delete.name}'.")
+
+                # 2. Handle Child Categories: Promote children
+                children_promoted_count = 0
+                new_parent = category_to_delete.parent # Could be None if it was a top-level category
+                for child_category in Category.objects.filter(parent=category_to_delete):
+                    child_category.parent = new_parent
+                    child_category.save(update_fields=['parent', 'updated_at'])
+                    children_promoted_count += 1
+                if children_promoted_count > 0:
+                    logger.info(f"User {user.id}: Promoted {children_promoted_count} child categories of '{category_to_delete.name}'.")
+
+                # 3. Handle Description Mappings: Set assigned_category to null
+                mappings_updated_count = DescriptionMapping.objects.filter(assigned_category=category_to_delete).update(assigned_category=None, updated_at=datetime.now(timezone.utc))
+                if mappings_updated_count > 0:
+                    logger.info(f"User {user.id}: Unassigned {mappings_updated_count} description mapping rules from deleted category '{category_to_delete.name}'.")
+                
+                # 4. Delete the category itself
+                category_name = category_to_delete.name # Store for logging before deletion
+                category_to_delete.delete()
+                logger.info(f"User {user.id}: Successfully deleted category '{category_name}'.")
+
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        except Exception as e:
+            logger.error(f"User {user.id}: Error during deletion of category '{category_to_delete.name}': {e}", exc_info=True)
+            return Response({"error": "An error occurred while trying to delete the category."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class TransactionCSVUploadView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
