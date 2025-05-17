@@ -123,10 +123,9 @@
   cursor: not-allowed;
 }
 
-.category-tree-view {
+/* .category-tree-view {
   /* Styles for the tree container itself if needed */
   /* For example, to add some padding if CategoryTreeNode doesn't handle it all */
-}
 
 .disabled-tree {
   opacity: 0.7;

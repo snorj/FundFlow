@@ -11,13 +11,12 @@ from requests.exceptions import RequestException, HTTPError
 from .models import UpIntegration
 from .utils import decrypt_token
 from .services import get_transactions as get_up_transactions, get_historical_exchange_rate
-from transactions.models import Transaction
+from transactions.models import Transaction, BASE_CURRENCY_FOR_CONVERSION
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
 DEFAULT_INITIAL_SYNC_DAYS = 90
-BASE_CURRENCY_FOR_CONVERSION = 'AUD'
 
 def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, custom_since_iso: str = None) -> dict:
     # ... (user, integration, PAT decryption, 'since' filter logic remains the same as before) ...
@@ -144,21 +143,26 @@ def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, cust
             aud_amount_val = None
             exchange_rate_val = None
 
-            if original_currency_code == BASE_CURRENCY_FOR_CONVERSION: # 'AUD'
+            # --- MODIFIED SECTION FOR CURRENCY CONVERSION (Bank API Sync) ---
+            # For transactions synced from the bank API:
+            # 1. If the transaction is already in the BASE_CURRENCY, populate aud_amount.
+            # 2. If it's in a foreign currency, leave aud_amount and exchange_rate as None.
+            #    Conversion will be handled later, e.g., during categorization or when needed for display.
+            #    This also avoids calling get_historical_exchange_rate for future-dated transactions here.
+
+            if original_currency_code == BASE_CURRENCY_FOR_CONVERSION: # e.g., 'AUD'
                 aud_amount_val = abs_original_amount
                 exchange_rate_val = Decimal("1.0")
             else:
-                rate = get_historical_exchange_rate(
-                    transaction_date_obj.strftime('%Y-%m-%d'),
-                    original_currency_code,
-                    BASE_CURRENCY_FOR_CONVERSION # 'AUD'
-                )
-                if rate is not None:
-                    aud_amount_val = (abs_original_amount * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                    exchange_rate_val = rate
-                else:
-                    skipped_conversion_error_count +=1
-                    logger.warning(f"[Sync User {user_id}]: Could not get rate for {original_currency_code}->{BASE_CURRENCY_FOR_CONVERSION} on {transaction_date_obj} for bank_id {bank_id}.")
+                # Foreign currency transaction: aud_amount_val and exchange_rate_val remain None.
+                # Log that conversion is deferred if you want more visibility here, or rely on later processing.
+                # We can still increment skipped_conversion_error_count if we want to report these
+                # as "pending conversion" rather than "error", but for now, let's not count them as errors here
+                # as it's an intentional deferral.
+                # If a transaction date was in the future, get_historical_exchange_rate would fail anyway.
+                # skipped_conversion_error_count +=1 # Optionally count if needed for reporting pending conversions
+                logger.info(f"[Sync User {user_id}]: Deferred currency conversion for {original_currency_code} transaction {bank_id} dated {transaction_date_obj}. Will be processed later.")
+            # --- END OF MODIFIED SECTION ---
             
             new_tx = Transaction(
                 user=user, bank_transaction_id=bank_id, source='up_bank',

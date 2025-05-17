@@ -9,7 +9,7 @@ from rest_framework.views import APIView # Use APIView for custom logic
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser # For file uploads
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import Category, Transaction, DescriptionMapping # Import Transaction model
+from .models import Category, Transaction, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION # Import Transaction model
 from .serializers import CategorySerializer, TransactionSerializer # Add TransactionSerializer later
 from .permissions import IsOwnerOrSystemReadOnly
 import logging
@@ -19,7 +19,6 @@ from transactions import serializers # Added logging
 from django.db.models import Max # Import Max for aggregation
 from rest_framework.parsers import JSONParser
 from integrations.services import get_historical_exchange_rate
-from integrations.logic import BASE_CURRENCY_FOR_CONVERSION # AUD
 
 
 logger = logging.getLogger(__name__)
@@ -89,19 +88,52 @@ class BatchCategorizeTransactionView(APIView):
 
         # --- Update Transactions FIRST ---
         updated_count = 0
-        queryset = Transaction.objects.filter(
+        # Retrieve the full transaction objects to call the model method later
+        transactions_to_update = list(Transaction.objects.filter(
             user=user,
             id__in=transaction_ids
-        )
-        update_fields = {
+        ))
+
+        if not transactions_to_update:
+            logger.warning(f"User {user.id}: No transactions found for IDs: {transaction_ids}. Nothing to update.")
+            return Response({'error': 'No matching transactions found to update.'}, status=status.HTTP_404_NOT_FOUND)
+
+
+        update_fields_dict = {
             'category': category_to_assign,
             'description': final_clean_name # Update description to the clean name
         }
         try:
             with db_transaction.atomic():
-                updated_count = queryset.update(**update_fields)
+                # Update the category and description using a queryset update for efficiency
+                updated_rows_count = Transaction.objects.filter(
+                    id__in=[t.id for t in transactions_to_update]
+                ).update(**update_fields_dict)
+                
+                updated_count = updated_rows_count # Keep track of how many rows were affected by the UPDATE SQL
+
+                # Now, iterate through the Python objects to update their state and call the new method
+                # This ensures the Python objects reflect the changes before calling update_aud_amount_if_needed
+                successful_conversion_attempts = 0
+                failed_conversion_attempts = 0
+                for tx_instance in transactions_to_update:
+                    # Manually update the fields on the instance if the queryset update succeeded for its ID
+                    # (This assumes the filter for update matched these instances)
+                    tx_instance.category = category_to_assign
+                    tx_instance.description = final_clean_name
+                    # No need to save here as the main fields were updated by queryset.update()
+                    
+                    # Call the new method to update AUD amount if needed
+                    logger.debug(f"User {user.id}: Calling update_aud_amount_if_needed for transaction {tx_instance.id}")
+                    if tx_instance.update_aud_amount_if_needed():
+                        successful_conversion_attempts += 1
+                    else:
+                        # This means aud_amount is still None or save failed for it
+                        failed_conversion_attempts += 1
+                        logger.warning(f"User {user.id}: update_aud_amount_if_needed did not result in a populated AUD amount for transaction {tx_instance.id}.")
+
         except Exception as e:
-             logger.error(f"Database error during transaction batch update for user {user.id}: {e}")
+             logger.error(f"Database error during transaction batch update or AUD amount calculation for user {user.id}: {e}", exc_info=True)
              return Response({"error": "Failed to update transactions due to a database error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         # --- Create/Update Description Mapping Rule ONLY IF transactions were successfully updated ---
@@ -139,7 +171,7 @@ class BatchCategorizeTransactionView(APIView):
             logger.warning(f"User {user.id}: Mismatch in updated count. Requested {len(transaction_ids)}, updated {updated_count}.")
             # Log which ones failed if needed (requires extra query)
 
-        logger.info(f"User {user.id}: Completed batch categorization. Updated {updated_count} transactions with category '{category_to_assign.name}' and description '{final_clean_name}'. Rule status: {rule_processed_status}.")
+        logger.info(f"User {user.id}: Completed batch categorization. Updated {updated_count} transactions with category '{category_to_assign.name}' and description '{final_clean_name}'. Rule status: {rule_processed_status}. AUD conversion attempts: {successful_conversion_attempts} success, {failed_conversion_attempts} failed/pending.")
 
         # --- Prepare Response ---
         message = f'Successfully updated {updated_count} transaction(s).'
@@ -441,7 +473,7 @@ class TransactionCSVUploadView(APIView):
             user_mappings = { m.original_description.strip().lower(): m for m in DescriptionMapping.objects.filter(user=current_user) }
 
             for data_item in potential_transactions_data:
-                raw_description = data_item['raw_description'] # Corrected from data_item['description']
+                raw_description = data_item['raw_description']
                 final_description = raw_description
                 assigned_category = None
                 matched_mapping = user_mappings.get(raw_description.strip().lower())
@@ -459,22 +491,36 @@ class TransactionCSVUploadView(APIView):
                     continue
 
                 aud_amount_val, exchange_rate_val = None, None
-                original_currency_code = data_item['original_currency'] # Will be 'EUR'
+                original_currency_code = data_item['original_currency']
 
-                if original_currency_code == BASE_CURRENCY_FOR_CONVERSION: # e.g., if 'EUR' == 'AUD' (false)
-                    aud_amount_val = data_item['original_amount']
-                    exchange_rate_val = Decimal("1.0")
-                else:
-                    rate = get_historical_exchange_rate(
-                        data_item['transaction_date'].strftime('%Y-%m-%d'),
-                        original_currency_code, BASE_CURRENCY_FOR_CONVERSION
-                    )
-                    if rate is not None:
-                        aud_amount_val = (data_item['original_amount'] * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                        exchange_rate_val = rate
+                # --- MODIFIED SECTION FOR CURRENCY CONVERSION ---
+                # Only attempt conversion if the transaction is auto-categorized by a rule.
+                # Otherwise, aud_amount and exchange_rate will remain None.
+                if assigned_category is not None: 
+                    if original_currency_code == BASE_CURRENCY_FOR_CONVERSION:
+                        aud_amount_val = data_item['original_amount']
+                        exchange_rate_val = Decimal("1.0")
                     else:
-                        skipped_conversion_error_count += 1
-                        logger.warning(f"User {current_user.id} - Row {data_item['row_num']}: Rate fetch failed {original_currency_code}->{BASE_CURRENCY_FOR_CONVERSION} on {data_item['transaction_date']}.")
+                        # Ensure the date is not in the future for the API call
+                        if data_item['transaction_date'] <= datetime.now().date():
+                            rate = get_historical_exchange_rate(
+                                data_item['transaction_date'].strftime('%Y-%m-%d'),
+                                original_currency_code, BASE_CURRENCY_FOR_CONVERSION
+                            )
+                            if rate is not None:
+                                aud_amount_val = (data_item['original_amount'] * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                                exchange_rate_val = rate
+                            else:
+                                # This transaction was meant to be auto-categorized but conversion failed.
+                                # Log it as a conversion error, aud_amount will remain None.
+                                skipped_conversion_error_count += 1
+                                logger.warning(f"User {current_user.id} - Row {data_item['row_num']}: Rate fetch failed for auto-categorized transaction {original_currency_code}->{BASE_CURRENCY_FOR_CONVERSION} on {data_item['transaction_date']}.")
+                        else:
+                            # Date is in the future, skip conversion attempt for auto-categorized transaction
+                            skipped_conversion_error_count += 1 # Count as a conversion error for reporting
+                            logger.warning(f"User {current_user.id} - Row {data_item['row_num']}: Skipped currency conversion for auto-categorized transaction with future date {data_item['transaction_date']}.")
+                # If assigned_category is None, aud_amount_val and exchange_rate_val remain None (conversion is skipped)
+                # --- END OF MODIFIED SECTION ---
 
                 transactions_to_create.append(
                     Transaction(

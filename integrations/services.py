@@ -6,6 +6,7 @@ import logging
 from urllib.parse import urljoin, urlencode # Removed unused urlparse, parse_qs
 # from django.conf import settings # Not strictly needed if using os.getenv directly
 from requests.exceptions import RequestException, HTTPError
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +192,18 @@ def get_historical_exchange_rate(date_str: str, from_currency: str, to_currency:
         Decimal | None: The exchange rate (how many units of `to_currency` for one unit of `from_currency`),
                         or None if the rate cannot be fetched.
     """
+    # --- ADDED: Future date check --- 
+    try:
+        request_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        today = datetime.now().date()
+        if request_date > today:
+            logger.warning(f"Attempted to fetch exchange rate for a future date: {date_str}. Returning None.")
+            return None
+    except ValueError:
+        logger.error(f"Invalid date format provided to get_historical_exchange_rate: {date_str}. Expected YYYY-MM-DD.")
+        return None
+    # --- END: Future date check ---
+
     if from_currency.upper() == to_currency.upper():
         return Decimal("1.0") # Rate is 1 if currencies are the same
 
