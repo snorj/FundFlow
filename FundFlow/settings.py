@@ -237,31 +237,48 @@ PLAID_ENV = os.getenv('PLAID_ENV', 'sandbox')
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
         },
     },
     'root': {
         'handlers': ['console'],
-        'level': 'INFO', # Change to DEBUG for more verbose output
+        'level': 'INFO',
     },
     'loggers': {
         'django': {
             'handlers': ['console'],
-            'level': 'INFO', # Change to DEBUG for Django specific logs
+            'level': 'INFO',
             'propagate': False,
         },
-        # Add logger for your app if needed for specific levels
         'transactions': {
             'handlers': ['console'],
-            'level': 'DEBUG', # See DEBUG messages from transactions app
-            'propagate': True,
+            'level': 'DEBUG',
+            'propagate': False,
         },
-         'accounts': { # Also log for accounts app
+        'transactions.services': {
             'handlers': ['console'],
             'level': 'DEBUG',
-            'propagate': True,
+            'propagate': False,
+        },
+         'accounts': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
         },
     },
 }
+
+# Base currency for conversion (ensure it's defined if not already)

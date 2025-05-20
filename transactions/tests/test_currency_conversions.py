@@ -1,5 +1,6 @@
 from decimal import Decimal
 from datetime import date, timedelta
+import io
 
 from django.urls import reverse
 from django.test import TestCase
@@ -288,3 +289,103 @@ class CurrencyConversionTests(TestCase):
         self.assertEqual(data['total_transactions_count'], 2)
         self.assertIsNotNone(data['warning'])
         self.assertIn('1 transaction(s) could not be converted', data['warning']) 
+
+    def test_get_historical_rate_max_date_gap(self):
+        """Test rate lookup with varying gaps to nearest rate."""
+        # Create a rate in the middle of a date range
+        mid_date = date(2024, 6, 15)
+        HistoricalExchangeRate.objects.create(
+            date=mid_date,
+            source_currency='AUD',
+            target_currency='USD',
+            rate=Decimal('0.75')
+        )
+
+        # Test dates at increasing distances
+        test_dates = [
+            mid_date + timedelta(days=1),   # 1 day after
+            mid_date + timedelta(days=7),   # 1 week after
+            mid_date + timedelta(days=30),  # 1 month after
+            mid_date + timedelta(days=90),  # 3 months after
+        ]
+
+        for test_date in test_dates:
+            rate = get_historical_rate(test_date, 'AUD', 'USD')
+            if rate is not None:
+                self.assertEqual(rate, Decimal('0.75').quantize(Decimal('1e-9')))
+
+    def test_csv_upload_with_future_dates(self):
+        """Test CSV upload with transactions having future dates."""
+        future_date = (date.today() + timedelta(days=5)).strftime('%Y%m%d')
+        csv_content = (
+            "Date,Name / Description,Account,Counterparty,Code,Debit/credit,Amount (EUR),Transaction type,Notifications\n"
+            f"{future_date},Future Transaction,Account1,CP1,CODE1,DEBIT,100.00,TYPE1,\n"
+        )
+        
+        csv_file = io.StringIO(csv_content)
+        csv_file.name = 'test.csv'  # Add .name attribute which Django's File objects expect
+        
+        response = self.client.post(
+            reverse('transaction-csv-upload'),  # Fixed URL name
+            {'file': csv_file},
+            format='multipart'
+        )
+        
+        self.assertEqual(response.status_code, 201)
+        created_tx = Transaction.objects.first()
+        self.assertIsNone(created_tx.aud_amount)  # Future date should not have exchange rate
+        self.assertIsNone(created_tx.exchange_rate_to_aud)
+
+    def test_csv_upload_with_distant_past_dates(self):
+        """Test CSV upload with transactions having dates far in the past."""
+        distant_past = date(2020, 1, 1).strftime('%Y%m%d')
+        csv_content = (
+            "Date,Name / Description,Account,Counterparty,Code,Debit/credit,Amount (EUR),Transaction type,Notifications\n"
+            f"{distant_past},Old Transaction,Account1,CP1,CODE1,DEBIT,100.00,TYPE1,\n"
+        )
+        
+        csv_file = io.StringIO(csv_content)
+        csv_file.name = 'test.csv'
+        
+        response = self.client.post(
+            reverse('transaction-csv-upload'),  # Fixed URL name
+            {'file': csv_file},
+            format='multipart'
+        )
+        
+        self.assertEqual(response.status_code, 201)
+        created_tx = Transaction.objects.first()
+        self.assertIsNone(created_tx.aud_amount)  # Distant past should not have exchange rate
+        self.assertIsNone(created_tx.exchange_rate_to_aud)
+
+    def test_dashboard_balance_with_unconvertible_transactions(self):
+        """Test dashboard balance calculation with transactions that can't be converted."""
+        # Create a transaction with a future date
+        future_tx = Transaction.objects.create(
+            user=self.user1,
+            transaction_date=date.today() + timedelta(days=5),
+            description='Future Transaction',
+            original_amount=Decimal('100.00'),
+            original_currency='EUR',
+            direction='DEBIT'
+        )
+
+        # Create a transaction with a distant past date
+        past_tx = Transaction.objects.create(
+            user=self.user1,
+            transaction_date=date(2020, 1, 1),
+            description='Past Transaction',
+            original_amount=Decimal('200.00'),
+            original_currency='EUR',
+            direction='DEBIT'
+        )
+
+        response = self.client.get(self.dashboard_balance_url)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        self.assertEqual(data['unconverted_transactions_count'], 2)
+        self.assertEqual(data['converted_transactions_count'], 0)
+        self.assertEqual(data['total_transactions_count'], 2)
+        self.assertIsNotNone(data['warning'])
+        self.assertIn('2 transaction(s) could not be converted', data['warning']) 

@@ -4,7 +4,7 @@ import io # To handle in-memory text stream
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timezone
 from django.db import transaction as db_transaction # Renamed to avoid confusion
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, views
 from rest_framework.views import APIView # Use APIView for custom logic
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser # For file uploads
 from rest_framework.response import Response
@@ -13,7 +13,7 @@ from .models import Category, Transaction, DescriptionMapping, BASE_CURRENCY_FOR
 from .serializers import CategorySerializer, TransactionSerializer # Add TransactionSerializer later
 from .permissions import IsOwnerOrSystemReadOnly
 import logging
-from django.db.models import Count, Min
+from django.db.models import Count, Min, Sum, Case, When, Value, DecimalField
 from django.shortcuts import get_object_or_404 # Useful for getting the Category
 from transactions import serializers # Added logging
 from django.db.models import Max # Import Max for aggregation
@@ -578,34 +578,24 @@ class TransactionCSVUploadView(APIView):
                 original_currency_code = data_item['original_currency']
 
                 # --- MODIFIED SECTION FOR CURRENCY CONVERSION ---
-                # Only attempt conversion if the transaction is auto-categorized by a rule.
-                # Otherwise, aud_amount and exchange_rate will remain None.
-                if assigned_category is not None: 
-                    if original_currency_code == BASE_CURRENCY_FOR_CONVERSION:
-                        aud_amount_val = data_item['original_amount']
-                        exchange_rate_val = Decimal("1.0")
+                # ALWAYS attempt conversion, regardless of auto-categorization.
+                if original_currency_code == BASE_CURRENCY_FOR_CONVERSION:
+                    aud_amount_val = data_item['original_amount']
+                    exchange_rate_val = Decimal("1.0")
+                else:
+                    # It's okay to attempt conversion even for future dates here, 
+                    # get_historical_rate will handle date validation (e.g., max_days_gap)
+                    rate = get_historical_rate( 
+                        data_item['transaction_date'], 
+                        original_currency_code, 
+                        BASE_CURRENCY_FOR_CONVERSION
+                    )
+                    if rate is not None:
+                        aud_amount_val = (data_item['original_amount'] * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                        exchange_rate_val = rate
                     else:
-                        # Ensure the date is not in the future for the API call
-                        if data_item['transaction_date'] <= datetime.now().date():
-                            # Corrected call to use the new service, ensuring date object is passed
-                            rate = get_historical_rate( 
-                                data_item['transaction_date'], # Already a date object from CSV parsing
-                                original_currency_code, 
-                                BASE_CURRENCY_FOR_CONVERSION
-                            )
-                            if rate is not None:
-                                aud_amount_val = (data_item['original_amount'] * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                                exchange_rate_val = rate
-                            else:
-                                # This transaction was meant to be auto-categorized but conversion failed.
-                                # Log it as a conversion error, aud_amount will remain None.
-                                skipped_conversion_error_count += 1
-                                logger.warning(f"User {current_user.id} - Row {data_item['row_num']}: Rate fetch failed for auto-categorized transaction {original_currency_code}->{BASE_CURRENCY_FOR_CONVERSION} on {data_item['transaction_date']}.")
-                        else:
-                            # Date is in the future, skip conversion attempt for auto-categorized transaction
-                            skipped_conversion_error_count += 1 # Count as a conversion error for reporting
-                            logger.warning(f"User {current_user.id} - Row {data_item['row_num']}: Skipped currency conversion for auto-categorized transaction with future date {data_item['transaction_date']}.")
-                # If assigned_category is None, aud_amount_val and exchange_rate_val remain None (conversion is skipped)
+                        skipped_conversion_error_count += 1
+                        logger.warning(f"User {current_user.id} - Row {data_item['row_num']}: Rate fetch failed for {original_currency_code}->{BASE_CURRENCY_FOR_CONVERSION} on {data_item['transaction_date']}.")
                 # --- END OF MODIFIED SECTION ---
 
                 transactions_to_create.append(
@@ -667,7 +657,7 @@ class TransactionCSVUploadView(APIView):
             return Response({'error': 'An unexpected server error occurred during CSV processing.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # --- NEW: Dashboard Balance API View ---
-class DashboardBalanceView(APIView):
+class DashboardBalanceView(views.APIView):
     """
     API endpoint to calculate and return the user's total balance 
     in a specified currency, based on all their transactions.
@@ -686,62 +676,71 @@ class DashboardBalanceView(APIView):
         current_total_balance = Decimal('0.00')
         converted_transactions_count = 0
         unconverted_transactions_count = 0
-        warning_message = None
+        warnings = []
 
         for tx in transactions:
-            rate_to_target = None
+            converted_amount_in_target = None
+
             # Path 1: Original currency is already the target currency
-            if tx.original_currency.upper() == target_currency:
-                rate_to_target = Decimal('1.0')
-                converted_amount_in_target = tx.signed_original_amount # Use signed amount directly
+            if tx.original_currency == target_currency:
+                converted_amount_in_target = tx.signed_original_amount # Uses the property for correct sign
             
-            # Path 2: Original currency is AUD, target is something else (AUD -> Target)
-            elif tx.original_currency.upper() == BASE_CURRENCY_FOR_CONVERSION:
-                rate_to_target = get_historical_rate(tx.transaction_date, BASE_CURRENCY_FOR_CONVERSION, target_currency)
-                if rate_to_target is not None:
-                    # tx.signed_original_amount is already in AUD
-                    converted_amount_in_target = (tx.signed_original_amount * rate_to_target).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                else:
-                    converted_amount_in_target = None # Failed to convert
+            # Path 2: Target currency is AUD, and AUD amount is pre-calculated on transaction
+            elif target_currency == BASE_CURRENCY_FOR_CONVERSION: 
+                if tx.aud_amount is not None:
+                    converted_amount_in_target = tx.signed_aud_amount # Uses the property for correct sign
+                # else: aud_amount is None, handled by unconverted logic later
             
-            # Path 3: Original currency is not AUD, target is AUD (Original -> AUD)
-            elif target_currency == BASE_CURRENCY_FOR_CONVERSION:
-                if tx.aud_amount is not None: # Already converted to AUD by model method
-                    converted_amount_in_target = tx.signed_aud_amount # Use signed AUD amount
-                    # We don't strictly need the rate here for balance, but it was used for tx.aud_amount
-                else: # Should have been converted, but wasn't (e.g., no rate found by model method)
-                    converted_amount_in_target = None # Failed to convert
-            
-            # Path 4: Original is not AUD, Target is not AUD (Original -> AUD -> Target)
+            # Path 3: General case - need to convert
             else:
-                if tx.aud_amount is not None: # Must have AUD amount to do cross-conversion
-                    # First, ensure we have AUD amount (which tx.aud_amount is)
-                    # Then convert AUD amount to target currency
-                    rate_aud_to_target = get_historical_rate(tx.transaction_date, BASE_CURRENCY_FOR_CONVERSION, target_currency)
-                    if rate_aud_to_target is not None:
-                        converted_amount_in_target = (tx.signed_aud_amount * rate_aud_to_target).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                    else:
-                        converted_amount_in_target = None # Failed to convert AUD to Target
-                else:
-                    converted_amount_in_target = None # Cannot convert if AUD amount is missing
+                # If original is AUD, we need AUD -> Target
+                if tx.original_currency == BASE_CURRENCY_FOR_CONVERSION:
+                    rate = get_historical_rate(tx.transaction_date, BASE_CURRENCY_FOR_CONVERSION, target_currency)
+                    if rate:
+                        converted_amount_in_target = tx.signed_original_amount * rate
+                
+                # If original is Foreign, and target is Foreign (and not AUD)
+                # We need Original -> AUD (if aud_amount is missing) -> Target
+                elif tx.original_currency != BASE_CURRENCY_FOR_CONVERSION and target_currency != BASE_CURRENCY_FOR_CONVERSION:
+                    aud_equiv = tx.aud_amount # Use pre-calculated if available
+                    if aud_equiv is None: # If not, try to calculate it now
+                        rate_to_aud = get_historical_rate(tx.transaction_date, tx.original_currency, BASE_CURRENCY_FOR_CONVERSION)
+                        if rate_to_aud:
+                            aud_equiv = tx.original_amount * rate_to_aud
+                        # else: still no AUD equivalent, will be unconverted
+                    
+                    if aud_equiv is not None:
+                        rate_aud_to_target = get_historical_rate(tx.transaction_date, BASE_CURRENCY_FOR_CONVERSION, target_currency)
+                        if rate_aud_to_target:
+                            # Apply direction sign to aud_equiv before final conversion
+                            signed_aud_equiv = aud_equiv if tx.direction == 'CREDIT' else -aud_equiv
+                            converted_amount_in_target = signed_aud_equiv * rate_aud_to_target
+                
+                # (Path 2 already handled AUD target, so this is Foreign original to Non-AUD target implicitly)
+                # This path should ideally not be hit if Path 2 and the previous conditions in Path 3 are well-defined.
+                # However, as a fallback, try direct Original -> Target conversion.
+                # This might be redundant if the above logic is complete.
+                else: # Fallback, e.g. original is USD, target is EUR (should be caught by cross-currency above if aud_amount available)
+                    rate = get_historical_rate(tx.transaction_date, tx.original_currency, target_currency)
+                    if rate:
+                        converted_amount_in_target = tx.signed_original_amount * rate
 
             if converted_amount_in_target is not None:
-                current_total_balance += converted_amount_in_target
+                current_total_balance += converted_amount_in_target.quantize(Decimal('0.01'))
                 converted_transactions_count += 1
             else:
                 unconverted_transactions_count += 1
-                logger.debug(f"User {user.id}, Tx ID {tx.id}: Could not convert {tx.original_amount} {tx.original_currency} on {tx.transaction_date} to {target_currency}.")
-
+        
         if unconverted_transactions_count > 0:
-            warning_message = f"{unconverted_transactions_count} transaction(s) could not be converted to {target_currency} and were excluded from the balance."
+            warnings.append(f"{unconverted_transactions_count} transaction(s) could not be converted to {target_currency} and are excluded from the total.")
 
-        logger.info(f"User {user.id}: Balance calculated. Total: {current_total_balance} {target_currency}. Converted: {converted_transactions_count}/{total_transactions_count}.")
+        logger.info(f"User {user.id}: Balance calculated. Total: {current_total_balance:.2f} {target_currency}. Converted: {converted_transactions_count}/{total_transactions_count}.")
 
         return Response({
-            'total_balance_in_target_currency': current_total_balance,
+            'total_balance_in_target_currency': current_total_balance.quantize(Decimal('0.01')),
             'target_currency_code': target_currency,
+            'total_transactions_count': total_transactions_count,
             'converted_transactions_count': converted_transactions_count,
             'unconverted_transactions_count': unconverted_transactions_count,
-            'total_transactions_count': total_transactions_count,
-            'warning': warning_message
-        }, status=status.HTTP_200_OK)
+            'warning': warnings[0] if warnings else None,
+        })

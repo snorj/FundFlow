@@ -1,10 +1,13 @@
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, timedelta
 from django.db.models import Q, F
-from .models import HistoricalExchangeRate # Assuming this function is in a file within the 'transactions' app
+from .models import HistoricalExchangeRate, BASE_CURRENCY_FOR_CONVERSION
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Define the maximum number of days to look back/forward for a rate
+MAX_DAYS_GAP = 180 # Approx 6 months
 
 # Placeholder for existing get_historical_exchange_rate if it was in this file
 # def get_historical_exchange_rate(date_str, from_currency, to_currency):
@@ -13,123 +16,155 @@ logger = logging.getLogger(__name__)
 #     logger.warning("Legacy get_historical_exchange_rate called. This should be updated.")
 #     return None 
 
-def get_closest_rate_for_pair(lookup_date: date, currency1: str, currency2: str) -> HistoricalExchangeRate | None:
-    """
-    Finds the rate for AUD to/from a specific currency, using closest date logic.
-    - If currency1 is AUD, finds AUD to currency2.
-    - If currency2 is AUD, finds AUD to currency1 (rate will be inverted by caller).
-    Returns the HistoricalExchangeRate object or None.
-    """
-    if currency1 == 'AUD':
-        source_curr, target_curr = 'AUD', currency2
-    elif currency2 == 'AUD':
-        source_curr, target_curr = 'AUD', currency1
+def get_closest_rate_for_pair(lookup_date: date, source_currency: str, target_currency: str, max_days_gap: int) -> tuple[date, Decimal] | None:
+    # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] get_closest_rate_for_pair: date={lookup_date}, src={source_currency}, tgt={target_currency}")
+    # Rates are stored as AUD to Foreign.
+    # If source is AUD, target is Foreign: query directly.
+    # If source is Foreign, target is AUD: query for AUD to Source, then invert.
+    # If neither is AUD: This function should not be called directly, handled by get_historical_rate's cross-currency logic.
+
+    if source_currency == BASE_CURRENCY_FOR_CONVERSION: # e.g. AUD to USD
+        base = source_currency
+        foreign = target_currency
+        needs_inversion = False
+    elif target_currency == BASE_CURRENCY_FOR_CONVERSION: # e.g. USD to AUD
+        base = target_currency
+        foreign = source_currency
+        needs_inversion = True
     else:
-        # This function is designed for direct AUD pairs from the RBA table
-        logger.error(f"get_closest_rate_for_pair called with non-AUD pair: {currency1}-{currency2}")
+        # This sub-function should only be called for pairs involving BASE_CURRENCY
+        # logger.error(f"[GET_HISTORICAL_RATE_TRACE] get_closest_rate_for_pair called with non-base currencies: {source_currency}/{target_currency}")
         return None
 
-    # Try exact date match first
-    exact_match = HistoricalExchangeRate.objects.filter(
-        date=lookup_date,
-        source_currency=source_curr,
-        target_currency=target_curr
-    ).first()
-    if exact_match:
-        return exact_match
-
-    # If no exact match, find closest past and future rates
-    # Past rate: closest date <= lookup_date
+    # Find rates for the (BASE_CURRENCY, foreign) pair around the lookup_date
     past_rate = HistoricalExchangeRate.objects.filter(
+        source_currency=base,
+        target_currency=foreign,
         date__lte=lookup_date,
-        source_currency=source_curr,
-        target_currency=target_curr
+        date__gte=lookup_date - timedelta(days=max_days_gap)
     ).order_by('-date').first()
 
-    # Future rate: closest date > lookup_date
     future_rate = HistoricalExchangeRate.objects.filter(
-        date__gt=lookup_date,
-        source_currency=source_curr,
-        target_currency=target_curr
+        source_currency=base,
+        target_currency=foreign,
+        date__gte=lookup_date,
+        date__lte=lookup_date + timedelta(days=max_days_gap)
     ).order_by('date').first()
 
+    # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Past rate for {base}/{foreign} near {lookup_date}: {past_rate.date if past_rate else 'None'}")
+    # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Future rate for {base}/{foreign} near {lookup_date}: {future_rate.date if future_rate else 'None'}")
+
+    chosen_rate_obj = None
     if past_rate and future_rate:
-        # Both exist, compare distances
         days_to_past = (lookup_date - past_rate.date).days
         days_to_future = (future_rate.date - lookup_date).days
-
-        if days_to_past == days_to_future: # Equidistant
-            return future_rate # Prefer more recent
-        elif days_to_past < days_to_future:
-            return past_rate
+        if days_to_future <= days_to_past: # Prefer future or exact if equidistant
+            chosen_rate_obj = future_rate
         else:
-            return future_rate
+            chosen_rate_obj = past_rate
     elif past_rate:
-        return past_rate
+        chosen_rate_obj = past_rate
     elif future_rate:
-        return future_rate
-    else:
-        return None
+        chosen_rate_obj = future_rate
+
+    if chosen_rate_obj:
+        # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Chosen rate object for {base}/{foreign} on {chosen_rate_obj.date}: {chosen_rate_obj.rate}")
+        rate_value = chosen_rate_obj.rate
+        if needs_inversion:
+            if rate_value == Decimal('0'): # Avoid division by zero
+                # logger.warning(f"[GET_HISTORICAL_RATE_TRACE] Attempted to invert a zero rate for {foreign}->{base} on {chosen_rate_obj.date}")
+                return None
+            final_rate = Decimal('1.0') / rate_value
+        else:
+            final_rate = rate_value
+        # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Returning rate: {final_rate} for date {chosen_rate_obj.date}")
+        return chosen_rate_obj.date, final_rate
+    
+    # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] No suitable rate found for {source_currency} to {target_currency} near {lookup_date}")
+    return None
 
 def get_historical_rate(lookup_date: date, from_currency: str, to_currency: str) -> Decimal | None:
-    """
-    Retrieves the historical exchange rate for a given date and currency pair.
-    Uses the HistoricalExchangeRate table (populated from RBA CSV which is AUD-based).
-    Implements "closest date, prefer most recent if equidistant" logic.
-    Can perform cross-conversion via AUD (e.g., USD to EUR).
-    """
+    # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Called with: date={lookup_date}, from={from_currency}, to={to_currency}")
+
     from_currency_upper = from_currency.upper()
     to_currency_upper = to_currency.upper()
 
     if from_currency_upper == to_currency_upper:
+        # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Currencies are the same ({from_currency_upper}). Returning 1.0")
         return Decimal("1.0")
 
-    rate_obj = None
+    latest_rate_obj = HistoricalExchangeRate.objects.order_by('-date').first()
+    earliest_rate_obj = HistoricalExchangeRate.objects.order_by('date').first()
+
+    # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Earliest rate in DB: {earliest_rate_obj.date if earliest_rate_obj else 'None'}. Latest rate in DB: {latest_rate_obj.date if latest_rate_obj else 'None'}")
+
+    if not earliest_rate_obj or not latest_rate_obj:
+        # logger.warning("[GET_HISTORICAL_RATE_TRACE] No exchange rates found in the database at all.")
+        return None # No rates in DB at all
+
+    days_from_latest = (lookup_date - latest_rate_obj.date).days
+    days_from_earliest = (earliest_rate_obj.date - lookup_date).days
+    
+    # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] lookup_date={lookup_date}, latest_rate_obj.date={latest_rate_obj.date}, earliest_rate_obj.date={earliest_rate_obj.date}")
+    # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] days_from_latest (lookup - latest): {days_from_latest}, days_from_earliest (earliest - lookup): {days_from_earliest}, max_days_gap: {MAX_DAYS_GAP}")
+
+    # Check if the lookup_date is too far outside the range of available rates
+    # This is a slightly more nuanced check than before.
+    # If lookup_date is *between* earliest and latest, it's fine.
+    # If it's *outside*, then it must be within MAX_DAYS_GAP of the closest bound.
+    if not (earliest_rate_obj.date <= lookup_date <= latest_rate_obj.date):
+        # Date is outside the known range. Check if it's too far from the nearest bound.
+        if lookup_date > latest_rate_obj.date and days_from_latest > MAX_DAYS_GAP:
+            # logger.warning(f"[GET_HISTORICAL_RATE_TRACE] Lookup date {lookup_date} is too far past latest rate {latest_rate_obj.date} (gap: {days_from_latest} > {MAX_DAYS_GAP}).")
+            return None
+        if lookup_date < earliest_rate_obj.date and days_from_earliest > MAX_DAYS_GAP: # days_from_earliest would be positive here
+            # logger.warning(f"[GET_HISTORICAL_RATE_TRACE] Lookup date {lookup_date} is too far before earliest rate {earliest_rate_obj.date} (gap: {days_from_earliest} > {MAX_DAYS_GAP}).")
+            return None
+    # else:
+        # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Date gap check passed.")
+
+
+    rate_data = None
     final_rate = None
 
-    # Case 1: Direct AUD to Target (e.g., AUD to USD)
-    if from_currency_upper == 'AUD':
-        rate_obj = get_closest_rate_for_pair(lookup_date, 'AUD', to_currency_upper)
-        if rate_obj:
-            final_rate = rate_obj.rate
-    
-    # Case 2: Source to AUD (e.g., USD to AUD)
-    elif to_currency_upper == 'AUD':
-        logger.debug(f"[get_historical_rate Case 2] Looking for AUD to {from_currency_upper} for date {lookup_date}")
-        rate_obj = get_closest_rate_for_pair(lookup_date, 'AUD', from_currency_upper)
-        if rate_obj:
-            logger.debug(f"[get_historical_rate Case 2] Found rate_obj for AUD to {from_currency_upper}: Date={rate_obj.date}, Rate={rate_obj.rate}")
-            if rate_obj.rate != Decimal(0):
-                final_rate = Decimal("1.0") / rate_obj.rate
-                logger.debug(f"[get_historical_rate Case 2] Inverted rate: {final_rate}")
-            else:
-                 logger.warning(f"Cannot invert rate of 0 for AUD to {from_currency_upper} on {rate_obj.date}")
-        else:
-            logger.debug(f"[get_historical_rate Case 2] No rate_obj found by get_closest_rate_for_pair for AUD to {from_currency_upper} for date {lookup_date}")
-
-    # Case 3: Cross-currency (e.g., USD to EUR)
-    # Convert From -> AUD, then AUD -> To
+    # Case 1: Direct conversion involving BASE_CURRENCY_FOR_CONVERSION (e.g., AUD to USD or USD to AUD)
+    if from_currency_upper == BASE_CURRENCY_FOR_CONVERSION or to_currency_upper == BASE_CURRENCY_FOR_CONVERSION:
+        # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Case 1: {from_currency_upper} to {to_currency_upper}")
+        rate_data = get_closest_rate_for_pair(lookup_date, from_currency_upper, to_currency_upper, MAX_DAYS_GAP)
+        if rate_data:
+            final_rate = rate_data[1]
+    # Case 2: Cross-currency conversion (e.g., USD to EUR, via AUD)
     else:
-        # Rate for FromCurrency -> AUD
-        rate_from_to_aud_obj = get_closest_rate_for_pair(lookup_date, 'AUD', from_currency_upper)
+        # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Case 2: {from_currency_upper} to {to_currency_upper} (cross-currency)")
+        # Step 1: Convert from_currency to BASE_CURRENCY_FOR_CONVERSION (e.g., USD to AUD)
+        rate1_data = get_closest_rate_for_pair(lookup_date, from_currency_upper, BASE_CURRENCY_FOR_CONVERSION, MAX_DAYS_GAP)
+        if not rate1_data:
+            # logger.warning(f"[GET_HISTORICAL_RATE_TRACE] Cross-currency: Failed to get rate for {from_currency_upper} to {BASE_CURRENCY_FOR_CONVERSION}.")
+            return None
         
-        # Rate for AUD -> ToCurrency
-        rate_aud_to_target_obj = get_closest_rate_for_pair(lookup_date, 'AUD', to_currency_upper)
+        # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Cross-currency leg 1 ({from_currency_upper}->{BASE_CURRENCY_FOR_CONVERSION}) on {rate1_data[0]}: {rate1_data[1]}")
 
-        if rate_from_to_aud_obj and rate_from_to_aud_obj.rate != Decimal(0) and rate_aud_to_target_obj:
-            # Rate for From -> AUD is 1 / (AUD -> From)
-            rate1_from_to_aud = Decimal("1.0") / rate_from_to_aud_obj.rate
-            rate2_aud_to_target = rate_aud_to_target_obj.rate
-            final_rate = rate1_from_to_aud * rate2_aud_to_target
-            # Log which dates were used if they differ from lookup_date
-            if rate_from_to_aud_obj.date != lookup_date or rate_aud_to_target_obj.date != lookup_date:
-                logger.info(f"Cross-rate for {from_currency_upper} to {to_currency_upper} on {lookup_date}: used {from_currency_upper}/AUD from {rate_from_to_aud_obj.date} and AUD/{to_currency_upper} from {rate_aud_to_target_obj.date}")
-        elif rate_from_to_aud_obj and rate_from_to_aud_obj.rate == Decimal(0):
-            logger.warning(f"Cannot calculate cross-rate for {from_currency_upper}->{to_currency_upper} due to zero rate for AUD->{from_currency_upper}")
+        # Step 2: Convert BASE_CURRENCY_FOR_CONVERSION to to_currency (e.g., AUD to EUR)
+        # Important: Use the date of the rate found in Step 1 for Step 2's lookup,
+        # to maintain consistency for that day's cross-rate.
+        # However, current implementation of get_closest_rate_for_pair will use its own
+        # closest date logic for the second leg based on the original lookup_date.
+        # This is generally acceptable as we want the best rate for AUD->to_currency
+        # near the original lookup_date.
+        rate2_data = get_closest_rate_for_pair(lookup_date, BASE_CURRENCY_FOR_CONVERSION, to_currency_upper, MAX_DAYS_GAP)
+        if not rate2_data:
+            # logger.warning(f"[GET_HISTORICAL_RATE_TRACE] Cross-currency: Failed to get rate for {BASE_CURRENCY_FOR_CONVERSION} to {to_currency_upper}.")
+            return None
+
+        # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Cross-currency leg 2 ({BASE_CURRENCY_FOR_CONVERSION}->{to_currency_upper}) on {rate2_data[0]}: {rate2_data[1]}")
+        
+        # Combine the rates: (Amount in FROM_CUR) * (AUD/FROM_CUR) * (TO_CUR/AUD)
+        final_rate = rate1_data[1] * rate2_data[1]
 
     if final_rate is not None:
-        # Standardize precision, e.g., to 9 decimal places like the stored rate
-        return final_rate.quantize(Decimal('1e-9')) 
-        
-    logger.warning(f"Exchange rate not found for {from_currency_upper} to {to_currency_upper} on {lookup_date} (or closest). Tried AUD based rates.")
-    return None 
+        quantized_rate = final_rate.quantize(Decimal('1e-9'), rounding=ROUND_HALF_UP) # Standard 9 decimal places
+        # logger.debug(f"[GET_HISTORICAL_RATE_TRACE] Final rate: {final_rate}, Quantized: {quantized_rate}. Returning.")
+        return quantized_rate
+    else:
+        # logger.warning(f"[GET_HISTORICAL_RATE_TRACE] No rate found for {from_currency_upper} to {to_currency_upper} on {lookup_date}.")
+        return None 
