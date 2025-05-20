@@ -60,7 +60,19 @@ INSTALLED_APPS = [
     # Third-party apps
     'rest_framework',
     'corsheaders',
-    'rest_framework_simplejwt.token_blacklist'
+    'rest_framework_simplejwt.token_blacklist',
+    'rest_framework.authtoken', # For token authentication
+    'django_filters', # For filtering in DRF
+    # 'users', # Removed this potentially problematic app
+    # 'integrations', # This is likely covered by integrations.apps.IntegrationsConfig above. If it's a separate app also named 'integrations' at the root, it might be a conflict.
+    # For now, assuming integrations.apps.IntegrationsConfig is the correct one.
+    # If you have a separate 'integrations' app at the root (e.g. /integrations/apps.py), and it's different from the one specified via AppConfig
+    # then we need to clarify which one is intended. Given the ModuleNotFoundError was for 'users',
+    # let's focus on that first. The 'integrations' without AppConfig might be okay if it's structured as a simple app.
+    # However, it's often cleaner to use the AppConfig path if available.
+    # For safety, I will also comment out the second 'integrations' if 'integrations.apps.IntegrationsConfig' is present.
+    # If 'integrations.apps.IntegrationsConfig' is present, 'integrations' is redundant.
+    # 'integrations', # Commented out as integrations.apps.IntegrationsConfig is likely the one intended
 ]
 
 MIDDLEWARE = [

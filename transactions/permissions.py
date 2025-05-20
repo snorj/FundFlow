@@ -19,3 +19,20 @@ class IsOwnerOrSystemReadOnly(permissions.BasePermission):
         # AND owned by the current user.
         # System categories (obj.user is None) cannot be modified.
         return obj.user is not None and obj.user == request.user
+
+class IsOwner(permissions.BasePermission):
+    """
+    Custom permission to only allow owners of an object to edit or delete it.
+    Assumes the object has a 'user' attribute.
+    """
+
+    def has_object_permission(self, request, view, obj):
+        # Write permissions are only allowed to the owner of the transaction.
+        # SAFE_METHODS (GET, HEAD, OPTIONS) are implicitly allowed if this permission
+        # is used in conjunction with IsAuthenticated, but for an Update/Destroy view,
+        # we are primarily concerned with non-safe methods.
+        if hasattr(obj, 'user'): # Check if the object has a user attribute
+            return obj.user == request.user
+        # If the object does not have a user attribute, deny permission by default
+        # This could also raise an error or log a warning if a user attribute is always expected.
+        return False

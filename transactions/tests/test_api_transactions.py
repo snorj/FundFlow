@@ -28,34 +28,34 @@ class TransactionAPITests(APITestCase):
         # Transactions for User 1
         cls.tx1_user1 = Transaction.objects.create( # Uncategorized
             user=cls.user1, category=None, transaction_date=date(2024, 1, 10),
-            description='Coffee Shop A', amount=Decimal('5.50'), direction='DEBIT'
+            description='Coffee Shop A', original_amount=Decimal('5.50'), direction='DEBIT', original_currency='AUD'
         )
         cls.tx2_user1 = Transaction.objects.create( # Uncategorized
             user=cls.user1, category=None, transaction_date=date(2024, 1, 5),
-            description='Coffee Shop A', amount=Decimal('6.00'), direction='DEBIT'
+            description='Coffee Shop A', original_amount=Decimal('6.00'), direction='DEBIT', original_currency='AUD'
         )
         cls.tx3_user1 = Transaction.objects.create( # Uncategorized
             user=cls.user1, category=None, transaction_date=date(2024, 1, 8),
-            description='Supermarket B', amount=Decimal('55.20'), direction='DEBIT'
+            description='Supermarket B', original_amount=Decimal('55.20'), direction='DEBIT', original_currency='AUD'
         )
         cls.tx4_user1_salary = Transaction.objects.create( # Uncategorized CREDIT
             user=cls.user1, category=None, transaction_date=date(2024, 1, 15),
-            description='Salary Deposit', amount=Decimal('2500.00'), direction='CREDIT'
+            description='Salary Deposit', original_amount=Decimal('2500.00'), direction='CREDIT', original_currency='AUD'
         )
         cls.tx5_user1_categorized = Transaction.objects.create( # Categorized (Travel)
             user=cls.user1, category=cls.cat_travel, transaction_date=date(2024, 1, 12),
-            description='Train Ticket', amount=Decimal('30.00'), direction='DEBIT'
+            description='Train Ticket', original_amount=Decimal('30.00'), direction='DEBIT', original_currency='AUD'
         )
         cls.tx6_user1_categorized = Transaction.objects.create( # Categorized (Food)
             user=cls.user1, category=cls.cat_food, transaction_date=date(2024, 1, 11),
-            description='Restaurant C', amount=Decimal('45.00'), direction='DEBIT'
+            description='Restaurant C', original_amount=Decimal('45.00'), direction='DEBIT', original_currency='AUD'
         )
 
 
         # Transaction for User 2
         cls.tx1_user2 = Transaction.objects.create( # Uncategorized
             user=cls.user2, category=None, transaction_date=date(2024, 1, 9),
-            description='Book Store', amount=Decimal('25.00'), direction='DEBIT'
+            description='Book Store', original_amount=Decimal('25.00'), direction='DEBIT', original_currency='AUD'
         )
 
         # Verification
@@ -105,7 +105,7 @@ class TransactionAPITests(APITestCase):
     def test_list_uncategorized_groups_unauthenticated(self):
         self.client.logout()
         response = self.client.get(self.uncategorized_url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_list_uncategorized_groups_no_uncategorized(self):
         Transaction.objects.filter(user=self.user1, category__isnull=True).update(category=self.cat_food)
@@ -309,12 +309,11 @@ class TransactionAPITests(APITestCase):
 
     def test_batch_categorize_fail_transaction_not_owned(self):
         transaction_ids = [self.tx1_user2.id]; category_id = self.cat_food.id
-        # Need original description (from the transaction we are *trying* to modify)
         data = {'transaction_ids': transaction_ids, 'category_id': category_id, 'original_description': self.tx1_user2.description}
         response = self.client.patch(self.batch_categorize_url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK); self.assertEqual(response.data['updated_count'], 0)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn('error', response.data)
         tx1_user2 = Transaction.objects.get(pk=self.tx1_user2.id); self.assertIsNone(tx1_user2.category)
-        # Rule should not have been created/updated for user1
         self.assertFalse(DescriptionMapping.objects.filter(user=self.user1, original_description=self.tx1_user2.description).exists())
 
 
@@ -355,9 +354,9 @@ class TransactionAPITests(APITestCase):
 
     def test_batch_categorize_unauthenticated(self):
         self.client.logout()
-        data = {'transaction_ids': [1], 'category_id': 1, 'original_description': 'Desc'}
+        data = {'transaction_ids': [self.tx1_user1.id], 'category_id': self.cat_food.id, 'original_description': self.tx1_user1.description}
         response = self.client.patch(self.batch_categorize_url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
     # === Transaction List Tests (GET /api/transactions/) ===
@@ -388,7 +387,7 @@ class TransactionAPITests(APITestCase):
 
     def test_list_transactions_categorized_only(self):
         """Test filtering for categorized transactions."""
-        response = self.client.get(self.transaction_list_url, {'status': 'categorized'})
+        response = self.client.get(self.transaction_list_url, {'is_categorized': 'true'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         if 'results' in response.data:
@@ -404,13 +403,12 @@ class TransactionAPITests(APITestCase):
         self.assertIn('Restaurant C', descriptions)
         self.assertNotIn('Coffee Shop A', descriptions)
         self.assertNotIn('Salary Deposit', descriptions)
-        # Check category is not null
         self.assertIsNotNone(results[0]['category'])
         self.assertIsNotNone(results[1]['category'])
 
     def test_list_transactions_uncategorized_only(self):
         """Test filtering for uncategorized transactions."""
-        response = self.client.get(self.transaction_list_url, {'status': 'uncategorized'})
+        response = self.client.get(self.transaction_list_url, {'is_categorized': 'false'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         if 'results' in response.data:
@@ -426,7 +424,6 @@ class TransactionAPITests(APITestCase):
         self.assertIn('Supermarket B', descriptions)
         self.assertIn('Salary Deposit', descriptions)
         self.assertNotIn('Train Ticket', descriptions)
-        # Check category is null
         self.assertIsNone(results[0]['category'])
         self.assertIsNone(results[1]['category'])
         self.assertIsNone(results[2]['category'])
@@ -436,7 +433,7 @@ class TransactionAPITests(APITestCase):
         """Test listing transactions requires authentication."""
         self.client.logout()
         response = self.client.get(self.transaction_list_url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     # Add more tests for TransactionListView filtering later if needed
     # (e.g., by date range, amount, specific category ID)

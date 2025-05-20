@@ -4,6 +4,7 @@ from django.db import models
 from django.conf import settings # To reference the User model safely
 # from .services import get_historical_rate # Import new service <-- REMOVE THIS LINE
 import logging # For logging in the new method
+from django.utils import timezone
 
 logger = logging.getLogger(__name__) # Logger for model method
 
@@ -52,6 +53,8 @@ class Transaction(models.Model):
     SOURCE_CHOICES = [
         ('csv', 'CSV Upload'),
         ('up_bank', 'Up Bank API'),
+        ('manual', 'Manual Entry'),
+        # Add other sources as needed
     ]
     DIRECTION_CHOICES = [('DEBIT', 'Debit'), ('CREDIT', 'Credit'),]
 
@@ -102,6 +105,7 @@ class Transaction(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    last_modified = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-transaction_date', '-created_at']

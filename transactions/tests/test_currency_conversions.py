@@ -229,20 +229,22 @@ class CurrencyConversionTests(TestCase):
             transaction_date=date.fromisoformat(transaction_date_str),
             direction=direction
         )
-        tx.update_aud_amount_if_needed(force_recalculation=True) # Ensure aud_amount is populated based on setUp rates
+        if not tx.original_currency:
+            tx.original_currency = 'AUD'
+        tx.update_aud_amount_if_needed(force_recalculation=True)
         return tx
 
     def test_dashboard_balance_api_aud_default(self):
         """Test balance API returns AUD balance correctly by default."""
-        self._create_transaction_for_balance_test('100.00', 'AUD', '2024-01-01') # AUD 100
-        self._create_transaction_for_balance_test('10.00', 'USD', '2024-01-01') # USD 10 -> AUD 10 / 0.70 = 14.29
-        # Expected total AUD: 100 + (10 / 0.70) = 100 + 14.2857... = 114.29 (rounded)
+        self._create_transaction_for_balance_test('100.00', 'AUD', '2024-01-01', direction='DEBIT') # AUD -100
+        self._create_transaction_for_balance_test('10.00', 'USD', '2024-01-01', direction='DEBIT') # USD -10 -> AUD -(10 / 0.70) = -14.29
+        # Expected total AUD: -100 - (10 / 0.70) = -114.29 (rounded)
 
         response = self.client.get(self.dashboard_balance_url)
         self.assertEqual(response.status_code, 200)
         data = response.json()
         
-        expected_total_balance = Decimal('100.00') + (Decimal('10.00') / Decimal('0.70'))
+        expected_total_balance = -(Decimal('100.00') + (Decimal('10.00') / Decimal('0.70')))
         self.assertAlmostEqual(Decimal(data['total_balance_in_target_currency']), expected_total_balance, places=2)
         self.assertEqual(data['target_currency_code'], 'AUD')
         self.assertEqual(data['converted_transactions_count'], 2)
@@ -252,12 +254,12 @@ class CurrencyConversionTests(TestCase):
 
     def test_dashboard_balance_api_target_usd(self):
         """Test balance API with target_currency=USD."""
-        # Tx1: 50 AUD on 2024-01-01 -> 50 * 0.70 = 35 USD
-        self._create_transaction_for_balance_test('50.00', 'AUD', '2024-01-01')
-        # Tx2: 100 EUR on 2024-01-05. EUR->AUD: 100 / 0.61. Then AUD->USD: (100/0.61) * 0.71
-        self._create_transaction_for_balance_test('100.00', 'EUR', '2024-01-05')
-        # Tx3: 20 USD on 2024-01-10 -> 20 USD
-        self._create_transaction_for_balance_test('20.00', 'USD', '2024-01-10')
+        # Tx1: 50 AUD on 2024-01-01 (DEBIT) -> -(50 * 0.70) = -35 USD
+        self._create_transaction_for_balance_test('50.00', 'AUD', '2024-01-01', direction='DEBIT')
+        # Tx2: 100 EUR on 2024-01-05 (DEBIT). EUR->AUD: 100 / 0.61. Then AUD->USD: ((100/0.61) * 0.71). Expected USD: -((100/0.61) * 0.71)
+        self._create_transaction_for_balance_test('100.00', 'EUR', '2024-01-05', direction='DEBIT')
+        # Tx3: 20 USD on 2024-01-10 (DEBIT) -> -20 USD
+        self._create_transaction_for_balance_test('20.00', 'USD', '2024-01-10', direction='DEBIT')
 
         response = self.client.get(self.dashboard_balance_url, {'target_currency': 'USD'})
         self.assertEqual(response.status_code, 200)
@@ -267,7 +269,8 @@ class CurrencyConversionTests(TestCase):
         bal2_eur_in_aud = Decimal('100.00') / Decimal('0.61')
         bal2_usd = bal2_eur_in_aud * Decimal('0.71') # AUD/USD on 2024-01-05 is 0.71
         bal3_usd = Decimal('20.00')
-        expected_total_balance = bal1_usd + bal2_usd + bal3_usd
+        # All transactions are debits
+        expected_total_balance = -(bal1_usd + bal2_usd + bal3_usd)
 
         self.assertAlmostEqual(Decimal(data['total_balance_in_target_currency']), expected_total_balance, places=2)
         self.assertEqual(data['target_currency_code'], 'USD')
@@ -276,19 +279,20 @@ class CurrencyConversionTests(TestCase):
 
     def test_dashboard_balance_api_unconvertible_transaction(self):
         """Test balance API when a transaction cannot be converted."""
-        self._create_transaction_for_balance_test('100.00', 'AUD', '2024-01-01') # AUD 100
-        self._create_transaction_for_balance_test('5.00', 'XXX', '2024-01-01')  # Unconvertible
+        self._create_transaction_for_balance_test('100.00', 'AUD', '2024-01-01', direction='DEBIT') # AUD -100
+        self._create_transaction_for_balance_test('5.00', 'XXX', '2024-01-01', direction='DEBIT')  # Unconvertible, debit
 
         response = self.client.get(self.dashboard_balance_url, {'target_currency': 'AUD'})
         self.assertEqual(response.status_code, 200)
         data = response.json()
 
-        self.assertAlmostEqual(Decimal(data['total_balance_in_target_currency']), Decimal('100.00'), places=2)
+        # Only the AUD transaction contributes, as a debit.
+        self.assertAlmostEqual(Decimal(data['total_balance_in_target_currency']), Decimal('-100.00'), places=2)
         self.assertEqual(data['converted_transactions_count'], 1)
         self.assertEqual(data['unconverted_transactions_count'], 1)
         self.assertEqual(data['total_transactions_count'], 2)
         self.assertIsNotNone(data['warning'])
-        self.assertIn('1 transaction(s) could not be converted', data['warning']) 
+        self.assertIn('1 transaction(s) could not be converted', data['warning'])
 
     def test_get_historical_rate_max_date_gap(self):
         """Test rate lookup with varying gaps to nearest rate."""

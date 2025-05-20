@@ -76,7 +76,7 @@ class CategoryAPITests(APITestCase):
     def test_list_categories_unauthenticated(self):
         self.client.logout()
         response = self.client.get(self.list_create_url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     # === Create Category Tests (POST /api/categories/) ===
 
@@ -136,7 +136,7 @@ class CategoryAPITests(APITestCase):
         self.client.logout()
         data = {'name': 'Test Unauth'}
         response = self.client.post(self.list_create_url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     # === Retrieve Category Detail Tests (GET /api/categories/{id}/) ===
 
@@ -167,7 +167,7 @@ class CategoryAPITests(APITestCase):
         self.client.logout()
         url = reverse('category-detail', kwargs={'pk': self.cat_system_food.id})
         response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     # === Update Category Tests (PUT/PATCH /api/categories/{id}/) ===
 
@@ -225,9 +225,9 @@ class CategoryAPITests(APITestCase):
     def test_update_unauthenticated(self):
         self.client.logout()
         url = reverse('category-detail', kwargs={'pk': self.cat_user1_hobbies.id})
-        data = {'name': 'Test Unauth'}
-        response = self.client.patch(url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        data = {'name': 'Updated Hobbies Unauth'}
+        response = self.client.put(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     # === Delete Category Tests (DELETE /api/categories/{id}/) ===
 
@@ -251,20 +251,33 @@ class CategoryAPITests(APITestCase):
         self.assertIn(response.status_code, [status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND])
 
     def test_delete_category_with_children(self):
-        initial_count = Category.objects.filter(user=self.user1).count() # Holiday(4) + Souvenirs(5) + Hobbies(6) = 3
-        self.assertEqual(initial_count, 3)
-        url = reverse('category-detail', kwargs={'pk': self.cat_user1_holiday.id}) # Delete 'My Holiday' (ID 4)
+        """Test deleting a category that has children (children should be promoted)."""
+        initial_count = Category.objects.filter(user=self.user1).count() # user1 has 'My Holiday', 'Souvenirs' (child of Holiday), 'Hobbies' = 3
+        
+        # cat_user1_holiday has cat_user1_souvenirs as a child.
+        # Deleting cat_user1_holiday should promote cat_user1_souvenirs.
+        holiday_category_id = self.cat_user1_holiday.id
+        souvenirs_category_id = self.cat_user1_souvenirs.id
+
+        url = reverse('category-detail', kwargs={'pk': holiday_category_id})
         response = self.client.delete(url)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        # Verify parent (4) AND child ('Souvenirs', ID 5) are gone due to CASCADE
-        self.assertEqual(Category.objects.filter(user=self.user1).count(), initial_count - 2) # Should be 1 left
-        self.assertFalse(Category.objects.filter(pk=self.cat_user1_holiday.id).exists())
-        self.assertFalse(Category.objects.filter(pk=self.cat_user1_souvenirs.id).exists())
-        # Verify 'Hobbies' (ID 6) still exists
-        self.assertTrue(Category.objects.filter(pk=self.cat_user1_hobbies.id).exists())
+
+        # Check that the parent category is deleted
+        self.assertFalse(Category.objects.filter(pk=holiday_category_id).exists())
+        
+        # Check that the child category still exists and is now top-level
+        self.assertTrue(Category.objects.filter(pk=souvenirs_category_id).exists())
+        promoted_child = Category.objects.get(pk=souvenirs_category_id)
+        self.assertIsNone(promoted_child.parent) # Should now be a top-level category
+        self.assertEqual(promoted_child.user, self.user1) # Still belongs to user1
+
+        # User1 started with 3 categories. Deleted 1. Child was promoted, not deleted.
+        # So, user1 should now have 2 categories: 'Souvenirs' (promoted) and 'Hobbies'.
+        self.assertEqual(Category.objects.filter(user=self.user1).count(), initial_count - 1) 
 
     def test_delete_unauthenticated(self):
         self.client.logout()
         url = reverse('category-detail', kwargs={'pk': self.cat_user1_hobbies.id})
         response = self.client.delete(url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

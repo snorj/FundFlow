@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Category, Transaction
+from .models import Category, Transaction, BASE_CURRENCY_FOR_CONVERSION
 
 User = get_user_model()
 
@@ -85,58 +85,121 @@ class CategorySerializer(serializers.ModelSerializer):
     
 class TransactionSerializer(serializers.ModelSerializer):
     """
-    Serializer for the Transaction model.
-    Includes new currency fields and uses renamed 'original_amount'.
+    Serializer for the Transaction model for LISTING/READING.
+    Includes currency fields, category details, and new last_modified.
     """
     category_name = serializers.CharField(source='category.name', read_only=True, allow_null=True)
-    user = serializers.PrimaryKeyRelatedField(read_only=True)
-
-    # --- NEW/UPDATED: SerializerMethodFields for signed amounts ---
+    # user field is implicitly handled by DRF, typically read-only or set in view.
+    # For explicit read-only ID:
+    user = serializers.PrimaryKeyRelatedField(read_only=True) 
+    
     # Expose the signed original amount
     signed_original_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     # Expose the signed AUD amount (can be null)
     signed_aud_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True, allow_null=True)
-    # --- END NEW/UPDATED ---
 
     class Meta:
         model = Transaction
         fields = [
             'id',
-            'user',
-            'category',             # For writing category ID
+            'user', # User ID
+            'category',             # For writing category ID (though this serializer is mainly for reading)
             'category_name',        # For reading category name
             'transaction_date',
             'description',
-
-            # --- UPDATED: Use new field names ---
             'original_amount',
             'original_currency',
-            'direction',
-            'aud_amount',           # Converted AUD amount (can be null)
-            'exchange_rate_to_aud', # Rate used (can be null)
-            # --- END UPDATED ---
-
-            # --- Include new signed amount fields ---
+            'direction',            # Ensure 'direction' is used, not 'type'
+            'aud_amount',           
+            'exchange_rate_to_aud', 
             'signed_original_amount',
             'signed_aud_amount',
-            # --- End new signed amount fields ---
-
-            'source',               # Added source field
-            'bank_transaction_id',  # Added bank_transaction_id
-
-            # Optional source fields from CSV/API
+            'source',               
+            'bank_transaction_id',  
             'source_account_identifier',
             'counterparty_identifier',
             'source_code',
             'source_type',
             'source_notifications',
-
             'created_at',
             'updated_at',
+            'last_modified',        # New field
         ]
         read_only_fields = [
             'id', 'user', 'category_name',
-            'signed_original_amount', 'signed_aud_amount', # These are read-only
-            'aud_amount', 'exchange_rate_to_aud', # Calculated by backend
-            'created_at', 'updated_at'
+            'signed_original_amount', 'signed_aud_amount', 
+            'aud_amount', 'exchange_rate_to_aud', 
+            'created_at', 'updated_at', 'last_modified' # Add last_modified here
         ]
+
+class TransactionUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for UPDATING Transaction instances.
+    Allows editing description, date, category, and financial details.
+    """
+    # Category is writeable using its ID.
+    # Queryset will be filtered in the view or validation to ensure user access.
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(), # Base queryset
+        allow_null=True, # Allow un-categorizing
+        required=False   # Not always required to change category
+    )
+
+    class Meta:
+        model = Transaction
+        fields = [
+            'description',
+            'transaction_date',
+            'category',
+            'original_amount',
+            'original_currency',
+            # 'direction' is generally not something a user would edit post-creation
+            # for an existing transaction, as it fundamentally changes its nature.
+            # If it needs to be editable, add it here.
+        ]
+        # No read_only_fields needed here as we expect all these to be potentially writable.
+
+    def validate_category(self, value):
+        """
+        Ensure the user can assign this category.
+        Category must be a system category (user=None) or belong to the request.user.
+        """
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            # This should ideally be caught by IsAuthenticated permission
+            raise serializers.ValidationError("User context not available for category validation.")
+
+        if value is not None: # If a category is being assigned (i.e., not None)
+            if not (value.user is None or value.user == request.user):
+                raise serializers.ValidationError("You can only assign system categories or your own categories.")
+        return value
+
+    def validate(self, data):
+        """
+        Object-level validation.
+        If original_amount or original_currency is being changed,
+        ensure both are provided if one is.
+        """
+        original_amount_changed = 'original_amount' in data
+        original_currency_changed = 'original_currency' in data
+
+        # If only one of amount or currency is provided for an update,
+        # it implies an incomplete financial update.
+        # We need the existing instance's values to make a full decision.
+        if original_amount_changed != original_currency_changed:
+            # If one is provided, the other must also be provided or be unchanged (which means it should be in data or instance)
+            # This logic is tricky because 'data' only contains fields sent in the PATCH request.
+            # For PUT, all fields are required by default unless partial=True.
+            # Let's assume for now that if one is being changed, the other should accompany it.
+            if original_amount_changed and not data.get('original_currency') and not (self.instance and self.instance.original_currency):
+                raise serializers.ValidationError("If updating original_amount, original_currency must also be provided.")
+            if original_currency_changed and not data.get('original_amount') and not (self.instance and self.instance.original_amount):
+                 raise serializers.ValidationError("If updating original_currency, original_amount must also be provided.")
+        
+        # Consider if original_currency needs specific validation (e.g., valid ISO code)
+        # Model's CharField max_length will handle length.
+        # If original_currency is provided, it should be a valid non-empty string.
+        if 'original_currency' in data and (data['original_currency'] is None or not str(data['original_currency']).strip()):
+            raise serializers.ValidationError({"original_currency": "Original currency cannot be empty if provided."})
+
+        return data
