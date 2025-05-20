@@ -39,7 +39,7 @@ const CategorySelectorModal = ({
   const systemRootCategories = useMemo(() => 
     categoriesOnly.filter(cat => !cat.parent && !cat.is_custom)
   , [categoriesOnly]);
-  
+
   const userRootCategories = useMemo(() => 
     categoriesOnly.filter(cat => !cat.parent && cat.is_custom)
   , [categoriesOnly]);

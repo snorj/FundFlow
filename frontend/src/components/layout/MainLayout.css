@@ -72,9 +72,9 @@
 }
 
 .header-action-button {
-  background: none;
-  border: none;
-  cursor: pointer;
+    background: none;
+    border: none;
+    cursor: pointer;
   color: var(--text-secondary);
   padding: 8px;
   border-radius: var(--border-radius-standard);
@@ -90,8 +90,8 @@
 }
 
 .header-logout-button svg {
-  width: var(--header-icon-size);
-  height: var(--header-icon-size);
+    width: var(--header-icon-size);
+    height: var(--header-icon-size);
 }
 
 .logout-text {

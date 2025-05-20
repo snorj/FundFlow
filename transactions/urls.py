@@ -6,7 +6,8 @@ from .views import (
     TransactionCSVUploadView,
     TransactionListView,
     UncategorizedTransactionGroupView,
-    BatchCategorizeTransactionView 
+    BatchCategorizeTransactionView,
+    DashboardBalanceView
 )
 
 urlpatterns = [
@@ -18,7 +19,8 @@ urlpatterns = [
     path('transactions/upload/', TransactionCSVUploadView.as_view(), name='transaction-csv-upload'),
     path('transactions/', TransactionListView.as_view(), name='transaction-list'),
     path('transactions/uncategorized-groups/', UncategorizedTransactionGroupView.as_view(), name='transaction-uncategorized-groups'),
-    path('transactions/batch-categorize/', BatchCategorizeTransactionView.as_view(), name='transaction-batch-categorize'), 
+    path('transactions/batch-categorize/', BatchCategorizeTransactionView.as_view(), name='transaction-batch-categorize'),
+    path('dashboard/balance/', DashboardBalanceView.as_view(), name='dashboard-balance'),
 
     # Add Transaction Detail/Update/Delete URLs later
 ]

@@ -20,7 +20,7 @@ const MainLayout = () => {
   return (
     <div className="app-container-with-sidebar"> {/* Updated class name */}
       <Sidebar /> {/* Add the Sidebar component here */}
-      
+
       {/* main-content-area will now be to the right of the sidebar */}
       <div className="main-content-area"> 
         <header className="main-header">
@@ -46,12 +46,12 @@ const MainLayout = () => {
             </button>
           </div>
         </header>
-        
+
         <main className="page-content"> {/* Renamed for clarity */}
-          <div className="content-container">
-            <Outlet />
-          </div>
-        </main>
+        <div className="content-container">
+          <Outlet />
+        </div>
+      </main>
       </div>
     </div>
   );

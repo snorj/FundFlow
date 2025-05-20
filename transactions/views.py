@@ -9,7 +9,7 @@ from rest_framework.views import APIView # Use APIView for custom logic
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser # For file uploads
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import Category, Transaction, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION # Import Transaction model
+from .models import Category, Transaction, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
 from .serializers import CategorySerializer, TransactionSerializer # Add TransactionSerializer later
 from .permissions import IsOwnerOrSystemReadOnly
 import logging
@@ -19,6 +19,7 @@ from transactions import serializers # Added logging
 from django.db.models import Max # Import Max for aggregation
 from rest_framework.parsers import JSONParser
 from integrations.services import get_historical_exchange_rate
+from .services import get_historical_rate # Import our new rate service
 
 
 logger = logging.getLogger(__name__)
@@ -406,7 +407,7 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_serializer_context(self):
         """Pass request to serializer context for validation."""
         return {'request': self.request}
-
+    
     def destroy(self, request, *args, **kwargs):
         category_to_delete = self.get_object() # Checks permissions via get_queryset
         user = request.user
@@ -586,9 +587,11 @@ class TransactionCSVUploadView(APIView):
                     else:
                         # Ensure the date is not in the future for the API call
                         if data_item['transaction_date'] <= datetime.now().date():
-                            rate = get_historical_exchange_rate(
-                                data_item['transaction_date'].strftime('%Y-%m-%d'),
-                                original_currency_code, BASE_CURRENCY_FOR_CONVERSION
+                            # Corrected call to use the new service, ensuring date object is passed
+                            rate = get_historical_rate( 
+                                data_item['transaction_date'], # Already a date object from CSV parsing
+                                original_currency_code, 
+                                BASE_CURRENCY_FOR_CONVERSION
                             )
                             if rate is not None:
                                 aud_amount_val = (data_item['original_amount'] * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
@@ -662,3 +665,83 @@ class TransactionCSVUploadView(APIView):
         except Exception as e:
             logger.exception(f"User {current_user.id}: Unexpected error during CSV upload processing: {str(e)}")
             return Response({'error': 'An unexpected server error occurred during CSV processing.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# --- NEW: Dashboard Balance API View ---
+class DashboardBalanceView(APIView):
+    """
+    API endpoint to calculate and return the user's total balance 
+    in a specified currency, based on all their transactions.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        target_currency = request.query_params.get('target_currency', BASE_CURRENCY_FOR_CONVERSION).upper()
+
+        logger.info(f"User {user.id}: Calculating dashboard balance in {target_currency}.")
+
+        transactions = Transaction.objects.filter(user=user)
+        total_transactions_count = transactions.count()
+
+        current_total_balance = Decimal('0.00')
+        converted_transactions_count = 0
+        unconverted_transactions_count = 0
+        warning_message = None
+
+        for tx in transactions:
+            rate_to_target = None
+            # Path 1: Original currency is already the target currency
+            if tx.original_currency.upper() == target_currency:
+                rate_to_target = Decimal('1.0')
+                converted_amount_in_target = tx.signed_original_amount # Use signed amount directly
+            
+            # Path 2: Original currency is AUD, target is something else (AUD -> Target)
+            elif tx.original_currency.upper() == BASE_CURRENCY_FOR_CONVERSION:
+                rate_to_target = get_historical_rate(tx.transaction_date, BASE_CURRENCY_FOR_CONVERSION, target_currency)
+                if rate_to_target is not None:
+                    # tx.signed_original_amount is already in AUD
+                    converted_amount_in_target = (tx.signed_original_amount * rate_to_target).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                else:
+                    converted_amount_in_target = None # Failed to convert
+            
+            # Path 3: Original currency is not AUD, target is AUD (Original -> AUD)
+            elif target_currency == BASE_CURRENCY_FOR_CONVERSION:
+                if tx.aud_amount is not None: # Already converted to AUD by model method
+                    converted_amount_in_target = tx.signed_aud_amount # Use signed AUD amount
+                    # We don't strictly need the rate here for balance, but it was used for tx.aud_amount
+                else: # Should have been converted, but wasn't (e.g., no rate found by model method)
+                    converted_amount_in_target = None # Failed to convert
+            
+            # Path 4: Original is not AUD, Target is not AUD (Original -> AUD -> Target)
+            else:
+                if tx.aud_amount is not None: # Must have AUD amount to do cross-conversion
+                    # First, ensure we have AUD amount (which tx.aud_amount is)
+                    # Then convert AUD amount to target currency
+                    rate_aud_to_target = get_historical_rate(tx.transaction_date, BASE_CURRENCY_FOR_CONVERSION, target_currency)
+                    if rate_aud_to_target is not None:
+                        converted_amount_in_target = (tx.signed_aud_amount * rate_aud_to_target).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    else:
+                        converted_amount_in_target = None # Failed to convert AUD to Target
+                else:
+                    converted_amount_in_target = None # Cannot convert if AUD amount is missing
+
+            if converted_amount_in_target is not None:
+                current_total_balance += converted_amount_in_target
+                converted_transactions_count += 1
+            else:
+                unconverted_transactions_count += 1
+                logger.debug(f"User {user.id}, Tx ID {tx.id}: Could not convert {tx.original_amount} {tx.original_currency} on {tx.transaction_date} to {target_currency}.")
+
+        if unconverted_transactions_count > 0:
+            warning_message = f"{unconverted_transactions_count} transaction(s) could not be converted to {target_currency} and were excluded from the balance."
+
+        logger.info(f"User {user.id}: Balance calculated. Total: {current_total_balance} {target_currency}. Converted: {converted_transactions_count}/{total_transactions_count}.")
+
+        return Response({
+            'total_balance_in_target_currency': current_total_balance,
+            'target_currency_code': target_currency,
+            'converted_transactions_count': converted_transactions_count,
+            'unconverted_transactions_count': unconverted_transactions_count,
+            'total_transactions_count': total_transactions_count,
+            'warning': warning_message
+        }, status=status.HTTP_200_OK)

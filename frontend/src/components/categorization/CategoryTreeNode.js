@@ -142,8 +142,8 @@ const CategoryTreeNode = ({
                     onClick={!isDisabled ? handleAddChildClick : undefined} 
                     disabled={isDisabled}
                 >
-                    <FiPlusCircle size="14"/>
-                </button>
+            <FiPlusCircle size="14"/>
+        </button>
             )}
           </div>
         )}

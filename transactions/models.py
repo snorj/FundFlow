@@ -2,7 +2,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 from django.db import models
 from django.conf import settings # To reference the User model safely
-from integrations.services import get_historical_exchange_rate # For the new model method
+# from .services import get_historical_rate # Import new service <-- REMOVE THIS LINE
 import logging # For logging in the new method
 
 logger = logging.getLogger(__name__) # Logger for model method
@@ -137,64 +137,83 @@ class Transaction(models.Model):
         Calculates and updates the aud_amount and exchange_rate_to_aud fields
         if aud_amount is None or if force_recalculation is True.
         Saves the instance if changes are made.
-        Does not attempt conversion for future-dated transactions via get_historical_exchange_rate.
+        Uses the new get_historical_rate service.
         """
+        from .services import get_historical_rate # <-- ADD IMPORT HERE
+
         if not force_recalculation and self.aud_amount is not None:
-            logger.debug(f"Transaction {self.id}: AUD amount already exists and force_recalculation is false. Skipping.")
+            logger.debug(f"Transaction {self.id}: AUD amount already exists ({self.aud_amount}) and force_recalculation is false. Skipping.")
             return True # Indicates AUD amount is present
 
         logger.info(f"Transaction {self.id}: Attempting to update AUD amount. Original: {self.original_amount} {self.original_currency}. Date: {self.transaction_date}")
+
+        # Preserve current values in case of failure to find new rate during forced recalc
+        original_aud_amount = self.aud_amount
+        original_exchange_rate = self.exchange_rate_to_aud
+
+        # Assume failure or no change initially
+        self.aud_amount = None 
+        self.exchange_rate_to_aud = None
 
         if self.original_currency.upper() == BASE_CURRENCY_FOR_CONVERSION:
             self.aud_amount = self.original_amount
             self.exchange_rate_to_aud = Decimal("1.0")
             logger.info(f"Transaction {self.id}: Original currency is BASE ({BASE_CURRENCY_FOR_CONVERSION}). Set aud_amount to {self.aud_amount}.")
         else:
-            # get_historical_exchange_rate now handles future date check internally
-            rate = get_historical_exchange_rate(
-                self.transaction_date.strftime('%Y-%m-%d'),
-                self.original_currency,
+            # Use the new service. lookup_date is self.transaction_date (which is already a date object)
+            # from_currency is self.original_currency
+            # to_currency is BASE_CURRENCY_FOR_CONVERSION
+            fetched_rate = get_historical_rate(
+                self.transaction_date, 
+                self.original_currency, 
                 BASE_CURRENCY_FOR_CONVERSION
             )
-            if rate is not None:
-                self.aud_amount = (self.original_amount * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                self.exchange_rate_to_aud = rate
-                logger.info(f"Transaction {self.id}: Converted to AUD. Rate: {rate}, AUD Amount: {self.aud_amount}.")
+
+            if fetched_rate is not None:
+                self.exchange_rate_to_aud = fetched_rate # This is the rate FROM original_currency TO AUD
+                # To get aud_amount, we MULTIPLY original_amount by (original_currency_TO_AUD_rate)
+                self.aud_amount = (self.original_amount * self.exchange_rate_to_aud).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                logger.info(f"Transaction {self.id}: Converted to AUD using new service. Rate ({self.original_currency}->AUD): {self.exchange_rate_to_aud}, AUD Amount: {self.aud_amount}.")
             else:
-                # Rate fetch failed (could be future date, API error, or rate not available)
-                # We leave aud_amount and exchange_rate_to_aud as they were (likely None if new)
-                # or unchanged if force_recalculation was true on an existing converted amount that now fails.
-                # If force_recalculation was true and it fails, we might want to nullify existing aud_amount.
-                # For now, if rate is None, we don't change existing aud_amount unless it was None initially.
-                if self.aud_amount is None: # Only log error if it was genuinely missing and failed to be set
-                    logger.warning(f"Transaction {self.id}: Failed to fetch exchange rate for {self.original_currency} to {BASE_CURRENCY_FOR_CONVERSION} on {self.transaction_date}. AUD amount remains None.")
-                elif force_recalculation: # If forcing and it fails, log and potentially nullify
-                    logger.warning(f"Transaction {self.id}: Forced recalculation failed for {self.original_currency} to {BASE_CURRENCY_FOR_CONVERSION} on {self.transaction_date}. AUD amount not updated from {self.aud_amount}.")
-                    # Decide if self.aud_amount should be set to None here if force_recalculation fails
-                    # For now, it leaves the old value. To nullify: 
-                    # self.aud_amount = None
-                    # self.exchange_rate_to_aud = None
+                logger.warning(f"Transaction {self.id}: Failed to fetch exchange rate for {self.original_currency} to {BASE_CURRENCY_FOR_CONVERSION} on {self.transaction_date} using new service. AUD amount will be None.")
+                # If force_recalculation was true and we failed to get a new rate, 
+                # we should revert to original values if they existed, otherwise keep as None.
+                if force_recalculation and original_aud_amount is not None:
+                    self.aud_amount = original_aud_amount
+                    self.exchange_rate_to_aud = original_exchange_rate
+                    logger.info(f"Transaction {self.id}: Forced recalculation failed, reverting to original AUD amount: {self.aud_amount}")
+                # else, aud_amount remains None (either it was already None, or force_recalc nullified it and failed to find new)
+
+        # Determine if a change occurred or if a value was set where previously None
+        # Only save if aud_amount is now populated, or if it was forced and values changed from original.
+        # Or, simpler, if aud_amount or exchange_rate_to_aud has changed from the start of the method call.
         
-        # Save only if aud_amount was actually populated or changed (or forced)
-        # This check avoids saving if it was already populated and not forced,
-        # or if it was None and failed to populate.
-        # More precise: save if self.aud_amount is not None AND (was None before or force_recalculation)
-        # Simpler: save if values were potentially set. A more robust check would compare old vs new values.
-        if self.aud_amount is not None: # If it got successfully populated or was already populated and forced.
-             try:
-                 # Only save fields that could have been modified by this method
-                 self.save(update_fields=['aud_amount', 'exchange_rate_to_aud', 'updated_at'])
-                 logger.debug(f"Transaction {self.id}: Saved updated AUD amount and exchange rate.")
-                 return True
-             except Exception as e:
-                 logger.error(f"Transaction {self.id}: Failed to save updated AUD amount: {e}")
-                 return False # Save failed
-        elif force_recalculation: # If forced but failed, it might still be None
-             logger.debug(f"Transaction {self.id}: AUD amount is None after failed forced recalculation. Not saved.")
-             return False
-        else: # Was None and remained None
-            logger.debug(f"Transaction {self.id}: AUD amount is None and was not updated. Not saved.")
-            return False # AUD amount is not populated
+        should_save = False
+        if self.aud_amount is not None: # A value was successfully calculated
+            if original_aud_amount != self.aud_amount or original_exchange_rate != self.exchange_rate_to_aud:
+                should_save = True
+        elif force_recalculation and original_aud_amount is not None: # Was forced, failed, and reverted to a non-None original.
+             # Check if it actually reverted or if original was also None (though aud_amount is already None here)
+             # This condition is a bit tricky. If it was forced, and now aud_amount is None, but original_aud_amount was not None,
+             # it implies a change (from something to None). BUT we reverted above. So we save if the current state is different than initial.
+             if original_aud_amount is not None or original_exchange_rate is not None: # if there was an original value
+                if self.aud_amount != original_aud_amount or self.exchange_rate_to_aud != original_exchange_rate:
+                    should_save = True # Should save because it was nullified from a previous value
+
+        if should_save:
+            try:
+                self.save(update_fields=['aud_amount', 'exchange_rate_to_aud', 'updated_at'])
+                logger.debug(f"Transaction {self.id}: Saved updated AUD amount and exchange rate.")
+                return True
+            except Exception as e:
+                logger.error(f"Transaction {self.id}: Failed to save updated AUD amount: {e}")
+                # Revert to original values on save failure to maintain data integrity
+                self.aud_amount = original_aud_amount
+                self.exchange_rate_to_aud = original_exchange_rate
+                return False # Save failed
+        else:
+            logger.debug(f"Transaction {self.id}: No changes to AUD amount or rate, or still None. Not saved. Current AUD: {self.aud_amount}")
+            return self.aud_amount is not None # Return true if AUD amount is populated (even if unchanged), false if None
 
 # --- Keep existing DescriptionMapping model ---
 class DescriptionMapping(models.Model):
@@ -227,3 +246,40 @@ class DescriptionMapping(models.Model):
 
     def __str__(self):
         return f"'{self.original_description}' -> '{self.clean_name}' ({self.user.username})"
+
+# --- NEW: Model for Storing Historical Exchange Rates ---
+class HistoricalExchangeRate(models.Model):
+    """
+    Stores historical exchange rates, primarily loaded from a CSV file.
+    Rates are stored relative to a source_currency (e.g., AUD) to a target_currency.
+    """
+    date = models.DateField(
+        db_index=True,
+        help_text="The date for which this exchange rate is valid."
+    )
+    source_currency = models.CharField(
+        max_length=3,
+        db_index=True,
+        help_text="The source currency code (e.g., AUD)."
+    )
+    target_currency = models.CharField(
+        max_length=3,
+        db_index=True,
+        help_text="The target currency code (e.g., USD, EUR)."
+    )
+    rate = models.DecimalField(
+        max_digits=18,  # Sufficient for various exchange rates
+        decimal_places=9, # Standard for many rate providers
+        help_text="The exchange rate: 1 unit of source_currency equals this many units of target_currency."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Historical Exchange Rate"
+        verbose_name_plural = "Historical Exchange Rates"
+        unique_together = ('date', 'source_currency', 'target_currency')
+        ordering = ['-date', 'source_currency', 'target_currency'] # Most recent first
+
+    def __str__(self):
+        return f"{self.date}: 1 {self.source_currency} = {self.rate} {self.target_currency}"
