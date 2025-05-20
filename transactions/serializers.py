@@ -91,8 +91,8 @@ class TransactionSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True, allow_null=True)
     # user field is implicitly handled by DRF, typically read-only or set in view.
     # For explicit read-only ID:
-    user = serializers.PrimaryKeyRelatedField(read_only=True) 
-    
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+
     # Expose the signed original amount
     signed_original_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     # Expose the signed AUD amount (can be null)

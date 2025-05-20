@@ -1,11 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import dashboardService from '../services/dashboardService'; // Changed to default import
+import transactionService from '../services/transactions'; // Corrected import path
 
 const NewDashboardPage = () => {
   const [balance, setBalance] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedCurrency, setSelectedCurrency] = useState('AUD'); // Default to AUD
+
+  const [transactions, setTransactions] = useState([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [transactionsError, setTransactionsError] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [pageSize, setPageSize] = useState(10); // Assuming a page size, or get from API
 
   const availableCurrencies = ['AUD', 'USD', 'GBP', 'EUR']; // Define available currencies
 
@@ -26,6 +34,38 @@ const NewDashboardPage = () => {
   useEffect(() => {
     fetchBalanceData();
   }, [fetchBalanceData]);
+
+  const fetchTransactionsData = useCallback(async (page) => {
+    setTransactionsLoading(true);
+    setTransactionsError(null);
+    try {
+      const response = await transactionService.getTransactions({ page: page });
+      setTransactions(response.results || []); // Ensure it's an array
+      // Calculate total pages: DRF provides 'count' (total items)
+      // If using default DRF PageNumberPagination, response.count is total items
+      if (response.count) {
+        setTotalPages(Math.ceil(response.count / pageSize)); 
+      } else {
+        // Fallback if count is not directly available, or if using a different pagination style
+        // This might need adjustment based on API (e.g., if it sends total_pages directly)
+        if (response.next && !response.previous) setTotalPages(2); // crude guess if on page 1 and there's a next
+        else if (!response.next && response.previous) setTotalPages(currentPage); // on last page
+        else if (response.next && response.previous) setTotalPages(currentPage +1); // crude guess mid-way
+        else setTotalPages(1); // Default to 1 page if no info
+      }
+
+    } catch (err) {
+      setTransactionsError(err.message || 'Failed to fetch transactions. Please try again.');
+      setTransactions([]);
+      setTotalPages(0);
+    } finally {
+      setTransactionsLoading(false);
+    }
+  }, [pageSize, currentPage]); // Added currentPage to dependencies to re-evaluate totalPages crude guess if needed
+
+  useEffect(() => {
+    fetchTransactionsData(currentPage);
+  }, [fetchTransactionsData, currentPage]);
 
   const handleCurrencyChange = (event) => {
     setSelectedCurrency(event.target.value);
@@ -75,6 +115,64 @@ const NewDashboardPage = () => {
 
       <p>This page will eventually display an overview of all transactions and balances.</p>
       {/* Placeholder content for transactions list will go here */}
+
+      {/* Transaction List Section */}
+      <div style={{ marginTop: '30px' }}>
+        <h2>Recent Transactions</h2>
+        {transactionsLoading && <p>Loading transactions...</p>}
+        {transactionsError && <p style={{ color: 'red' }}>Error: {transactionsError}</p>}
+        {!transactionsLoading && !transactionsError && transactions.length === 0 && (
+          <p>No transactions found.</p>
+        )}
+        {!transactionsLoading && !transactionsError && transactions.length > 0 && (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #ddd' }}>
+                <th style={{ padding: '8px', textAlign: 'left' }}>Date</th>
+                <th style={{ padding: '8px', textAlign: 'left' }}>Description</th>
+                <th style={{ padding: '8px', textAlign: 'right' }}>Amount</th>
+                <th style={{ padding: '8px', textAlign: 'left' }}>Category</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transactions.map(tx => (
+                <tr key={tx.id} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '8px' }}>{new Date(tx.transaction_date).toLocaleDateString()}</td>
+                  <td style={{ padding: '8px' }}>{tx.description}</td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>
+                    {/* Assuming signed_original_amount exists and includes currency */}
+                    {/* Or format based on original_amount and original_currency */}
+                    {tx.original_amount && tx.original_currency ? 
+                     `${parseFloat(tx.original_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${tx.original_currency}` : 
+                     'N/A'}
+                  </td>
+                  <td style={{ padding: '8px' }}>{tx.category ? tx.category.name : 'Uncategorized'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {/* Pagination Controls */}
+        {!transactionsLoading && !transactionsError && totalPages > 0 && (
+          <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <button 
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              style={{ marginRight: '10px' }}
+            >
+              Previous
+            </button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button 
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              style={{ marginLeft: '10px' }}
+            >
+              Next
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
