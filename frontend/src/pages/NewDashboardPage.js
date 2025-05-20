@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import dashboardService from '../services/dashboardService'; // Changed to default import
 import transactionService from '../services/transactions'; // Corrected import path
+import EditTransactionModal from '../components/transactions/EditTransactionModal'; // Import the modal
 
 const NewDashboardPage = () => {
   const [balance, setBalance] = useState(null);
@@ -14,6 +15,9 @@ const NewDashboardPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [pageSize, setPageSize] = useState(10); // Assuming a page size, or get from API
+
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
 
   const availableCurrencies = ['AUD', 'USD', 'GBP', 'EUR']; // Define available currencies
 
@@ -66,6 +70,48 @@ const NewDashboardPage = () => {
   useEffect(() => {
     fetchTransactionsData(currentPage);
   }, [fetchTransactionsData, currentPage]);
+
+  const handleEditTransaction = (transactionId) => {
+    // Find the transaction from the list
+    const transactionToEdit = transactions.find(tx => tx.id === transactionId);
+    if (transactionToEdit) {
+      setEditingTransaction(transactionToEdit);
+      setIsEditModalOpen(true);
+    } else {
+      console.error("Transaction not found for editing:", transactionId);
+    }
+  };
+
+  const handleDeleteTransaction = async (transactionId) => {
+    if (window.confirm("Are you sure you want to delete this transaction?")) {
+      try {
+        await transactionService.deleteTransaction(transactionId);
+        // Refresh the transaction list
+        fetchTransactionsData(currentPage); 
+        // Potentially show a success message
+      } catch (err) {
+        console.error("Failed to delete transaction:", err);
+        // Potentially show an error message to the user
+        setTransactionsError(err.message || 'Failed to delete transaction.');
+      }
+    }
+  };
+
+  const handleSaveTransaction = async (id, updatedData) => {
+    try {
+      await transactionService.updateTransaction(id, updatedData);
+      setIsEditModalOpen(false);
+      setEditingTransaction(null);
+      fetchTransactionsData(currentPage); // Refresh transactions
+      // Optionally, show a success message
+    } catch (err) {
+      console.error("Failed to update transaction:", err);
+      // Optionally, display error within the modal or on the page
+      // For now, error is logged, modal remains open or user can try again.
+      // You might want to pass an error handler to the modal or set an error state here.
+      alert(`Failed to update transaction: ${err.message || 'Server error'}`); // Simple alert for now
+    }
+  };
 
   const handleCurrencyChange = (event) => {
     setSelectedCurrency(event.target.value);
@@ -132,6 +178,7 @@ const NewDashboardPage = () => {
                 <th style={{ padding: '8px', textAlign: 'left' }}>Description</th>
                 <th style={{ padding: '8px', textAlign: 'right' }}>Amount</th>
                 <th style={{ padding: '8px', textAlign: 'left' }}>Category</th>
+                <th style={{ padding: '8px', textAlign: 'left' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -147,6 +194,17 @@ const NewDashboardPage = () => {
                      'N/A'}
                   </td>
                   <td style={{ padding: '8px' }}>{tx.category ? tx.category.name : 'Uncategorized'}</td>
+                  <td style={{ padding: '8px' }}>
+                    <button 
+                      onClick={() => handleEditTransaction(tx.id)} 
+                      style={{ marginRight: '5px' }}
+                    >
+                      Edit
+                    </button>
+                    <button onClick={() => handleDeleteTransaction(tx.id)}>
+                      Delete
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -173,6 +231,18 @@ const NewDashboardPage = () => {
           </div>
         )}
       </div>
+
+      {editingTransaction && (
+        <EditTransactionModal
+          isOpen={isEditModalOpen}
+          onClose={() => {
+            setIsEditModalOpen(false);
+            setEditingTransaction(null);
+          }}
+          transaction={editingTransaction}
+          onSave={handleSaveTransaction}
+        />
+      )}
     </div>
   );
 };

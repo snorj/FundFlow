@@ -82,6 +82,26 @@ const transactionService = {
     },
     // --- END FIX ---
 
+    updateTransaction: async (id, transactionData) => {
+        try {
+            const response = await api.put(`/transactions/${id}/`, transactionData);
+            return response.data;
+        } catch (error) {
+            console.error(`Error updating transaction ${id}:`, error.response?.data || error.message);
+            throw error.response?.data || error;
+        }
+    },
+
+    deleteTransaction: async (id) => {
+        try {
+            const response = await api.delete(`/transactions/${id}/`);
+            return response.data; // Or handle 204 No Content appropriately
+        } catch (error) {
+            console.error(`Error deleting transaction ${id}:`, error.response?.data || error.message);
+            throw error.response?.data || error;
+        }
+    },
+
 };
 
 export default transactionService;
