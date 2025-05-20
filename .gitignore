@@ -5,6 +5,7 @@
 
 # Dont track csv data
 *.csv
+!f11-data.csv # Exception for RBA exchange rate data
 
 # Python
 __pycache__/
