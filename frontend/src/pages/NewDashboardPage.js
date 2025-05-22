@@ -3,6 +3,17 @@ import dashboardService from '../services/dashboardService'; // Changed to defau
 import transactionService from '../services/transactions'; // Corrected import path
 import EditTransactionModal from '../components/transactions/EditTransactionModal'; // Import the modal
 
+// Helper function to get currency symbols
+const getCurrencySymbol = (currencyCode) => {
+  const symbols = {
+    AUD: 'A$',
+    USD: 'US$',
+    GBP: '£',
+    EUR: '€',
+  };
+  return symbols[currencyCode] || currencyCode; // Fallback to code if symbol not found
+};
+
 const NewDashboardPage = () => {
   const [balance, setBalance] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -143,9 +154,13 @@ const NewDashboardPage = () => {
         {error && <p style={{ color: 'red' }}>Error: {error}</p>}
         {balance !== null && !isLoading && (
           <div>
-            <p style={{ fontSize: '24px', fontWeight: 'bold' }}>
+            <p style={{
+              fontSize: '24px', 
+              fontWeight: 'bold', 
+              color: balance.total_balance_in_target_currency < 0 ? 'red' : 'inherit' 
+            }}>
               {balance.total_balance_in_target_currency !== undefined 
-                ? `${parseFloat(balance.total_balance_in_target_currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${selectedCurrency}` 
+                ? `${getCurrencySymbol(selectedCurrency)}${parseFloat(balance.total_balance_in_target_currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
                 : 'Balance data not available.'}
             </p>
             {balance.warning && <p style={{ color: 'orange' }}>Note: {balance.warning}</p>}
@@ -186,11 +201,13 @@ const NewDashboardPage = () => {
                 <tr key={tx.id} style={{ borderBottom: '1px solid #eee' }}>
                   <td style={{ padding: '8px' }}>{new Date(tx.transaction_date).toLocaleDateString()}</td>
                   <td style={{ padding: '8px' }}>{tx.description}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>
-                    {/* Assuming signed_original_amount exists and includes currency */}
-                    {/* Or format based on original_amount and original_currency */}
+                  <td style={{
+                    padding: '8px', 
+                    textAlign: 'right', 
+                    color: tx.direction === 'DEBIT' ? 'red' : 'green' 
+                  }}>
                     {tx.original_amount && tx.original_currency ? 
-                     `${parseFloat(tx.original_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${tx.original_currency}` : 
+                     `${tx.direction === 'DEBIT' ? '-' : ''}${getCurrencySymbol(tx.original_currency)}${parseFloat(tx.original_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 
                      'N/A'}
                   </td>
                   <td style={{ padding: '8px' }}>{tx.category ? tx.category.name : 'Uncategorized'}</td>
