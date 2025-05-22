@@ -5,7 +5,7 @@ const integrationsService = {
     // Check if Up Bank integration exists for the user
     checkUpLinkStatus: async () => {
         try {
-            const response = await api.get('/integrations/up/setup/'); // Matches backend Stage 5 GET endpoint
+            const response = await api.get('/integrations/up/setup/'); // Path should be relative to /api
             // Expecting { is_linked: true/false }
             return response.data;
         } catch (error) {
@@ -19,7 +19,7 @@ const integrationsService = {
     // Save/Update the user's Up Bank PAT
     saveUpToken: async (token) => {
         try {
-            const response = await api.post('/integrations/up/setup/', { // Matches backend Stage 5 POST endpoint
+            const response = await api.post('/integrations/up/setup/', { // Path should be relative to /api
                 personal_access_token: token,
             });
             // Expecting success message or confirmation
@@ -33,7 +33,7 @@ const integrationsService = {
     // Remove the Up Bank link
     removeUpLink: async () => {
         try {
-            const response = await api.delete('/integrations/up/setup/'); // Matches backend Stage 5 DELETE endpoint
+            const response = await api.delete('/integrations/up/setup/'); // Path should be relative to /api
             // Expecting 204 No Content on success
             return response.data; // May be empty on 204
         } catch (error) {
@@ -43,9 +43,20 @@ const integrationsService = {
     },
 
     // Trigger a manual sync
-    triggerUpSync: async () => {
+    triggerUpSync: async (since, until) => {
         try {
-            const response = await api.post('/integrations/up/sync/'); // Matches backend Stage 4 POST endpoint
+            const params = new URLSearchParams();
+            if (since) {
+                params.append('since', since);
+            }
+            if (until) {
+                params.append('until', until);
+            }
+            const queryString = params.toString();
+            // Corrected URL: Removed leading /api/
+            const url = `integrations/up/sync/${queryString ? '?' + queryString : ''}`;
+
+            const response = await api.post(url);
             // Expecting { message, created_count, duplicate_count } on success
             return response.data;
         } catch (error) {

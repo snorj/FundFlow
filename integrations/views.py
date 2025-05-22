@@ -100,6 +100,12 @@ class UpSyncTriggerView(APIView):
         user = request.user
         logger.info(f"[API Sync Trigger] Received sync request for user {user.id} ({user.username})")
 
+        # Get since and until from query parameters
+        since_date_str = request.query_params.get('since', None)
+        until_date_str = request.query_params.get('until', None)
+
+        logger.info(f"[API Sync Trigger] Date params: since='{since_date_str}', until='{until_date_str}' for user {user.id}")
+
         try:
             integration = UpIntegration.objects.get(user=user)
         except UpIntegration.DoesNotExist:
@@ -114,7 +120,12 @@ class UpSyncTriggerView(APIView):
 
         try:
             # Call the core logic function from logic.py
-            sync_result = sync_up_transactions_for_user(user.id, initial_sync=is_initial_sync)
+            sync_result = sync_up_transactions_for_user(
+                user_id=user.id, 
+                initial_sync=is_initial_sync,
+                since_date_str=since_date_str, # Pass to logic function
+                until_date_str=until_date_str  # Pass to logic function
+            )
 
             # Process the result dictionary
             if sync_result.get('success'):

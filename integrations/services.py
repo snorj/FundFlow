@@ -112,13 +112,14 @@ def get_accounts(token: str) -> list:
         return []
 
 
-def get_transactions(token: str, since_iso: str = None, page_size: int = 100) -> list:
+def get_transactions(token: str, since_iso: str = None, until_iso: str = None, page_size: int = 100) -> list:
     """
     Fetches transactions from the Up API, handling pagination.
 
     Args:
         token (str): Decrypted Up PAT.
         since_iso (str, optional): ISO 8601 timestamp for filtering start date (filter[since]).
+        until_iso (str, optional): ISO 8601 timestamp for filtering end date (filter[until]).
         page_size (int, optional): Number of records per page (max 100 for Up).
 
     Returns:
@@ -129,6 +130,8 @@ def get_transactions(token: str, since_iso: str = None, page_size: int = 100) ->
 
     if since_iso:
         params['filter[since]'] = since_iso
+    if until_iso:
+        params['filter[until]'] = until_iso
 
     # Construct initial URL using urljoin and urlencode for params
     # Pass endpoint_path='transactions' to _make_up_request for the first call

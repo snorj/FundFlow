@@ -19,12 +19,11 @@ User = get_user_model()
 
 DEFAULT_INITIAL_SYNC_DAYS = 90
 
-def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, custom_since_iso: str = None) -> dict:
-    # ... (user, integration, PAT decryption, 'since' filter logic remains the same as before) ...
+def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, since_date_str: str = None, until_date_str: str = None) -> dict:
     try:
         user = User.objects.get(pk=user_id)
         integration = UpIntegration.objects.select_related('user').get(user=user)
-        logger.info(f"[Sync User {user_id}]: Starting sync (Source: Up Bank). Initial: {initial_sync}.")
+        logger.info(f"[Sync User {user_id}]: Starting sync (Source: Up Bank). Initial: {initial_sync}. Provided since: {since_date_str}, until: {until_date_str}.")
     except User.DoesNotExist:
         logger.error(f"[Sync User {user_id}]: User not found.")
         return {'success': False, 'message': 'User not found.', 'created_count': 0, 'duplicate_count': 0, 'skipped_conversion_error':0, 'error': 'user_not_found'}
@@ -39,37 +38,56 @@ def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, cust
 
     sync_start_time = datetime.now(timezone.utc)
     since_filter_iso = None # Defined further down based on sync type
+    until_filter_iso = None # For the new 'until' parameter
     min_date_for_db_query = None # For optimizing duplicate check
 
-    if initial_sync:
-        if custom_since_iso:
-            try:
-                parsed_custom_date = isoparse(custom_since_iso)
-                since_filter_iso = parsed_custom_date.isoformat()
-                min_date_for_db_query = parsed_custom_date.date()
-            except ValueError:
-                fallback_since = sync_start_time - timedelta(days=DEFAULT_INITIAL_SYNC_DAYS)
-                since_filter_iso = fallback_since.isoformat()
-                min_date_for_db_query = fallback_since.date()
-                logger.warning(f"[Sync User {user_id}]: Invalid custom_since_iso. Defaulting to {DEFAULT_INITIAL_SYNC_DAYS}-day lookback: {since_filter_iso}")
-        else:
-            default_since = sync_start_time - timedelta(days=DEFAULT_INITIAL_SYNC_DAYS)
+    # Handle 'until' date first
+    if until_date_str:
+        try:
+            # Assuming until_date_str is YYYY-MM-DD from the date picker
+            parsed_until_date = datetime.strptime(until_date_str, '%Y-%m-%d')
+            # Set to end of day, make timezone-aware (UTC), then format
+            until_filter_iso = parsed_until_date.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc).isoformat()
+            logger.info(f"[Sync User {user_id}]: Using provided until_date (UTC end of day): {until_filter_iso}")
+        except ValueError:
+            logger.warning(f"[Sync User {user_id}]: Invalid until_date_str '{until_date_str}'. Ignoring.")
+            until_filter_iso = None # Up API will fetch up to current time if None
+
+    # Determine 'since' date
+    if since_date_str:
+        try:
+            # Assuming since_date_str is YYYY-MM-DD from the date picker
+            parsed_custom_date = datetime.strptime(since_date_str, '%Y-%m-%d')
+            # Set to beginning of day, make timezone-aware (UTC), then format
+            since_filter_iso = parsed_custom_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc).isoformat()
+            min_date_for_db_query = parsed_custom_date.date() # Keep this as date for DB query optimization
+            logger.info(f"[Sync User {user_id}]: Using provided since_date (UTC start of day): {since_filter_iso}")
+        except ValueError:
+            logger.warning(f"[Sync User {user_id}]: Invalid since_date_str '{since_date_str}'. Falling back to default logic.")
+            since_date_str = None # Reset to fall through
+
+    if not since_filter_iso: # Only if not set by a valid since_date_str
+        if initial_sync:
+            # Default to start of day, X days ago, UTC
+            default_since = (sync_start_time - timedelta(days=DEFAULT_INITIAL_SYNC_DAYS)).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
             since_filter_iso = default_since.isoformat()
             min_date_for_db_query = default_since.date()
-        logger.info(f"[Sync User {user_id}]: Initial sync, fetching since: {since_filter_iso}")
-    elif integration.last_synced_at:
-        since_filter_iso = (integration.last_synced_at + timedelta(seconds=1)).isoformat()
-        min_date_for_db_query = integration.last_synced_at.date()
-        logger.info(f"[Sync User {user_id}]: Subsequent sync, fetching since: {since_filter_iso}")
-    else:
-        default_since = sync_start_time - timedelta(days=DEFAULT_INITIAL_SYNC_DAYS)
-        since_filter_iso = default_since.isoformat()
-        min_date_for_db_query = default_since.date()
-        logger.warning(f"[Sync User {user_id}]: last_synced_at is null. Defaulting to {DEFAULT_INITIAL_SYNC_DAYS}-day lookback: {since_filter_iso}")
+            logger.info(f"[Sync User {user_id}]: Initial sync, fetching since (UTC start of day): {since_filter_iso}")
+        elif integration.last_synced_at:
+            # last_synced_at is already UTC and has time, add 1 sec to avoid re-fetching last tx
+            since_filter_iso = (integration.last_synced_at + timedelta(seconds=1)).isoformat()
+            min_date_for_db_query = integration.last_synced_at.date()
+            logger.info(f"[Sync User {user_id}]: Subsequent sync, fetching since: {since_filter_iso}")
+        else:
+            # Fallback: Default to start of day, X days ago, UTC
+            default_since = (sync_start_time - timedelta(days=DEFAULT_INITIAL_SYNC_DAYS)).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+            since_filter_iso = default_since.isoformat()
+            min_date_for_db_query = default_since.date()
+            logger.warning(f"[Sync User {user_id}]: last_synced_at is null and no valid since_date provided. Defaulting to {DEFAULT_INITIAL_SYNC_DAYS}-day lookback (UTC start of day): {since_filter_iso}")
 
     try:
-        logger.info(f"[Sync User {user_id}]: Calling get_up_transactions service (since={since_filter_iso})...")
-        up_transactions_data = get_up_transactions(pat, since_iso=since_filter_iso)
+        logger.info(f"[Sync User {user_id}]: Calling get_up_transactions service (since={since_filter_iso}, until={until_filter_iso})...")
+        up_transactions_data = get_up_transactions(pat, since_iso=since_filter_iso, until_iso=until_filter_iso)
         logger.info(f"[Sync User {user_id}]: Fetched {len(up_transactions_data)} transactions from Up API.")
     except HTTPError as e: # ... (error handling as before, with skipped_conversion_error) ...
         error_code = 'api_http_error'

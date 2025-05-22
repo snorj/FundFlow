@@ -7,6 +7,11 @@ import integrationsService from '../services/integrations';
 // NOTE: formatDate and formatCurrency are not used in this component anymore.
 // import { formatDate, formatCurrency } from '../utils/formatting'; 
 
+// Helper to get date strings in YYYY-MM-DD format
+const toYYYYMMDD = (date) => {
+  return date.toISOString().split('T')[0];
+};
+
 const UploadPage = () => { // Changed component name
   // --- State related to transaction display is removed ---
   // const [transactions, setTransactions] = useState([]); 
@@ -28,6 +33,11 @@ const UploadPage = () => { // Changed component name
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
   const [syncSuccessMessage, setSyncSuccessMessage] = useState(null);
+
+  // New state for date range selection
+  const [selectedRangeType, setSelectedRangeType] = useState('last_7_days'); // Default range
+  const [syncSinceDate, setSyncSinceDate] = useState('');
+  const [syncUntilDate, setSyncUntilDate] = useState('');
 
   const navigate = useNavigate();
 
@@ -160,8 +170,48 @@ const UploadPage = () => { // Changed component name
     setSyncSuccessMessage(null);
     console.log("Sync Triggered! Calling backend API...");
 
+    let since = null;
+    let until = null;
+
+    const today = new Date();
+    switch (selectedRangeType) {
+        case 'last_7_days':
+            since = new Date(today);
+            since.setDate(today.getDate() - 7);
+            since = toYYYYMMDD(since);
+            break;
+        case 'last_30_days':
+            since = new Date(today);
+            since.setDate(today.getDate() - 30);
+            since = toYYYYMMDD(since);
+            break;
+        case 'last_90_days':
+            since = new Date(today);
+            since.setDate(today.getDate() - 90);
+            since = toYYYYMMDD(since);
+            break;
+        case 'custom':
+            if (syncSinceDate) since = syncSinceDate;
+            if (syncUntilDate) until = syncUntilDate; // Optional: backend might default to today if not provided
+            break;
+        default:
+            // Default to last 7 days or handle as an error/no specific range
+            const defaultSince = new Date(today);
+            defaultSince.setDate(today.getDate() - 7);
+            since = toYYYYMMDD(defaultSince);
+            break;
+    }
+    
+    // If 'custom' and 'until' is not set, we can default it to today
+    if (selectedRangeType === 'custom' && since && !until) {
+        until = toYYYYMMDD(new Date());
+    }
+
+
+    console.log(`Requesting sync with since: ${since}, until: ${until}`);
+
     try {
-        const result = await integrationsService.triggerUpSync();
+        const result = await integrationsService.triggerUpSync(since, until); // Pass dates to service
         setSyncSuccessMessage(result.message || "Sync completed successfully."); 
         console.log("Sync successful:", result);
         loadUploadPageData(false); 
@@ -214,6 +264,53 @@ const UploadPage = () => { // Changed component name
                  {savePatError && !isRemovingLink && <div className="pat-feedback error-message"><FiAlertCircle /> {savePatError}</div>}
                  {syncSuccessMessage && <div className="sync-feedback success-message"><FiCheckCircle /> {syncSuccessMessage}</div>}
                  {syncError && <div className="sync-feedback error-message"><FiAlertCircle /> {syncError}</div>}
+
+                 {/* Date Range Selection for Sync */}
+                 <div className="sync-date-range-section" style={{ marginTop: '20px', marginBottom: '15px', borderTop: '1px solid #eee', paddingTop: '15px' }}>
+                     <h4 style={{ marginTop: '0', marginBottom: '10px', fontSize: '1em' }}>Sync Options</h4>
+                     <div style={{ marginBottom: '10px' }}>
+                         <label htmlFor="rangeType" style={{ marginRight: '10px', fontWeight: 'normal' }}>Period:</label>
+                         <select 
+                             id="rangeType" 
+                             value={selectedRangeType} 
+                             onChange={(e) => setSelectedRangeType(e.target.value)}
+                             disabled={isSyncing || isRemovingLink}
+                             style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                         >
+                             <option value="last_7_days">Last 7 days</option>
+                             <option value="last_30_days">Last 30 days</option>
+                             <option value="last_90_days">Last 90 days</option>
+                             <option value="custom">Custom Range</option>
+                         </select>
+                     </div>
+
+                     {selectedRangeType === 'custom' && (
+                         <div style={{ display: 'flex', gap: '15px', marginBottom: '10px', alignItems: 'flex-end' }}>
+                             <div>
+                                 <label htmlFor="syncSinceDate" style={{ display: 'block', marginBottom: '5px', fontWeight: 'normal' }}>From:</label>
+                                 <input 
+                                     type="date" 
+                                     id="syncSinceDate" 
+                                     value={syncSinceDate} 
+                                     onChange={(e) => setSyncSinceDate(e.target.value)} 
+                                     disabled={isSyncing || isRemovingLink}
+                                     style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                                 />
+                             </div>
+                             <div>
+                                 <label htmlFor="syncUntilDate" style={{ display: 'block', marginBottom: '5px', fontWeight: 'normal' }}>To:</label>
+                                 <input 
+                                     type="date" 
+                                     id="syncUntilDate" 
+                                     value={syncUntilDate} 
+                                     onChange={(e) => setSyncUntilDate(e.target.value)} 
+                                     disabled={isSyncing || isRemovingLink}
+                                     style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                                 />
+                             </div>
+                         </div>
+                     )}
+                 </div>
 
                  <div className="connection-actions">
                      <button onClick={handleTriggerSync} className="action-button teal-button sync-button" disabled={isSyncing || isRemovingLink}>
