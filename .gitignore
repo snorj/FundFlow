@@ -70,3 +70,4 @@ tasks/
 # Cursor and Taskmaster config
 .cursor/
 .taskmasterconfig
+scripts/

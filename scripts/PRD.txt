@@ -1,1 +1,117 @@
- 
+# Overview
+This document outlines the requirements for the "Manual Transaction Entry" feature within the FundFlow application. This feature allows users to manually input individual financial transactions directly into the system, complementing other ingestion methods like CSV uploads or direct bank API integration. It solves the problem of capturing one-off transactions or transactions from sources not covered by automated methods, ensuring a complete financial picture for the user. This is valuable for users who need to quickly add expenses or income without preparing a CSV file or for accounts that cannot be linked automatically.
+
+# Core Features
+-   **Modal-Based Entry:** Transactions will be entered via a modal window.
+-   **Trigger Location:** The modal will be accessible from the existing "Import Page" (currently `frontend/src/pages/UploadPage.js`).
+-   **Input Fields:**
+    -   **Description:** Text input for the transaction description. (Required)
+    -   **Date:** Date picker for the transaction date. (Required)
+    *   **Amount:** Numerical input for the transaction amount in its original currency. (Required)
+    *   **Currency:** Text input for the 3-letter ISO currency code (e.g., AUD, EUR, USD). (Required)
+    *   **Direction:** Dropdown selection for Debit/Credit. (Required)
+    -   **Category:**
+        -   Allows selection from a list of existing categories.
+        -   Allows creation of a new category (top-level or sub-category) if it doesn't exist.
+        -   The UI for category selection/creation should be consistent with or reuse components from the "Categorise Transactions" pages (e.g., `CategorySelectorModal.js`). (Required)
+    -   **Vendor:**
+        -   Allows selection from a list of existing vendors.
+        -   Allows creation of a new vendor if it doesn't exist.
+        -   The UI for vendor selection/creation will be similar to the category selection. (Optional, can be added later)
+-   **No Default Field Values:** All fields will be blank when the modal opens.
+-   **Automated Currency Conversion:**
+    -   If a transaction is entered in a non-AUD currency, the system will automatically attempt to fetch the historical exchange rate for the transaction date.
+    -   It will then calculate and store the equivalent AUD amount alongside the original amount and currency. This will leverage the existing `update_aud_amount_if_needed` method in the `Transaction` model.
+-   **Data Storage:**
+    *   Manually entered transactions will be stored in the existing `Transaction` database table.
+    *   The `source` field of the `Transaction` model will be set to `'manual'`.
+
+# User Experience
+1.  **Access:** User navigates to the "Import Page" (`UploadPage.js`).
+2.  **Trigger:** User clicks an "Add Manual Transaction" button on the Import Page.
+3.  **Modal Appears:** The "Add Manual Transaction" modal opens.
+4.  **Data Entry:** User fills in the fields: Description, Date, Amount, Currency, Direction.
+5.  **Category Selection/Creation:**
+    *   User clicks to select a Category. A category selection modal (e.g., `CategorySelectorModal`) appears.
+    *   User can search/select an existing category or use an interface within this modal to create a new category (top-level or sub-category).
+    *   Upon selection/creation, the category modal closes, and the selected category is displayed in the main transaction modal.
+6.  **Vendor Selection/Creation (if implemented):**
+    *   Similar flow to Category selection.
+7.  **Save:** User clicks "Save".
+    *   **Validation:** Input data is validated. Errors are displayed if any.
+    *   **Processing:** If valid, the transaction is saved. Currency conversion to AUD occurs in the backend if needed.
+    *   **Feedback:** Success message is shown. The modal closes. The transaction list on the parent page (if any is displayed there) may refresh or an indication of success is given.
+8.  **Cancel:** User can click "Cancel" at any time to close the modal without saving.
+
+# Technical Architecture
+-   **System Components:**
+    -   **Backend (Django):**
+        -   New `Vendor` model in `transactions/models.py`.
+        -   Modification to `Transaction` model in `transactions/models.py` to add a ForeignKey to `Vendor`.
+        -   New Django Migrations for model changes.
+        -   New `VendorSerializer` in `transactions/serializers.py`.
+        -   New API endpoints in `transactions/views.py` for CRUD operations on Vendors.
+        -   New `TransactionCreateSerializer` (or similar) for manual transaction payload.
+        -   New API endpoint in `transactions/views.py` to handle creation of manual transactions (e.g., `ManualTransactionCreateView`). This view will set `source='manual'` and trigger AUD conversion.
+    -   **Frontend (React):**
+        -   New `AddTransactionModal.js` component.
+        -   Adaptation/reuse of `CategorySelectorModal.js` (and a new/adapted `VendorSelectorModal.js`).
+        -   New `vendorService.js` for API calls related to vendors.
+        -   Update to `transactionService.js` to include `createManualTransaction(data)` function.
+        -   Integration into `UploadPage.js` to trigger the `AddTransactionModal`.
+-   **Data Models:**
+    -   **`Vendor` Model:**
+        -   `name`: CharField
+        -   `user`: ForeignKey to User (nullable)
+        -   `created_at`, `updated_at`: DateTimeField
+    -   **`Transaction` Model:**
+        -   Add `vendor`: ForeignKey to `Vendor` (nullable)
+-   **APIs and Integrations:**
+    -   `POST /api/transactions/manual/`: Creates a new manual transaction.
+    -   `GET /api/vendors/`: Lists vendors for selection.
+    -   `POST /api/vendors/`: Creates a new vendor.
+    -   (Existing) `GET /api/categories/`, `POST /api/categories/` will be used by the category selector.
+-   **Infrastructure Requirements:** None beyond existing setup.
+
+# Development Roadmap
+-   **MVP Requirements (for this feature):**
+    1.  **Backend - Models:** Implement `Vendor` model. Add `vendor` ForeignKey to `Transaction`. Create and apply migrations.
+    2.  **Backend - Vendor API:** Implement `VendorSerializer` and `VendorListCreateView`. Add URL.
+    3.  **Backend - Transaction Create API:** Implement `TransactionCreateSerializer` and `ManualTransactionCreateView`. Add URL. Ensure AUD conversion is called.
+    4.  **Frontend - Services:** Create `vendorService.js` (get, create). Add `createManualTransaction` to `transactionService.js`.
+    5.  **Frontend - Selector Modals:**
+        *   Verify `CategorySelectorModal.js` can handle selection and facilitate creation (or adapt it).
+        *   Create or adapt a similar modal for Vendors (`VendorSelectorModal.js`).
+    6.  **Frontend - AddTransactionModal:**
+        *   Build the main modal component with all fields (Description, Date, Amount, Currency, Direction).
+        *   Integrate `CategorySelectorModal` and `VendorSelectorModal`.
+        *   Implement save logic calling the service.
+        *   Basic error/success handling.
+    7.  **Frontend - Integration:** Add a button to `UploadPage.js` to launch `AddTransactionModal`.
+-   **Future Enhancements:**
+    -   More sophisticated vendor management UI (if needed beyond simple name).
+    -   Ability to edit manually entered transactions (though `EditTransactionModal` might already cover much of this, ensure it handles `vendor` field).
+    -   Suggesting vendors/categories based on description text as user types.
+
+# Logical Dependency Chain
+1.  Backend: `Vendor` model and `Transaction.vendor` field changes.
+2.  Backend: Vendor CRUD serializers and views.
+3.  Backend: `ManualTransactionCreateView` and its serializer.
+4.  Frontend: `vendorService.js`.
+5.  Frontend: `CategorySelectorModal` review/adaptation.
+6.  Frontend: `VendorSelectorModal` creation/adaptation.
+7.  Frontend: `AddTransactionModal` component (core form, linking to selector modals).
+8.  Frontend: `transactionService.createManualTransaction`.
+9.  Frontend: Integration of `AddTransactionModal` into `UploadPage.js`.
+
+# Risks and Mitigations
+-   **Complexity of Reusable Selector Modal:** The existing `CategorySelectorModal.js` might need significant adaptation to be truly reusable for Vendors or if its creation flow is deeply tied to `CategorizationCard`.
+    -   **Mitigation:** Allocate time for thorough review and refactoring of `CategorySelectorModal`. If too complex, build `VendorSelectorModal` separately, sharing common patterns.
+-   **User Experience for On-the-Fly Creation:** Ensuring a smooth UX for creating new categories/vendors from within the transaction entry flow.
+    -   **Mitigation:** Keep the creation sub-flow simple within the selector modals. Test the flow carefully.
+-   **Currency Conversion Reliability:** Ensuring the `update_aud_amount_if_needed` logic is robust and handles cases where exchange rates might not be available for a given date/currency.
+    -   **Mitigation:** Backend should gracefully handle missing rates (e.g., leave `aud_amount` null and log a warning). Frontend should clearly indicate if conversion failed.
+
+# Appendix
+-   This feature leverages existing Django models (`Transaction`, `Category`) and React components where possible.
+-   Relies on existing services for category management (`categoryService.js`) and transaction fetching/updating (`transactionService.js`). 
