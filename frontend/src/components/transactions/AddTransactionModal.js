@@ -52,16 +52,16 @@ const AddTransactionModal = ({
     if (isOpen) {
       // Reset form to initial values or defaults
       setFormState({
-        description: initialData.description || '',
-        transaction_date: initialData.transaction_date || new Date().toISOString().split('T')[0],
-        original_amount: initialData.original_amount || '',
-        original_currency: initialData.original_currency || 'AUD',
-        direction: initialData.direction || 'outflow',
+        description: initialData?.description || '',
+        transaction_date: initialData?.transaction_date || new Date().toISOString().split('T')[0],
+        original_amount: initialData?.original_amount || '',
+        original_currency: initialData?.original_currency || 'AUD',
+        direction: initialData?.direction || 'outflow',
       });
       
       setSelectionState({
-        selectedCategory: initialData.category || null,
-        selectedVendor: initialData.vendor || null,
+        selectedCategory: initialData?.category || null,
+        selectedVendor: initialData?.vendor || null,
       });
       
       setUiState({
@@ -71,7 +71,7 @@ const AddTransactionModal = ({
         showVendorSelector: false,
       });
     }
-  }, [isOpen, initialData]);
+  }, [isOpen]);
 
   // Form validation
   const validateForm = useCallback(() => {
@@ -171,7 +171,7 @@ const AddTransactionModal = ({
         transaction_date: formState.transaction_date,
         original_amount: parseFloat(formState.original_amount),
         original_currency: formState.original_currency.toUpperCase(),
-        direction: formState.direction,
+        direction: formState.direction === 'outflow' ? 'DEBIT' : 'CREDIT', // Map to backend values
         category_id: selectionState.selectedCategory?.id || null,
         vendor_id: selectionState.selectedVendor?.id || null,
       };
