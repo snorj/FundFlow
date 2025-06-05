@@ -102,6 +102,32 @@ const transactionService = {
         }
     },
 
+    /**
+     * Create a manual transaction
+     * @param {Object} transactionData - The transaction data
+     * @param {string} transactionData.transaction_date - Transaction date (YYYY-MM-DD format)
+     * @param {string} transactionData.description - Transaction description
+     * @param {number} transactionData.original_amount - Transaction amount
+     * @param {string} transactionData.original_currency - Currency code (e.g., 'USD')
+     * @param {string} transactionData.direction - Transaction direction ('inflow' or 'outflow')
+     * @param {number|null} [transactionData.category_id] - Optional category ID
+     * @param {number|null} [transactionData.vendor_id] - Optional vendor ID
+     * @returns {Promise<Object>} Promise resolving to the created transaction
+     */
+    createManualTransaction: async (transactionData) => {
+        try {
+            const response = await api.post('/transactions/create/', transactionData);
+            return response.data;
+        } catch (error) {
+            console.error('Error creating manual transaction:', error.response?.data || error.message);
+            // Extract specific validation errors if possible (following other services pattern)
+            const errorMessages = error.response?.data ? 
+                Object.values(error.response.data).flat().join(' ') 
+                : 'Failed to create manual transaction.';
+            throw new Error(errorMessages);
+        }
+    },
+
 };
 
 export default transactionService;
