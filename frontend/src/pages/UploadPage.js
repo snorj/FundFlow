@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Dashboard.css'; // We can reuse the dashboard CSS for now or create a new one
-import { FiUpload, FiLink, FiLoader, FiCheckCircle, FiAlertCircle, FiEdit, FiKey, FiRefreshCw, FiTrash2 } from 'react-icons/fi';
+import { FiUpload, FiLink, FiLoader, FiCheckCircle, FiAlertCircle, FiEdit, FiKey, FiRefreshCw, FiTrash2, FiPlus } from 'react-icons/fi';
 import transactionService from '../services/transactions';
 import integrationsService from '../services/integrations';
+import AddTransactionModal from '../components/transactions/AddTransactionModal';
 // NOTE: formatDate and formatCurrency are not used in this component anymore.
 // import { formatDate, formatCurrency } from '../utils/formatting'; 
 
@@ -38,6 +39,9 @@ const UploadPage = () => { // Changed component name
   const [selectedRangeType, setSelectedRangeType] = useState('last_7_days'); // Default range
   const [syncSinceDate, setSyncSinceDate] = useState('');
   const [syncUntilDate, setSyncUntilDate] = useState('');
+
+  // State for AddTransactionModal
+  const [isAddTransactionModalOpen, setIsAddTransactionModalOpen] = useState(false);
 
   const navigate = useNavigate();
 
@@ -117,6 +121,21 @@ const UploadPage = () => { // Changed component name
 
   // --- Updated Navigation Handler ---
   const goToCategorizeTransactions = () => navigate('/categorise/transactions'); // Changed navigation path
+
+  // --- AddTransactionModal Handlers ---
+  const handleOpenAddTransactionModal = () => {
+    setIsAddTransactionModalOpen(true);
+  };
+
+  const handleCloseAddTransactionModal = () => {
+    setIsAddTransactionModalOpen(false);
+  };
+
+  const handleTransactionSuccess = () => {
+    console.log('Manual transaction created successfully');
+    // Refresh uncategorized check since new transaction might need categorization
+    loadUploadPageData(false);
+  };
 
   const handlePatInputChange = (event) => {
       setUpPatInput(event.target.value);
@@ -248,6 +267,30 @@ const UploadPage = () => { // Changed component name
          </div>
          {uploadError && (<div className="upload-feedback error-message"><FiAlertCircle /> {uploadError}</div>)}
          {uploadSuccess && (<div className="upload-feedback success-message"><FiCheckCircle /> {uploadSuccess.message}</div>)}
+         
+         {/* Manual Transaction Section */}
+         <div className="manual-transaction-section" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #eee' }}>
+           <h3 style={{ margin: '0 0 10px 0', fontSize: '1em', color: '#333' }}>Manual Entry</h3>
+           <p style={{ margin: '0 0 15px 0', color: '#666', fontSize: '0.9em' }}>Add transactions manually if you don't have a CSV file or want to record a quick transaction.</p>
+           <button 
+             onClick={handleOpenAddTransactionModal} 
+             className="action-button plain-button add-transaction-button"
+             style={{ 
+               display: 'flex', 
+               alignItems: 'center', 
+               gap: '8px',
+               padding: '10px 16px',
+               backgroundColor: '#f8f9fa',
+               border: '2px dashed #ddd',
+               borderRadius: '6px',
+               color: '#333',
+               transition: 'all 0.2s ease'
+             }}
+           >
+             <FiPlus className="button-icon" />
+             Add Manual Transaction
+           </button>
+         </div>
       </div>
 
        <div className="bank-connection-section card-style">
@@ -365,6 +408,14 @@ const UploadPage = () => { // Changed component name
 
       {/* --- Transaction Display Section (REMOVED) --- */}
       {/* The entire "transactions-section card-style" div has been removed */}
+      
+      {/* AddTransactionModal */}
+      <AddTransactionModal 
+        isOpen={isAddTransactionModalOpen}
+        onClose={handleCloseAddTransactionModal}
+        onSuccess={handleTransactionSuccess}
+        size="lg"
+      />
      </div>
    );
  };

@@ -1,0 +1,385 @@
+/* Styles for AddTransactionModal */
+
+/* --- Modal Styles --- */
+.transaction-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(13, 27, 42, 0.6); /* Use Deep Navy with alpha */
+    z-index: 1040;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.transaction-modal-content {
+    background-color: var(--white);
+    border-radius: 8px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 600px; /* Default medium size for forms */
+    max-height: 90vh; /* Limit height */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Prevent content overflow */
+    animation: slideUpFadeInModal 0.3s ease-out forwards;
+}
+
+/* --- Modal Size Variations --- */
+.transaction-modal--sm {
+    max-width: 450px;
+}
+
+.transaction-modal--md {
+    max-width: 600px; /* Default */
+}
+
+.transaction-modal--lg {
+    max-width: 800px;
+}
+
+/* --- Loading State --- */
+.transaction-modal--loading {
+    /* Styling for loading state */
+}
+
+.transaction-modal--loading .modal-body {
+    opacity: 0.8;
+    pointer-events: none;
+}
+
+@keyframes slideUpFadeInModal {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--light-gray);
+    background-color: #f8f9fa;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25em;
+    font-weight: 600;
+    color: var(--deep-navy);
+}
+
+.modal-close-button {
+    background: none;
+    border: none;
+    font-size: 1.5em;
+    line-height: 1;
+    padding: 5px;
+    cursor: pointer;
+    color: var(--text-muted-dark);
+    transition: color 0.2s;
+}
+.modal-close-button:hover {
+    color: var(--deep-navy);
+}
+
+/* --- Modal Body --- */
+.modal-body {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+/* --- Form Styles --- */
+.transaction-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+    font-size: 0.9em;
+    color: var(--deep-navy);
+}
+
+.form-icon {
+    font-size: 0.9em;
+    color: var(--teal);
+}
+
+.form-input {
+    padding: 10px 12px;
+    border: 1px solid var(--light-gray);
+    border-radius: 5px;
+    font-size: 0.95em;
+    background-color: var(--white);
+    transition: border-color 0.2s, box-shadow 0.2s;
+    outline: none;
+}
+
+.form-input:focus {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 2px rgba(32, 201, 151, 0.1);
+}
+
+.form-input:disabled {
+    background-color: #f8f9fa;
+    color: var(--text-muted-dark);
+    cursor: not-allowed;
+}
+
+.form-input--error {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.1);
+}
+
+.form-input--error:focus {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.2);
+}
+
+/* --- Form Row (for side-by-side fields) --- */
+.form-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 12px;
+}
+
+/* --- Radio Button Group --- */
+.radio-group {
+    display: flex;
+    gap: 16px;
+    padding: 8px 0;
+}
+
+.radio-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 0.95em;
+    color: var(--text-dark);
+}
+
+.radio-option input[type="radio"] {
+    accent-color: var(--teal);
+    width: 16px;
+    height: 16px;
+}
+
+.radio-option input[type="radio"]:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.radio-label {
+    font-size: 0.95em;
+}
+
+/* --- Selector Field (for category/vendor selection) --- */
+.selector-field {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+
+.selector-field .form-input {
+    flex: 1;
+    background-color: #f8f9fa;
+    cursor: pointer;
+}
+
+.selector-button {
+    background-color: var(--teal);
+    color: var(--white);
+    border: none;
+    padding: 10px 16px;
+    border-radius: 5px;
+    font-size: 0.9em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    white-space: nowrap;
+}
+
+.selector-button:hover:not(:disabled) {
+    background-color: var(--teal-darker);
+}
+
+.selector-button:disabled {
+    background-color: var(--light-gray);
+    color: var(--text-muted-dark);
+    cursor: not-allowed;
+}
+
+/* --- Form Errors --- */
+.form-error {
+    color: #dc3545;
+    font-size: 0.85em;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.form-error--global {
+    background-color: #f8d7da;
+    border: 1px solid #f5c2c7;
+    border-radius: 4px;
+    padding: 10px 12px;
+    margin-top: 8px;
+    font-size: 0.9em;
+}
+
+/* --- Modal Footer --- */
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 15px 20px;
+    border-top: 1px solid var(--light-gray);
+    background-color: #f8f9fa;
+}
+
+.modal-button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.95em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 120px;
+    justify-content: center;
+}
+
+.modal-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.modal-button.cancel {
+    background-color: var(--white);
+    color: var(--text-dark);
+    border: 1px solid var(--light-gray);
+}
+
+.modal-button.cancel:hover:not(:disabled) {
+    background-color: #f8f9fa;
+    border-color: var(--border-color);
+}
+
+.modal-button.confirm {
+    background-color: var(--teal);
+    color: var(--white);
+}
+
+.modal-button.confirm:hover:not(:disabled) {
+    background-color: var(--teal-darker);
+    transform: translateY(-1px);
+}
+
+/* --- Loading Spinner --- */
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* --- Responsive Design --- */
+@media (max-width: 768px) {
+    .transaction-modal-content {
+        width: 95%;
+        max-height: 95vh;
+        margin: 10px;
+    }
+
+    .modal-header {
+        padding: 12px 15px;
+    }
+
+    .modal-body {
+        padding: 15px;
+    }
+
+    .modal-footer {
+        padding: 12px 15px;
+        flex-direction: column-reverse;
+        gap: 8px;
+    }
+
+    .modal-button {
+        width: 100%;
+        min-width: unset;
+    }
+
+    .form-row {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+
+    .radio-group {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .selector-field {
+        flex-direction: column;
+    }
+
+    .selector-button {
+        align-self: stretch;
+        text-align: center;
+    }
+
+    .transaction-modal--sm,
+    .transaction-modal--md,
+    .transaction-modal--lg {
+        max-width: 95%;
+    }
+}
+
+@media (max-width: 480px) {
+    .modal-header h2 {
+        font-size: 1.1em;
+    }
+
+    .form-label {
+        font-size: 0.85em;
+    }
+
+    .form-input {
+        font-size: 0.9em;
+        padding: 8px 10px;
+    }
+
+    .modal-button {
+        font-size: 0.9em;
+        padding: 8px 16px;
+    }
+} 
