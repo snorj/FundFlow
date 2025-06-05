@@ -34,6 +34,7 @@ const UploadPage = () => { // Changed component name
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(null);
   const [syncSuccessMessage, setSyncSuccessMessage] = useState(null);
+  const [conversionFailures, setConversionFailures] = useState([]); // Track detailed conversion failures
 
   // New state for date range selection
   const [selectedRangeType, setSelectedRangeType] = useState('last_7_days'); // Default range
@@ -85,6 +86,7 @@ const UploadPage = () => { // Changed component name
   const checkLinkStatus = useCallback(async () => {
       setIsLoadingUpStatus(true);
       setSavePatError(null); setSavePatSuccess(null); setSyncError(null); setSyncSuccessMessage(null);
+      setConversionFailures([]); // Clear conversion failures when checking status
       try {
           const statusResult = await integrationsService.checkUpLinkStatus();
           setIsUpLinked(statusResult?.is_linked || false);
@@ -171,6 +173,7 @@ const UploadPage = () => { // Changed component name
       if (!window.confirm("Are you sure you want to remove the link to your Up Bank account? This will delete the stored access token.")) { return; }
       setIsRemovingLink(true);
       setSavePatError(null); setSavePatSuccess(null); setSyncError(null); setSyncSuccessMessage(null);
+      setConversionFailures([]); // Clear conversion failures when removing link
       try {
           await integrationsService.removeUpLink();
           setIsUpLinked(false); 
@@ -184,43 +187,37 @@ const UploadPage = () => { // Changed component name
   };
 
   const handleTriggerSync = async () => {
-    setIsSyncing(true); 
-    setSyncError(null); 
+    setIsSyncing(true);
+    setSyncError(null);
     setSyncSuccessMessage(null);
+    setConversionFailures([]); // Clear previous conversion failures
     console.log("Sync Triggered! Calling backend API...");
 
+    // --- Date range logic from selectedRangeType ---
     let since = null;
     let until = null;
 
-    const today = new Date();
-    switch (selectedRangeType) {
-        case 'last_7_days':
-            since = new Date(today);
-            since.setDate(today.getDate() - 7);
-            since = toYYYYMMDD(since);
-            break;
-        case 'last_30_days':
-            since = new Date(today);
-            since.setDate(today.getDate() - 30);
-            since = toYYYYMMDD(since);
-            break;
-        case 'last_90_days':
-            since = new Date(today);
-            since.setDate(today.getDate() - 90);
-            since = toYYYYMMDD(since);
-            break;
-        case 'custom':
-            if (syncSinceDate) since = syncSinceDate;
-            if (syncUntilDate) until = syncUntilDate; // Optional: backend might default to today if not provided
-            break;
-        default:
-            // Default to last 7 days or handle as an error/no specific range
-            const defaultSince = new Date(today);
-            defaultSince.setDate(today.getDate() - 7);
-            since = toYYYYMMDD(defaultSince);
-            break;
+    const toYYYYMMDD = (date) => date.toISOString().split('T')[0]; // Helper function, maybe move outside or import
+
+    if (selectedRangeType !== 'custom') {
+        const now = new Date();
+        const dayMap = {
+            'last_7_days': 7,
+            'last_30_days': 30,
+            'last_90_days': 90,
+        };
+        const days = dayMap[selectedRangeType];
+        if (days) {
+            const sinceDate = new Date(now);
+            sinceDate.setDate(sinceDate.getDate() - days);
+            since = toYYYYMMDD(sinceDate);
+        }
+    } else {
+        // Custom range: use user-selected dates
+        since = syncSinceDate || null;
+        until = syncUntilDate || null;
     }
-    
+
     // If 'custom' and 'until' is not set, we can default it to today
     if (selectedRangeType === 'custom' && since && !until) {
         until = toYYYYMMDD(new Date());
@@ -233,6 +230,12 @@ const UploadPage = () => { // Changed component name
         const result = await integrationsService.triggerUpSync(since, until); // Pass dates to service
         setSyncSuccessMessage(result.message || "Sync completed successfully."); 
         console.log("Sync successful:", result);
+        
+        // Capture conversion failures for detailed error display
+        if (result.conversion_failures && result.conversion_failures.length > 0) {
+            setConversionFailures(result.conversion_failures);
+        }
+        
         loadUploadPageData(false); 
         setTimeout(() => setSyncSuccessMessage(null), 8000);
 
@@ -307,6 +310,56 @@ const UploadPage = () => { // Changed component name
                  {savePatError && !isRemovingLink && <div className="pat-feedback error-message"><FiAlertCircle /> {savePatError}</div>}
                  {syncSuccessMessage && <div className="sync-feedback success-message"><FiCheckCircle /> {syncSuccessMessage}</div>}
                  {syncError && <div className="sync-feedback error-message"><FiAlertCircle /> {syncError}</div>}
+
+                 {/* Currency Conversion Failures Display */}
+                 {conversionFailures.length > 0 && (
+                     <div className="conversion-failures-section" style={{ 
+                         marginTop: '15px', 
+                         padding: '15px', 
+                         backgroundColor: '#fff3cd', 
+                         border: '1px solid #ffeaa7', 
+                         borderRadius: '6px' 
+                     }}>
+                         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
+                             <FiAlertCircle style={{ color: '#856404', marginRight: '8px' }} />
+                             <strong style={{ color: '#856404' }}>Currency Conversion Issues</strong>
+                         </div>
+                         <p style={{ margin: '0 0 10px 0', color: '#856404', fontSize: '0.9em' }}>
+                             The following transactions could not be converted to AUD:
+                         </p>
+                         <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                             {conversionFailures.map((failure, index) => (
+                                 <div key={index} style={{ 
+                                     padding: '8px 12px', 
+                                     margin: '4px 0', 
+                                     backgroundColor: 'white', 
+                                     border: '1px solid #ddd', 
+                                     borderRadius: '4px',
+                                     fontSize: '0.85em'
+                                 }}>
+                                     <div style={{ fontWeight: 'bold', color: '#333' }}>
+                                         {failure.amount} {failure.currency} on {failure.date}
+                                     </div>
+                                     <div style={{ color: '#666', marginTop: '2px' }}>
+                                         {failure.description}
+                                     </div>
+                                     <div style={{ color: '#856404', marginTop: '2px', fontSize: '0.8em' }}>
+                                         {failure.reason === 'missing_exchange_rate' 
+                                             ? `Exchange rate not available for ${failure.currency}`
+                                             : failure.reason === 'data_parsing_error'
+                                             ? 'Unable to parse transaction data'
+                                             : `Reason: ${failure.reason}`
+                                         }
+                                     </div>
+                                 </div>
+                             ))}
+                         </div>
+                         <p style={{ margin: '10px 0 0 0', color: '#856404', fontSize: '0.8em' }}>
+                             💡 These transactions were imported but excluded from AUD totals. 
+                             You can manually add exchange rates or update these transactions later.
+                         </p>
+                     </div>
+                 )}
 
                  {/* Date Range Selection for Sync */}
                  <div className="sync-date-range-section" style={{ marginTop: '20px', marginBottom: '15px', borderTop: '1px solid #eee', paddingTop: '15px' }}>

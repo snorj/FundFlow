@@ -137,6 +137,7 @@ class UpSyncTriggerView(APIView):
                         "created_count": sync_result.get('created_count', 0),
                         "duplicate_count": sync_result.get('duplicate_count', 0),
                         "skipped_conversion_error": sync_result.get('skipped_conversion_error', 0),
+                        "conversion_failures": sync_result.get('conversion_failures', []),
                     },
                     status=status.HTTP_200_OK
                 )

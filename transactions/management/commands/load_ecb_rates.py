@@ -180,10 +180,11 @@ class Command(BaseCommand):
                             eur_to_target_rate = Decimal(rate_str)
                             
                             # Convert to AUD base: 1 AUD = ? target_currency
-                            # From test expectation: AUD/EUR = 1.91 should give AUD/USD = 1.91/1.18
-                            # This means the rates are interpreted as: 1 AUD = 1.91 EUR, 1 USD = 1.18 EUR
-                            # So: 1 AUD = (1.91 EUR) / (1.18 EUR/USD) = 1.91/1.18 USD
-                            aud_to_target_rate = aud_eur_rate / eur_to_target_rate
+                            # AUD/EUR rate tells us: 1 EUR = aud_eur_rate AUD
+                            # EUR/target rate tells us: 1 EUR = eur_to_target_rate target_currency
+                            # Therefore: 1 AUD = (1/aud_eur_rate) EUR = (1/aud_eur_rate) * eur_to_target_rate target_currency
+                            # Simplified: 1 AUD = eur_to_target_rate / aud_eur_rate target_currency
+                            aud_to_target_rate = eur_to_target_rate / aud_eur_rate
                             
                             if options['verbosity'] >= 2:
                                 self.stdout.write(f"  Converting {currency_code}: EUR rate = {eur_to_target_rate}, AUD rate = {aud_to_target_rate}")
