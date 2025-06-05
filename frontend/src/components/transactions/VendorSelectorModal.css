@@ -1,0 +1,493 @@
+/* Styles for VendorSelectorModal */
+
+/* --- Modal Styles --- */
+.vendor-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(13, 27, 42, 0.6); /* Use Deep Navy with alpha */
+    z-index: 1040;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.vendor-modal-content {
+    background-color: var(--white);
+    border-radius: 8px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 550px; /* Default medium size */
+    max-height: 85vh; /* Limit height */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Prevent content overflow */
+    animation: slideUpFadeInModal 0.3s ease-out forwards;
+}
+
+/* --- Modal Size Variations --- */
+.vendor-modal--sm {
+    max-width: 400px;
+}
+
+.vendor-modal--md {
+    max-width: 550px; /* Default */
+}
+
+.vendor-modal--lg {
+    max-width: 750px;
+}
+
+/* --- Selection Mode Variations --- */
+.vendor-modal--immediate {
+    /* Compact styling for immediate selection */
+}
+
+.vendor-modal--immediate .modal-body {
+    padding-bottom: 15px; /* Reduce padding when no footer */
+}
+
+.vendor-modal--confirm {
+    /* Standard styling for confirmation mode */
+}
+
+.vendor-modal--none {
+    /* Display-only mode styling */
+}
+
+.vendor-modal--none .selection-preview {
+    display: none; /* Hide selection preview in none mode */
+}
+
+/* --- Feature-based Variations --- */
+.vendor-modal--with-creation {
+    /* Standard spacing for modals with creation features */
+}
+
+.vendor-modal--no-creation .modal-actions-top {
+    display: none; /* Hide creation UI when not allowed */
+}
+
+@keyframes slideUpFadeInModal {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--light-gray);
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25em;
+    font-weight: 600;
+    color: var(--deep-navy);
+}
+
+.modal-close-button {
+    background: none;
+    border: none;
+    font-size: 1.5em;
+    line-height: 1;
+    padding: 5px;
+    cursor: pointer;
+    color: var(--text-muted-dark);
+    transition: color 0.2s;
+}
+.modal-close-button:hover {
+    color: var(--deep-navy);
+}
+
+/* --- Search Section --- */
+.modal-search {
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--light-gray);
+    background-color: #f8f9fa;
+}
+
+.search-input-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-icon {
+    position: absolute;
+    left: 12px;
+    color: var(--text-muted-dark);
+    z-index: 1;
+}
+
+.search-input {
+    width: 100%;
+    padding: 10px 12px 10px 40px; /* Leave space for search icon */
+    border: 1px solid var(--light-gray);
+    border-radius: 5px;
+    font-size: 0.95em;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    outline: none;
+}
+
+.search-input:focus {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 2px rgba(32, 201, 151, 0.1);
+}
+
+.search-input::placeholder {
+    color: var(--text-muted-dark);
+}
+
+/* --- Create Vendor Section --- */
+.modal-actions-top {
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--light-gray);
+}
+
+.add-vendor-button {
+    background: none;
+    border: 1px dashed var(--teal);
+    color: var(--teal);
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: background-color 0.2s, color 0.2s;
+}
+.add-vendor-button:hover:not(:disabled) {
+    background-color: var(--teal-lighter);
+    color: var(--teal-darker);
+}
+.add-vendor-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.add-vendor-button svg {
+    margin-bottom: -1px;
+}
+
+.add-vendor-input-area {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 5px;
+}
+
+.add-vendor-input-area input[type="text"] {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--light-gray);
+    border-radius: 4px;
+    font-size: 0.9em;
+    outline: none;
+}
+
+.add-vendor-input-area input:focus {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 2px rgba(32, 201, 151, 0.1);
+}
+
+.add-vendor-input-area input:disabled {
+    background-color: #f5f5f5;
+    cursor: not-allowed;
+}
+
+.add-vendor-input-area button {
+    padding: 6px 8px;
+    border: 1px solid var(--teal);
+    background-color: var(--teal);
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.add-vendor-input-area button:hover:not(:disabled) {
+    background-color: var(--teal-darker);
+}
+
+.add-vendor-input-area button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.add-vendor-input-area button .spinner-inline {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.add-vendor-input-area .inline-error-text {
+    color: var(--danger);
+    font-size: 0.8em;
+    margin-top: 5px;
+}
+
+.modal-error.inline-error-text {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.85em;
+    color: var(--danger);
+}
+
+/* --- Modal Body --- */
+.modal-body {
+    padding: 20px;
+    overflow-y: auto; /* Allow vendor list scrolling */
+    flex-grow: 1;
+}
+
+.selection-preview {
+    font-size: 0.95em;
+    color: var(--text-muted-dark);
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed var(--light-gray);
+}
+.selection-preview strong {
+    color: var(--deep-navy);
+    font-weight: 600;
+}
+
+.vendor-list-container {
+    transition: opacity 0.3s;
+}
+
+.vendor-list-container.disabled-list {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+/* --- Loading and Error States --- */
+.loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    color: var(--text-muted-dark);
+}
+
+.loading-container .spinner {
+    font-size: 24px;
+    margin-bottom: 15px;
+    animation: spin 1s linear infinite;
+}
+
+.loading-container p {
+    margin: 0;
+}
+
+.error-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    text-align: center;
+}
+
+.error-message {
+    color: var(--danger);
+    margin-bottom: 15px;
+    font-size: 0.95em;
+}
+
+.retry-button {
+    padding: 8px 16px;
+    background-color: var(--teal);
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.2s;
+}
+
+.retry-button:hover {
+    background-color: var(--teal-darker);
+}
+
+/* --- Vendor List --- */
+.vendor-section {
+    margin-bottom: 20px;
+}
+
+.vendor-section h4 {
+    font-size: 0.85em;
+    text-transform: uppercase;
+    color: var(--text-muted-dark);
+    margin: 0 0 10px 0;
+    letter-spacing: 0.5px;
+}
+
+.vendor-list {
+    border: 1px solid var(--light-gray);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.vendor-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    border-bottom: 1px solid var(--light-gray);
+    cursor: pointer;
+    transition: background-color 0.2s, border-left 0.2s;
+    background-color: white;
+}
+
+.vendor-item:last-child {
+    border-bottom: none;
+}
+
+.vendor-item:hover {
+    background-color: #f8f9fa;
+}
+
+.vendor-item.selected {
+    background-color: var(--teal-lighter);
+    border-left: 4px solid var(--teal);
+}
+
+.vendor-item.selected:hover {
+    background-color: var(--teal-lighter);
+}
+
+.vendor-name {
+    font-weight: 500;
+    color: var(--deep-navy);
+    flex: 1;
+}
+
+.vendor-type {
+    font-size: 0.8em;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.vendor-item .vendor-type {
+    background-color: var(--light-gray);
+    color: var(--text-muted-dark);
+}
+
+.vendor-item.selected .vendor-type {
+    background-color: var(--teal);
+    color: white;
+}
+
+/* --- No Vendors Message --- */
+.no-vendors-message {
+    text-align: center;
+    color: var(--text-muted-dark);
+    padding: 40px 20px;
+    font-style: italic;
+}
+
+/* --- Modal Footer --- */
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 15px 20px;
+    border-top: 1px solid var(--light-gray);
+    background-color: #f8f9fa;
+}
+
+.modal-button {
+    padding: 8px 18px;
+    font-size: 0.95em;
+    font-weight: 600;
+    border-radius: 5px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+    margin-left: 10px;
+}
+.modal-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.modal-button.cancel {
+    background-color: #e9ecef;
+    color: var(--text-muted-dark);
+    border-color: #e9ecef;
+}
+.modal-button.cancel:hover:not(:disabled) {
+    background-color: #dee2e6;
+    border-color: #dee2e6;
+}
+
+.modal-button.confirm {
+    background-color: var(--teal);
+    color: white;
+    border-color: var(--teal);
+}
+.modal-button.confirm:hover:not(:disabled) {
+    background-color: var(--teal-darker);
+    border-color: var(--teal-darker);
+}
+
+/* --- Responsive Design --- */
+@media (max-width: 768px) {
+    .vendor-modal-content {
+        width: 95%;
+        max-height: 90vh;
+        margin: 20px;
+    }
+    
+    .modal-header {
+        padding: 12px 15px;
+    }
+    
+    .modal-body {
+        padding: 15px;
+    }
+    
+    .modal-search {
+        padding: 12px 15px;
+    }
+    
+    .modal-actions-top {
+        padding: 8px 15px;
+    }
+    
+    .modal-footer {
+        padding: 12px 15px;
+    }
+    
+    .vendor-item {
+        padding: 10px 12px;
+    }
+    
+    .vendor-modal--sm,
+    .vendor-modal--md,
+    .vendor-modal--lg {
+        max-width: none; /* Full width on mobile */
+    }
+} 
