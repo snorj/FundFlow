@@ -25,12 +25,55 @@
     border-radius: 8px;
     box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
     width: 90%;
-    max-width: 550px; /* Limit modal width */
+    max-width: 550px; /* Default medium size */
     max-height: 85vh; /* Limit height */
     display: flex;
     flex-direction: column;
     overflow: hidden; /* Prevent content overflow */
     animation: slideUpFadeInModal 0.3s ease-out forwards;
+  }
+  
+  /* --- NEW: Modal Size Variations --- */
+  .category-modal--sm {
+    max-width: 400px;
+  }
+  
+  .category-modal--md {
+    max-width: 550px; /* Default */
+  }
+  
+  .category-modal--lg {
+    max-width: 750px;
+  }
+
+  /* --- NEW: Selection Mode Variations --- */
+  .category-modal--immediate {
+    /* Compact styling for immediate selection */
+  }
+  
+  .category-modal--immediate .modal-body {
+    padding-bottom: 15px; /* Reduce padding when no footer */
+  }
+  
+  .category-modal--confirm {
+    /* Standard styling for confirmation mode */
+  }
+  
+  .category-modal--none {
+    /* Display-only mode styling */
+  }
+  
+  .category-modal--none .selection-preview {
+    display: none; /* Hide selection preview in none mode */
+  }
+
+  /* --- NEW: Feature-based Variations --- */
+  .category-modal--with-creation {
+    /* Standard spacing for modals with creation features */
+  }
+  
+  .category-modal--no-creation .modal-actions-top {
+    display: none; /* Hide creation UI when not allowed */
   }
   
   @keyframes slideUpFadeInModal {

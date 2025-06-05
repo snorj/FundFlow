@@ -10,7 +10,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser # For
 from rest_framework.response import Response
 from django.db.models import Q
 from .models import Category, Transaction, Vendor, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
-from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer # Add TransactionSerializer later
+from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, TransactionCreateSerializer # Add TransactionCreateSerializer
 from .permissions import IsOwnerOrSystemReadOnly, IsOwner # Import IsOwner
 import logging
 from django.db.models import Count, Min, Sum, Case, When, Value, DecimalField
@@ -134,6 +134,74 @@ class TransactionDestroyView(generics.RetrieveDestroyAPIView):
     def perform_destroy(self, instance):
         logger.info(f"User {self.request.user.id}: Deleting transaction ID {instance.id} ('{instance.description}').")
         instance.delete()
+
+# --- Transaction Create View ---
+class TransactionCreateView(generics.CreateAPIView):
+    """
+    API endpoint to create manual transactions for the authenticated user.
+    Handles validation, currency conversion, and proper relationship assignment.
+    """
+    serializer_class = TransactionCreateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def perform_create(self, serializer):
+        """
+        Override to set the user and handle any additional logic during creation.
+        """
+        user = self.request.user
+        logger.info(f"User {user.id}: Creating manual transaction.")
+        
+        # The serializer's create method handles most of the logic
+        # including user assignment, currency conversion, etc.
+        transaction = serializer.save()
+        
+        logger.info(f"User {user.id}: Successfully created manual transaction ID {transaction.id} "
+                   f"('{transaction.description}', {transaction.signed_original_amount} {transaction.original_currency}).")
+        
+        return transaction
+
+    def get_serializer_context(self):
+        """Pass request to serializer context for validation."""
+        return {'request': self.request}
+
+    def create(self, request, *args, **kwargs):
+        """
+        Override create to provide enhanced response data and error handling.
+        """
+        serializer = self.get_serializer(data=request.data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            transaction = self.perform_create(serializer)
+            
+            # Use the standard TransactionSerializer for the response
+            # to provide consistent read format (includes computed fields)
+            response_serializer = TransactionSerializer(transaction, context={'request': request})
+            
+            # Prepare success response with additional metadata
+            response_data = {
+                'transaction': response_serializer.data,
+                'message': 'Transaction created successfully.',
+                'currency_converted': transaction.aud_amount is not None,
+                'conversion_rate': float(transaction.exchange_rate_to_aud) if transaction.exchange_rate_to_aud else None
+            }
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            # Log detailed error for debugging
+            logger.error(f"User {request.user.id}: Failed to create manual transaction: {e}", exc_info=True)
+            
+            # If it's a validation error, let DRF handle it normally
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            # For unexpected errors, return generic error message
+            return Response(
+                {'error': 'Failed to create transaction. Please check your input and try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 # Create your views here.
 # --- NEW BATCH CATEGORIZE VIEW ---

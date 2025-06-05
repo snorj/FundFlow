@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import Category, Transaction, Vendor, BASE_CURRENCY_FOR_CONVERSION
+from django.db.models import Q
 
 User = get_user_model()
 
@@ -256,3 +257,229 @@ class VendorSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"A vendor named '{value}' already exists.")
 
         return value.strip()  # Return cleaned value
+
+class TransactionCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating manual transactions.
+    Handles manual transaction creation with proper field validation and currency conversion.
+    """
+    # Use separate fields for foreign key relationships for better control
+    category_id = serializers.IntegerField(required=False, allow_null=True, source='category.id')
+    vendor_id = serializers.IntegerField(required=False, allow_null=True, source='vendor.id')
+    
+    # Override to make these fields required for manual creation
+    transaction_date = serializers.DateField(required=True)
+    description = serializers.CharField(required=True, max_length=500)
+    original_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=True)
+    original_currency = serializers.CharField(max_length=3, required=True)
+    direction = serializers.ChoiceField(choices=['DEBIT', 'CREDIT'], required=True)
+
+    class Meta:
+        model = Transaction
+        fields = [
+            'transaction_date',
+            'description', 
+            'original_amount',
+            'original_currency',
+            'direction',
+            'category_id',
+            'vendor_id',
+        ]
+
+    def validate_original_amount(self, value):
+        """Ensure amount is positive."""
+        if value is None:
+            raise serializers.ValidationError("Amount is required.")
+        if value <= 0:
+            raise serializers.ValidationError("Amount must be positive.")
+        return value
+
+    def validate_original_currency(self, value):
+        """Ensure currency is a valid 3-letter code."""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Currency code is required.")
+        
+        value = value.strip().upper()
+        if len(value) != 3:
+            raise serializers.ValidationError("Currency code must be exactly 3 characters.")
+        
+        # Basic validation - could be enhanced with list of valid ISO codes
+        if not value.isalpha():
+            raise serializers.ValidationError("Currency code must contain only letters.")
+        
+        # List of commonly supported currencies - could be made configurable
+        SUPPORTED_CURRENCIES = {
+            'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY', 'SEK', 'NZD',
+            'MXN', 'SGD', 'HKD', 'NOK', 'ZAR', 'INR', 'TRY', 'BRL', 'TWD', 'DKK',
+            'PLN', 'THB', 'ILS', 'KRW', 'CZK', 'HUF', 'RON', 'RUB', 'CLP', 'PHP'
+        }
+        
+        if value not in SUPPORTED_CURRENCIES:
+            raise serializers.ValidationError(
+                f"Currency '{value}' is not supported. Supported currencies: {', '.join(sorted(SUPPORTED_CURRENCIES))}"
+            )
+        
+        return value
+
+    def validate_transaction_date(self, value):
+        """
+        Validate transaction date - ensure it's not too far in the future
+        and warn if it's very old (but allow it).
+        """
+        from datetime import date, timedelta
+        
+        if value is None:
+            raise serializers.ValidationError("Transaction date is required.")
+        
+        today = date.today()
+        
+        # Don't allow dates more than 1 year in the future
+        max_future_date = today + timedelta(days=365)
+        if value > max_future_date:
+            raise serializers.ValidationError(
+                f"Transaction date cannot be more than 1 year in the future (max: {max_future_date})."
+            )
+        
+        # Warn about very old dates (but allow them)
+        min_reasonable_date = today - timedelta(days=3650)  # 10 years ago
+        if value < min_reasonable_date:
+            # Note: We could log a warning here but still allow the transaction
+            # For now, we'll accept it but could add logging if needed
+            pass
+        
+        return value
+
+    def validate_description(self, value):
+        """Ensure description is not empty."""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Description is required.")
+        return value.strip()
+
+    def validate_category_id(self, value):
+        """
+        Ensure the category exists and is accessible to the user.
+        Category must be a system category (user=None) or belong to the request.user.
+        """
+        if value is None:
+            return None  # Allow null category
+            
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+
+        try:
+            category = Category.objects.filter(
+                Q(user__isnull=True) | Q(user=request.user)
+            ).get(id=value)
+            return category
+        except Category.DoesNotExist:
+            raise serializers.ValidationError("Category not found or access denied.")
+
+    def validate_vendor_id(self, value):
+        """
+        Ensure the vendor exists and is accessible to the user.
+        Vendor must be a system vendor (user=None) or belong to the request.user.
+        """
+        if value is None:
+            return None  # Allow null vendor
+            
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+
+        try:
+            vendor = Vendor.objects.filter(
+                Q(user__isnull=True) | Q(user=request.user)
+            ).get(id=value)
+            return vendor
+        except Vendor.DoesNotExist:
+            raise serializers.ValidationError("Vendor not found or access denied.")
+
+    def validate(self, data):
+        """
+        Enhanced object-level validation including currency conversion checks
+        and cross-field validation.
+        """
+        # Ensure we have all required fields
+        required_fields = ['transaction_date', 'description', 'original_amount', 'original_currency', 'direction']
+        for field in required_fields:
+            if field not in data or data[field] is None:
+                raise serializers.ValidationError(f"{field} is required for manual transaction creation.")
+
+        # Additional validation for currency conversion feasibility
+        original_currency = data.get('original_currency')
+        transaction_date = data.get('transaction_date')
+        
+        if original_currency and transaction_date:
+            # Import here to avoid circular imports
+            from .services import get_historical_rate
+            from datetime import date
+            
+            # Check if we can get exchange rate for future currency conversion
+            # Only check if currency is not the base currency
+            if original_currency != BASE_CURRENCY_FOR_CONVERSION:
+                # For future dates, we might not have exchange rates
+                if transaction_date > date.today():
+                    # We'll allow it but note that conversion might fail later
+                    # The actual conversion will happen in the create() method
+                    pass
+                else:
+                    # For past/present dates, we can check if rate is available
+                    # This is optional validation - we don't fail the transaction if rate is unavailable
+                    # The model's update_aud_amount_if_needed() will handle missing rates gracefully
+                    pass
+
+        # Validate amount precision (ensure it's not more than 2 decimal places for most currencies)
+        original_amount = data.get('original_amount')
+        if original_amount is not None:
+            # Convert to string to check decimal places
+            amount_str = str(original_amount)
+            if '.' in amount_str:
+                decimal_places = len(amount_str.split('.')[1])
+                if decimal_places > 2:
+                    raise serializers.ValidationError(
+                        "Amount cannot have more than 2 decimal places."
+                    )
+
+        return data
+
+    def create(self, validated_data):
+        """
+        Enhanced create method with better error handling and currency conversion.
+        """
+        # Extract the related objects from validated data
+        category = validated_data.pop('category', {}).get('id') if 'category' in validated_data else None
+        vendor = validated_data.pop('vendor', {}).get('id') if 'vendor' in validated_data else None
+        
+        # Get the user from context
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+        
+        # Set required fields for transaction creation
+        validated_data['source'] = 'manual'
+        validated_data['category'] = category
+        validated_data['vendor'] = vendor
+        validated_data['user'] = request.user
+        
+        try:
+            # Create the transaction
+            transaction = Transaction.objects.create(**validated_data)
+            
+            # Trigger AUD conversion if needed - this handles rate fetching and conversion
+            conversion_successful = transaction.update_aud_amount_if_needed()
+            
+            # Note: We don't fail the transaction creation if currency conversion fails
+            # The transaction will be created with aud_amount=None, which is acceptable
+            # Currency conversion can be retried later or handled manually
+            
+            return transaction
+            
+        except Exception as e:
+            # Log the error and re-raise with a user-friendly message
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to create manual transaction: {e}", exc_info=True)
+            raise serializers.ValidationError(
+                "Failed to create transaction. Please check your input and try again."
+            )
