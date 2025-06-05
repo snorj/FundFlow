@@ -3,6 +3,8 @@ from django.urls import path
 from .views import (
     CategoryListCreateView,
     CategoryDetailView,
+    VendorListCreateView,
+    VendorDetailView,
     TransactionCSVUploadView,
     TransactionListView,
     TransactionUpdateView,
@@ -16,6 +18,10 @@ urlpatterns = [
     # Category URLs
     path('categories/', CategoryListCreateView.as_view(), name='category-list-create'),
     path('categories/<int:pk>/', CategoryDetailView.as_view(), name='category-detail'),
+
+    # Vendor URLs
+    path('vendors/', VendorListCreateView.as_view(), name='vendor-list-create'),
+    path('vendors/<int:pk>/', VendorDetailView.as_view(), name='vendor-detail'),
 
     # Transaction URLs
     path('transactions/upload/', TransactionCSVUploadView.as_view(), name='transaction-csv-upload'),

@@ -9,8 +9,8 @@ from rest_framework.views import APIView # Use APIView for custom logic
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser # For file uploads
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import Category, Transaction, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
-from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer # Add TransactionSerializer later
+from .models import Category, Transaction, Vendor, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
+from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer # Add TransactionSerializer later
 from .permissions import IsOwnerOrSystemReadOnly, IsOwner # Import IsOwner
 import logging
 from django.db.models import Count, Min, Sum, Case, When, Value, DecimalField
@@ -569,6 +569,94 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
         except Exception as e:
             logger.error(f"User {user.id}: Error during deletion of category '{category_to_delete.name}': {e}", exc_info=True)
             return Response({"error": "An error occurred while trying to delete the category."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# --- Vendor Views ---
+class VendorListCreateView(generics.ListCreateAPIView):
+    """
+    API endpoint to list accessible vendors (System + User's Own)
+    and create new custom vendors for the authenticated user.
+    """
+    serializer_class = VendorSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
+    ordering_fields = ['name', 'created_at', 'updated_at']
+    ordering = ['name']  # Default alphabetical sort
+
+    def get_queryset(self):
+        """
+        This view should return a list of all system vendors
+        plus vendors owned by the currently authenticated user.
+        """
+        user = self.request.user
+        # Use Q objects for OR condition: user is None OR user is the current user
+        return Vendor.objects.filter(
+            Q(user__isnull=True) | Q(user=user)
+        ).distinct()
+
+    def perform_create(self, serializer):
+        """
+        Automatically set the user field to the logged-in user
+        when creating a new vendor.
+        """
+        serializer.save(user=self.request.user)
+
+    def get_serializer_context(self):
+        """Pass request to serializer context for validation."""
+        return {'request': self.request}
+
+class VendorDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint to retrieve, update, or delete a specific vendor.
+    Permissions ensure users can only modify their own custom vendors.
+    """
+    serializer_class = VendorSerializer
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrSystemReadOnly]
+    lookup_field = 'pk'
+
+    def get_queryset(self):
+        """
+        Return vendors accessible to the user (system vendors + their own).
+        """
+        user = self.request.user
+        return Vendor.objects.filter(Q(user__isnull=True) | Q(user=user)).distinct()
+
+    def perform_update(self, serializer):
+        """Ensure user context is available for serializer validation during update."""
+        serializer.save()  # User field is read-only, won't be changed
+
+    def get_serializer_context(self):
+        """Pass request to serializer context for validation."""
+        return {'request': self.request}
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Handle vendor deletion with proper cleanup of related transactions.
+        """
+        vendor_to_delete = self.get_object()  # Checks permissions via get_queryset
+        user = request.user
+
+        logger.info(f"User {user.id}: Attempting to delete vendor ID {vendor_to_delete.id} ('{vendor_to_delete.name}')")
+
+        try:
+            with db_transaction.atomic():
+                # 1. Handle Transactions: Set vendor to null (SET_NULL behavior)
+                transactions_updated_count = Transaction.objects.filter(vendor=vendor_to_delete).update(
+                    vendor=None, 
+                    updated_at=datetime.now(timezone.utc)
+                )
+                logger.info(f"User {user.id}: Unassigned {transactions_updated_count} transactions from deleted vendor '{vendor_to_delete.name}'.")
+
+                # 2. Delete the vendor itself
+                vendor_name = vendor_to_delete.name  # Store for logging before deletion
+                vendor_to_delete.delete()
+                logger.info(f"User {user.id}: Successfully deleted vendor '{vendor_name}'.")
+
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        except Exception as e:
+            logger.error(f"User {user.id}: Error during deletion of vendor '{vendor_to_delete.name}': {e}", exc_info=True)
+            return Response({"error": "An error occurred while trying to delete the vendor."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class TransactionCSVUploadView(APIView):
     permission_classes = [permissions.IsAuthenticated]

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Category, Transaction, BASE_CURRENCY_FOR_CONVERSION
+from .models import Category, Transaction, Vendor, BASE_CURRENCY_FOR_CONVERSION
 
 User = get_user_model()
 
@@ -203,3 +203,56 @@ class TransactionUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"original_currency": "Original currency cannot be empty if provided."})
 
         return data
+
+class VendorSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Vendor model for CRUD operations.
+    Handles vendor creation, reading, updating, and deletion.
+    """
+    # User field should not be directly set by API client, set internally in view
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    
+    # Add a derived field to show if it's a system-wide vendor
+    is_system_vendor = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = Vendor
+        fields = [
+            'id',
+            'name',
+            'user',
+            'is_system_vendor',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+
+    def get_is_system_vendor(self, obj):
+        """Determine if the vendor is system-wide (no specific user)."""
+        return obj.user is None
+
+    def validate_name(self, value):
+        """
+        Ensure vendor name is not empty and is unique within the user's scope.
+        """
+        # Basic check: Name shouldn't be empty
+        if not value or not value.strip():
+            raise serializers.ValidationError("Vendor name cannot be empty.")
+
+        # Uniqueness check within the same user context
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+
+        instance = self.instance  # None during CREATE, the Vendor object during UPDATE
+        
+        # Check for existing vendor with same name for this user
+        queryset = Vendor.objects.filter(name__iexact=value.strip(), user=request.user)
+        
+        if instance:  # If updating, exclude self from the check
+            queryset = queryset.exclude(pk=instance.pk)
+
+        if queryset.exists():
+            raise serializers.ValidationError(f"A vendor named '{value}' already exists.")
+
+        return value.strip()  # Return cleaned value

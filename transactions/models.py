@@ -49,6 +49,31 @@ class Category(models.Model):
             return f"{self.parent} > {self.name}"
         return self.name
 
+class Vendor(models.Model):
+    """
+    Represents a vendor or merchant associated with transactions.
+    """
+    name = models.CharField(
+        max_length=255,
+        help_text="Name of the vendor (e.g., 'Woolworths', 'Shell', 'Coffee Club')."
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        help_text="User who owns this vendor. Null for system-wide vendors."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'name')
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
 class Transaction(models.Model):
     SOURCE_CHOICES = [
         ('csv', 'CSV Upload'),
@@ -60,6 +85,7 @@ class Transaction(models.Model):
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions', db_index=True)
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions', db_index=True)
+    vendor = models.ForeignKey(Vendor, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions', db_index=True)
     transaction_date = models.DateField(db_index=True)
     description = models.TextField(help_text="Description of the transaction (e.g., merchant name, notes).")
 
