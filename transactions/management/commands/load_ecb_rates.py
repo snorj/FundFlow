@@ -206,14 +206,18 @@ class Command(BaseCommand):
                 
                 # Also create EUR rate from AUD/EUR data
                 # This ensures EUR is available as a target currency
+                # Note: aud_eur_rate from CSV means "1 EUR = aud_eur_rate AUD"
+                # But we need to store "1 AUD = ? EUR", so we use the inverse
+                aud_to_eur_rate = Decimal('1') / aud_eur_rate
+                
                 if options['verbosity'] >= 2:
-                    self.stdout.write(f"  Adding EUR rate: {aud_eur_rate}")
+                    self.stdout.write(f"  Adding EUR rate: 1 AUD = {aud_to_eur_rate} EUR (inverse of {aud_eur_rate})")
                 
                 rates_to_create.append(HistoricalExchangeRate(
                     date=parsed_date,
                     source_currency='AUD',
                     target_currency='EUR',
-                    rate=aud_eur_rate
+                    rate=aud_to_eur_rate
                 ))
 
             if rates_to_create:
