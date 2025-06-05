@@ -100,10 +100,13 @@ const CategorySelectorModal = ({
 
   const handleConfirm = useCallback(() => {
     if (selectionMode === 'confirm' && selectionState.pendingSelectionId !== null) {
+      // Find the full category object to pass to parent
+      const selectedCategory = processedCategories.all.find(c => c.id === selectionState.pendingSelectionId);
       setSelectionState(prev => ({ ...prev, selectedCategoryId: prev.pendingSelectionId }));
-      onSelectCategory(selectionState.pendingSelectionId);
+      onSelectCategory(selectedCategory); // Pass the full category object, not just ID
+      onClose(); // Close modal after confirming
     }
-  }, [selectionMode, selectionState.pendingSelectionId, onSelectCategory]);
+  }, [selectionMode, selectionState.pendingSelectionId, onSelectCategory, processedCategories.all, onClose]);
 
   // Category creation handler
   const handleCreateCategory = useCallback(async (name, parentId = null) => {

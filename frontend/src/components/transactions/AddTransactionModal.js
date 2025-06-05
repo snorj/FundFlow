@@ -5,6 +5,7 @@ import { FiX, FiLoader, FiSave, FiCalendar, FiDollarSign, FiTag, FiUser } from '
 import CategorySelectorModal from '../categorization/CategorySelectorModal';
 import VendorSelectorModal from './VendorSelectorModal';
 import transactionService from '../../services/transactions';
+import categoryService from '../../services/categories';
 
 const AddTransactionModal = ({
   // Core Modal Props
@@ -47,6 +48,31 @@ const AddTransactionModal = ({
     showVendorSelector: false,
   });
 
+  // Categories State
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+
+  // Load categories
+  const loadCategories = useCallback(async () => {
+    if (!showCategoryField) return;
+    
+    setCategoriesLoading(true);
+    try {
+      const categoriesData = await categoryService.getCategories();
+      setCategories(categoriesData || []);
+    } catch (error) {
+      console.error('Failed to load categories:', error);
+      setCategories([]);
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }, [showCategoryField]);
+
+  // Handle categories update (after category creation)
+  const handleCategoriesUpdate = useCallback((updatedCategories) => {
+    setCategories(updatedCategories || []);
+  }, []);
+
   // Reset state when modal opens/closes
   useEffect(() => {
     if (isOpen) {
@@ -70,8 +96,11 @@ const AddTransactionModal = ({
         showCategorySelector: false,
         showVendorSelector: false,
       });
+
+      // Load categories when modal opens
+      loadCategories();
     }
-  }, [isOpen]);
+  }, [isOpen, loadCategories]);
 
   // Form validation
   const validateForm = useCallback(() => {
@@ -440,8 +469,10 @@ const AddTransactionModal = ({
           isOpen={uiState.showCategorySelector}
           onClose={handleCategoryModalClose}
           onSelectCategory={handleCategorySelect}
-          initialCategory={selectionState.selectedCategory}
-          selectionMode="immediate"
+          initialCategory={selectionState.selectedCategory?.id || null}
+          selectionMode="confirm"
+          categories={categories}
+          onCategoriesUpdate={handleCategoriesUpdate}
         />
       )}
 

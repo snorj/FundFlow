@@ -116,6 +116,16 @@ class Transaction(models.Model):
         blank=True,
         help_text="Exchange rate used to convert original_amount to aud_amount (Original Currency to AUD)."
     )
+    # Currency conversion tracking fields
+    is_aud_conversion_manual = models.BooleanField(
+        default=False,
+        help_text="Whether the AUD conversion was manually set by a user or automatically calculated."
+    )
+    manual_conversion_note = models.TextField(
+        null=True,
+        blank=True,
+        help_text="Optional note explaining the manual conversion reasoning."
+    )
     # --- END RENAMED and NEW Currency Fields ---
 
     # --- Fields from CSV/Bank (Keep as is) ---
