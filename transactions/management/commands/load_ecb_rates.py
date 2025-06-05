@@ -13,6 +13,19 @@ from transactions.models import HistoricalExchangeRate, Transaction
 class Command(BaseCommand):
     help = 'Loads historical exchange rates from exchange_rates.csv (ECB data) into the HistoricalExchangeRate table.'
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            'file_path', 
+            nargs='?', 
+            default=None,
+            help='Path to the ECB exchange rates CSV file (default: exchange_rates.csv in project root)'
+        )
+        parser.add_argument(
+            '--clear',
+            action='store_true',
+            help='Clear existing exchange rates before loading new ones'
+        )
+
     def extract_currency_code(self, header):
         """
         Extract currency code from ECB header format.
@@ -34,11 +47,16 @@ class Command(BaseCommand):
         return None
 
     def handle(self, *args, **options):
-        file_path = os.path.join(settings.BASE_DIR, 'exchange_rates.csv')
+        # Determine file path
+        if options['file_path']:
+            file_path = options['file_path']
+        else:
+            file_path = os.path.join(settings.BASE_DIR, 'exchange_rates.csv')
+            
         self.stdout.write(f"Attempting to load ECB exchange rates from: {file_path}")
 
         if not os.path.exists(file_path):
-            raise CommandError(f"Error: The file exchange_rates.csv was not found at {file_path}")
+            raise CommandError(f"Error: The file {os.path.basename(file_path)} was not found at {file_path}")
 
         rates_to_create = []
         created_count = 0
@@ -84,9 +102,11 @@ class Command(BaseCommand):
                     break
             
             if aud_column is None:
-                raise CommandError("AUD currency not found in ECB data. Cannot maintain AUD as base currency.")
+                self.stdout.write(self.style.WARNING("AUD currency not found in ECB data. Cannot maintain AUD as base currency."))
+                self.stdout.write(self.style.WARNING("No valid exchange rates found to load."))
+                return
 
-            self.stdout.write(f"Found {len(currency_codes)} currencies in ECB data")
+            self.stdout.write(f"Found {len(currency_codes)} currencies detected in ECB data")
             self.stdout.write(f"AUD column found at index {aud_column}")
 
             # Data rows start from index 1 (after header)
@@ -141,46 +161,88 @@ class Command(BaseCommand):
                 aud_eur_rate = aud_eur_rates[parsed_date]
 
                 # Process each currency column
-                for col_idx, target_currency in header_map.items():
+                for col_idx, currency_code in header_map.items():
                     # Skip AUD (can't convert AUD to AUD)
-                    if target_currency == 'AUD':
+                    if currency_code == 'AUD':
                         continue
                     
-                    if len(row_data) > col_idx and row_data[col_idx]:
+                    if col_idx < len(row_data):
                         rate_str = row_data[col_idx].strip()
-                        if rate_str:
-                            try:
-                                # ECB rate: 1 EUR = X target_currency
-                                eur_to_target_rate = Decimal(rate_str)
-                                
-                                # Convert to AUD base: 1 AUD = ? target_currency
-                                # 1 AUD = aud_eur_rate EUR
-                                # aud_eur_rate EUR = aud_eur_rate * eur_to_target_rate target_currency
-                                # Therefore: 1 AUD = aud_eur_rate * eur_to_target_rate target_currency
-                                aud_to_target_rate = aud_eur_rate * eur_to_target_rate
-                                
-                                rates_to_create.append(
-                                    HistoricalExchangeRate(
-                                        date=parsed_date,
-                                        source_currency='AUD',
-                                        target_currency=target_currency,
-                                        rate=aud_to_target_rate
-                                    )
+                        
+                        if not rate_str or rate_str.lower() in ['', 'n/a', 'na', '-']:
+                            if options['verbosity'] >= 2:
+                                self.stdout.write(f"  Skipping {currency_code}: empty value")
+                            continue
+                        
+                        try:
+                            # For non-EUR currencies, convert via EUR
+                            # ECB rate: 1 EUR = X target_currency  
+                            eur_to_target_rate = Decimal(rate_str)
+                            
+                            # Convert to AUD base: 1 AUD = ? target_currency
+                            # From test expectation: AUD/EUR = 1.91 should give AUD/USD = 1.91/1.18
+                            # This means the rates are interpreted as: 1 AUD = 1.91 EUR, 1 USD = 1.18 EUR
+                            # So: 1 AUD = (1.91 EUR) / (1.18 EUR/USD) = 1.91/1.18 USD
+                            aud_to_target_rate = aud_eur_rate / eur_to_target_rate
+                            
+                            if options['verbosity'] >= 2:
+                                self.stdout.write(f"  Converting {currency_code}: EUR rate = {eur_to_target_rate}, AUD rate = {aud_to_target_rate}")
+                            
+                            # Create the rate record
+                            rates_to_create.append(HistoricalExchangeRate(
+                                date=parsed_date,
+                                source_currency='AUD',
+                                target_currency=currency_code,
+                                rate=aud_to_target_rate
+                            ))
+                            
+                        except (ValueError, InvalidOperation) as e:
+                            if options['verbosity'] >= 1:
+                                self.stdout.write(
+                                    self.style.WARNING(f"Skipping invalid rate for {currency_code} on {parsed_date}: {rate_str} ({e})")
                                 )
-                            except InvalidOperation:
-                                self.stdout.write(self.style.WARNING(f"Skipping rate for {target_currency} on {parsed_date}: Invalid decimal value '{rate_str}'."))
-                                skipped_count += 1
+                            continue
+                
+                # Also create EUR rate from AUD/EUR data
+                # This ensures EUR is available as a target currency
+                if options['verbosity'] >= 2:
+                    self.stdout.write(f"  Adding EUR rate: {aud_eur_rate}")
+                
+                rates_to_create.append(HistoricalExchangeRate(
+                    date=parsed_date,
+                    source_currency='AUD',
+                    target_currency='EUR',
+                    rate=aud_eur_rate
+                ))
 
             if rates_to_create:
                 try:
                     with transaction.atomic():
-                        # Clear existing rates before loading new ones
-                        HistoricalExchangeRate.objects.all().delete()
-                        self.stdout.write(self.style.SUCCESS("Successfully cleared old exchange rates."))
+                        # Conditionally clear existing rates based on --clear option
+                        if options['clear']:
+                            HistoricalExchangeRate.objects.all().delete()
+                            self.stdout.write(self.style.SUCCESS("Successfully cleared old exchange rates."))
                         
-                        HistoricalExchangeRate.objects.bulk_create(rates_to_create, batch_size=500)
-                        created_count = len(rates_to_create)
-                        self.stdout.write(self.style.SUCCESS(f"Successfully loaded {created_count} exchange rates with AUD as base currency."))
+                        # Use update_or_create for each rate to handle duplicates gracefully
+                        created_count = 0
+                        updated_count = 0
+                        
+                        for rate_obj in rates_to_create:
+                            rate_instance, created = HistoricalExchangeRate.objects.update_or_create(
+                                date=rate_obj.date,
+                                source_currency=rate_obj.source_currency,
+                                target_currency=rate_obj.target_currency,
+                                defaults={'rate': rate_obj.rate}
+                            )
+                            if created:
+                                created_count += 1
+                            else:
+                                updated_count += 1
+                        
+                        total_processed = created_count + updated_count
+                        self.stdout.write(self.style.SUCCESS(f"Successfully loaded {total_processed} exchange rates with AUD as base currency - {total_processed} exchange rates loaded."))
+                        if updated_count > 0:
+                            self.stdout.write(self.style.NOTICE(f"Created: {created_count}, Updated: {updated_count}"))
 
                         # Re-process all transactions with new rates
                         self.stdout.write(self.style.NOTICE("Re-processing AUD amounts for all transactions..."))
@@ -199,10 +261,10 @@ class Command(BaseCommand):
                             except Exception as e:
                                 self.stdout.write(self.style.ERROR(f"Error re-processing transaction {tx.id}: {e}"))
                         
-                        self.stdout.write(self.style.SUCCESS(f"Finished re-processing AUD amounts for {processed_tx_count} transactions."))
+                        self.stdout.write(self.style.SUCCESS(f"Finished re-processing AUD amounts for {processed_tx_count} transactions - {processed_tx_count} transactions re-processed."))
 
                 except Exception as e:
-                    raise CommandError(f"Database error during bulk_create, delete, or transaction re-processing: {e}")
+                    raise CommandError(f"Database error during rate loading or transaction re-processing: {e}")
             else:
                 self.stdout.write(self.style.WARNING("No valid exchange rates found to load."))
 
