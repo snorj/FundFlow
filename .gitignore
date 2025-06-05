@@ -5,7 +5,14 @@
 
 # Dont track csv data
 *.csv
+!exchange_rates.csv # Exception for exchange rates
 !f11-data.csv # Exception for RBA exchange rate data
+
+# Taskmaster
+.taskmaster/
+
+ECB_IMPLEMENTATION_VERIFICATION.md
+EXCHANGE_RATES_README.md
 
 # Python
 __pycache__/
