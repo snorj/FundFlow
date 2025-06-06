@@ -19,10 +19,12 @@ from transactions import serializers # Added logging
 from django.db.models import Max # Import Max for aggregation
 from rest_framework.parsers import JSONParser
 from integrations.services import get_historical_exchange_rate
-from .services import get_historical_rate # Import our new rate service
+from .services import get_historical_rate, get_current_exchange_rate # Import our new rate service
 from django_filters import rest_framework as filters # Import for filtering
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.filters import OrderingFilter
+from collections import defaultdict
+from django.utils import timezone as django_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -937,7 +939,7 @@ class TransactionCSVUploadView(APIView):
 class DashboardBalanceView(views.APIView):
     """
     API endpoint to calculate and return the user's total balance 
-    in a specified currency, based on all their transactions.
+    in a specified currency using currency-first aggregation with current exchange rates.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -945,79 +947,58 @@ class DashboardBalanceView(views.APIView):
         user = request.user
         target_currency = request.query_params.get('target_currency', BASE_CURRENCY_FOR_CONVERSION).upper()
 
-        logger.info(f"User {user.id}: Calculating dashboard balance in {target_currency}.")
+        logger.info(f"User {user.id}: Calculating dashboard balance in {target_currency} using currency-first aggregation.")
 
+        # Step 1: Aggregate by currency
+        currency_totals = defaultdict(Decimal)
         transactions = Transaction.objects.filter(user=user)
-        total_transactions_count = transactions.count()
-
-        current_total_balance = Decimal('0.00')
-        converted_transactions_count = 0
-        unconverted_transactions_count = 0
-        warnings = []
-
-        for tx in transactions:
-            converted_amount_in_target = None
-
-            # Path 1: Original currency is already the target currency
-            if tx.original_currency == target_currency:
-                converted_amount_in_target = tx.signed_original_amount # Uses the property for correct sign
-            
-            # Path 2: Target currency is AUD, and AUD amount is pre-calculated on transaction
-            elif target_currency == BASE_CURRENCY_FOR_CONVERSION: 
-                if tx.aud_amount is not None:
-                    converted_amount_in_target = tx.signed_aud_amount # Uses the property for correct sign
-                # else: aud_amount is None, handled by unconverted logic later
-            
-            # Path 3: General case - need to convert
-            else:
-                # If original is AUD, we need AUD -> Target
-                if tx.original_currency == BASE_CURRENCY_FOR_CONVERSION:
-                    rate = get_historical_rate(tx.transaction_date, BASE_CURRENCY_FOR_CONVERSION, target_currency)
-                    if rate:
-                        converted_amount_in_target = tx.signed_original_amount * rate
-                
-                # If original is Foreign, and target is Foreign (and not AUD)
-                # We need Original -> AUD (if aud_amount is missing) -> Target
-                elif tx.original_currency != BASE_CURRENCY_FOR_CONVERSION and target_currency != BASE_CURRENCY_FOR_CONVERSION:
-                    aud_equiv = tx.aud_amount # Use pre-calculated if available
-                    if aud_equiv is None: # If not, try to calculate it now
-                        rate_to_aud = get_historical_rate(tx.transaction_date, tx.original_currency, BASE_CURRENCY_FOR_CONVERSION)
-                        if rate_to_aud:
-                            aud_equiv = tx.original_amount * rate_to_aud
-                        # else: still no AUD equivalent, will be unconverted
-                    
-                    if aud_equiv is not None:
-                        rate_aud_to_target = get_historical_rate(tx.transaction_date, BASE_CURRENCY_FOR_CONVERSION, target_currency)
-                        if rate_aud_to_target:
-                            # Apply direction sign to aud_equiv before final conversion
-                            signed_aud_equiv = aud_equiv if tx.direction == 'CREDIT' else -aud_equiv
-                            converted_amount_in_target = signed_aud_equiv * rate_aud_to_target
-                
-                # (Path 2 already handled AUD target, so this is Foreign original to Non-AUD target implicitly)
-                # This path should ideally not be hit if Path 2 and the previous conditions in Path 3 are well-defined.
-                # However, as a fallback, try direct Original -> Target conversion.
-                # This might be redundant if the above logic is complete.
-                else: # Fallback, e.g. original is USD, target is EUR (should be caught by cross-currency above if aud_amount available)
-                    rate = get_historical_rate(tx.transaction_date, tx.original_currency, target_currency)
-                    if rate:
-                        converted_amount_in_target = tx.signed_original_amount * rate
-
-            if converted_amount_in_target is not None:
-                current_total_balance += converted_amount_in_target.quantize(Decimal('0.01'))
-                converted_transactions_count += 1
-            else:
-                unconverted_transactions_count += 1
         
-        if unconverted_transactions_count > 0:
-            warnings.append(f"{unconverted_transactions_count} transaction(s) could not be converted to {target_currency} and are excluded from the total.")
-
-        logger.info(f"User {user.id}: Balance calculated. Total: {current_total_balance:.2f} {target_currency}. Converted: {converted_transactions_count}/{total_transactions_count}.")
-
+        for tx in transactions:
+            currency_totals[tx.original_currency] += tx.signed_original_amount
+        
+        logger.debug(f"User {user.id}: Currency totals before conversion: {dict(currency_totals)}")
+        
+        # Step 2: Convert to target currency using current rates
+        total_balance = Decimal('0.00')
+        currency_breakdown = []
+        conversion_failures = []
+        
+        for currency, amount in currency_totals.items():
+            if currency == target_currency:
+                converted_amount = amount
+                exchange_rate = Decimal('1.0')
+                is_target_currency = True
+                logger.debug(f"User {user.id}: {currency} is target currency, no conversion needed: {amount}")
+            else:
+                exchange_rate = get_current_exchange_rate(currency, target_currency)
+                if exchange_rate:
+                    converted_amount = amount * exchange_rate
+                    is_target_currency = False
+                    logger.debug(f"User {user.id}: Converted {amount} {currency} to {converted_amount} {target_currency} at rate {exchange_rate}")
+                else:
+                    logger.warning(f"User {user.id}: Failed to get current exchange rate for {currency} -> {target_currency}")
+                    conversion_failures.append(currency)
+                    continue
+            
+            total_balance += converted_amount
+            currency_breakdown.append({
+                'currency': currency,
+                'original_total': amount,
+                'converted_total': converted_amount,
+                'exchange_rate': exchange_rate,
+                'is_target_currency': is_target_currency
+            })
+        
+        # Step 3: Return enhanced response
+        logger.info(f"User {user.id}: Balance calculated using current rates. Total: {total_balance:.2f} {target_currency}. Conversion failures: {len(conversion_failures)}")
+        
         return Response({
-            'total_balance_in_target_currency': current_total_balance.quantize(Decimal('0.01')),
-            'target_currency_code': target_currency,
-            'total_transactions_count': total_transactions_count,
-            'converted_transactions_count': converted_transactions_count,
-            'unconverted_transactions_count': unconverted_transactions_count,
-            'warning': warnings[0] if warnings else None,
+            'balance': total_balance.quantize(Decimal('0.01')),
+            'currency': target_currency,
+            'currency_breakdown': currency_breakdown,
+            'conversion_date': django_timezone.now().date().isoformat(),
+            'methodology': 'current_rates',
+            'total_transactions_count': transactions.count(),
+            'conversion_failures': conversion_failures,
+            'warning': f"Unable to convert {len(conversion_failures)} currencies: {', '.join(conversion_failures)}" if conversion_failures else None
         })
