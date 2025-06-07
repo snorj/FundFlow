@@ -174,9 +174,6 @@ const NewDashboardPage = () => {
          {balance === null && !isLoading && !error && <p>No balance data to display.</p>}
       </div>
 
-      <p>This page will eventually display an overview of all transactions and balances.</p>
-      {/* Placeholder content for transactions list will go here */}
-
       {/* Transaction List Section */}
       <div style={{ marginTop: '30px' }}>
         <h2>Recent Transactions</h2>

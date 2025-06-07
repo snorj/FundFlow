@@ -743,9 +743,17 @@ class TransactionCSVUploadView(APIView):
         file_obj = request.FILES.get('file')
         current_user = request.user
         
-        # --- CSV Currency is Hardcoded to EUR ---
-        CSV_FILE_CURRENCY = 'EUR'
-        # --- End Currency Hardcoding ---
+        # --- NEW: Get account base currency from request ---
+        account_base_currency = request.data.get('account_base_currency', 'EUR').upper()
+        
+        # Validate currency code
+        if len(account_base_currency) != 3:
+            return Response({'error': 'account_base_currency must be a 3-letter currency code'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        # --- CSV Currency is now dynamic based on account ---
+        CSV_FILE_CURRENCY = account_base_currency
+        # --- End Currency Setup ---
 
         if not file_obj: # ... (file validation as before) ...
             return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -883,6 +891,7 @@ class TransactionCSVUploadView(APIView):
                         transaction_date=data_item['transaction_date'],
                         original_amount=data_item['original_amount'], original_currency=original_currency_code,
                         direction=data_item['direction'], aud_amount=aud_amount_val, exchange_rate_to_aud=exchange_rate_val,
+                        account_base_currency=account_base_currency,
                         source='csv', bank_transaction_id=None,
                         source_account_identifier=data_item['source_account_identifier'],
                         counterparty_identifier=data_item['counterparty_identifier'],
@@ -938,67 +947,97 @@ class TransactionCSVUploadView(APIView):
 # --- NEW: Dashboard Balance API View ---
 class DashboardBalanceView(views.APIView):
     """
-    API endpoint to calculate and return the user's total balance 
-    in a specified currency using currency-first aggregation with current exchange rates.
+    API endpoint to calculate and return the user's account holdings 
+    in a specified currency using account-based aggregation.
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         user = request.user
-        target_currency = request.query_params.get('target_currency', BASE_CURRENCY_FOR_CONVERSION).upper()
-
-        logger.info(f"User {user.id}: Calculating dashboard balance in {target_currency} using currency-first aggregation.")
-
-        # Step 1: Aggregate by currency
-        currency_totals = defaultdict(Decimal)
-        transactions = Transaction.objects.filter(user=user)
+        target_currency = request.GET.get('target_currency', BASE_CURRENCY_FOR_CONVERSION).upper()
+        
+        logger.info(f"User {user.id}: Calculating account-based holdings balance for target currency: {target_currency}")
+        
+        # Step 1: Get all user transactions
+        transactions = Transaction.objects.filter(user=user).select_related('category')
+        logger.debug(f"User {user.id}: Processing {transactions.count()} transactions for account holdings")
+        
+        # Step 2: Aggregate by account base currency using account amounts
+        account_holdings = defaultdict(Decimal)
+        transaction_counts = defaultdict(int)
         
         for tx in transactions:
-            currency_totals[tx.original_currency] += tx.signed_original_amount
+            # Use account_amount property which handles Up Bank vs CSV logic
+            account_amount = tx.signed_account_amount
+            if account_amount is not None:
+                if tx.source == 'up_bank':
+                    # Up Bank transactions are always AUD holdings
+                    account_holdings['AUD'] += account_amount
+                    transaction_counts['AUD'] += 1
+                else:
+                    # CSV transactions use their account's base currency
+                    account_holdings[tx.account_base_currency] += account_amount
+                    transaction_counts[tx.account_base_currency] += 1
+                   
+                logger.debug(f"User {user.id}: Transaction {tx.id} - {account_amount} {tx.account_base_currency if tx.source != 'up_bank' else 'AUD'}")
         
-        logger.debug(f"User {user.id}: Currency totals before conversion: {dict(currency_totals)}")
-        
-        # Step 2: Convert to target currency using current rates
+        # Step 3: Convert holdings to target currency for display
         total_balance = Decimal('0.00')
-        currency_breakdown = []
+        holdings_breakdown = []
         conversion_failures = []
         
-        for currency, amount in currency_totals.items():
+        for currency, holding_amount in account_holdings.items():
             if currency == target_currency:
-                converted_amount = amount
+                converted_amount = holding_amount
                 exchange_rate = Decimal('1.0')
-                is_target_currency = True
-                logger.debug(f"User {user.id}: {currency} is target currency, no conversion needed: {amount}")
+                logger.debug(f"User {user.id}: {currency} holding is target currency, no conversion needed: {holding_amount}")
             else:
                 exchange_rate = get_current_exchange_rate(currency, target_currency)
                 if exchange_rate:
-                    converted_amount = amount * exchange_rate
-                    is_target_currency = False
-                    logger.debug(f"User {user.id}: Converted {amount} {currency} to {converted_amount} {target_currency} at rate {exchange_rate}")
+                    converted_amount = holding_amount * exchange_rate
+                    logger.debug(f"User {user.id}: Converted {holding_amount} {currency} to {converted_amount} {target_currency} at rate {exchange_rate}")
                 else:
-                    logger.warning(f"User {user.id}: Failed to get current exchange rate for {currency} -> {target_currency}")
-                    conversion_failures.append(currency)
+                    logger.warning(f"User {user.id}: No exchange rate available for {currency} -> {target_currency}")
+                    conversion_failures.append({
+                        'currency': currency,
+                        'amount': str(holding_amount),
+                        'reason': 'missing_exchange_rate'
+                    })
                     continue
             
             total_balance += converted_amount
-            currency_breakdown.append({
+            
+            holdings_breakdown.append({
                 'currency': currency,
-                'original_total': amount,
-                'converted_total': converted_amount,
-                'exchange_rate': exchange_rate,
-                'is_target_currency': is_target_currency
+                'holding_amount': holding_amount.quantize(Decimal('0.01')),
+                'converted_amount': converted_amount.quantize(Decimal('0.01')),
+                'exchange_rate': exchange_rate.quantize(Decimal('0.000001')),
+                'transaction_count': transaction_counts[currency],
+                'is_target_currency': currency == target_currency
             })
         
-        # Step 3: Return enhanced response
-        logger.info(f"User {user.id}: Balance calculated using current rates. Total: {total_balance:.2f} {target_currency}. Conversion failures: {len(conversion_failures)}")
+        # Step 4: Calculate transaction counts
+        total_transactions = transactions.count()
+        successfully_converted_transactions = sum(breakdown['transaction_count'] for breakdown in holdings_breakdown)
+        
+        # Step 5: Return account holdings response
+        logger.info(f"User {user.id}: Account holdings calculated. Total: {total_balance:.2f} {target_currency}. Holdings in {len(holdings_breakdown)} currencies. Conversion failures: {len(conversion_failures)}")
         
         return Response({
             'balance': total_balance.quantize(Decimal('0.01')),
+            'total_balance_in_target_currency': total_balance.quantize(Decimal('0.01')),  # Frontend compatibility
             'currency': target_currency,
-            'currency_breakdown': currency_breakdown,
+            'holdings_breakdown': holdings_breakdown,  # Changed from currency_breakdown
             'conversion_date': django_timezone.now().date().isoformat(),
-            'methodology': 'current_rates',
-            'total_transactions_count': transactions.count(),
+            'methodology': 'account_holdings',  # Changed from 'current_rates'
+            'total_transactions': total_transactions,
+            'converted_transactions_count': successfully_converted_transactions,
             'conversion_failures': conversion_failures,
-            'warning': f"Unable to convert {len(conversion_failures)} currencies: {', '.join(conversion_failures)}" if conversion_failures else None
+            'account_count': len(holdings_breakdown),  # NEW: Number of different account currencies
+            'metadata': {
+                'calculation_method': 'Account-based holdings aggregation',
+                'up_bank_handling': 'Uses aud_amount (authoritative bank deduction)',
+                'csv_handling': 'Uses original_amount in account base currency',
+                'conversion_purpose': 'Display only - core holdings remain in native currencies'
+            }
         })

@@ -116,6 +116,15 @@ class Transaction(models.Model):
         blank=True,
         help_text="Exchange rate used to convert original_amount to aud_amount (Original Currency to AUD)."
     )
+    
+    # Account-based currency tracking
+    account_base_currency = models.CharField(
+        max_length=3,
+        default='AUD',
+        db_index=True,
+        help_text="Currency of the source account (e.g., AUD for Up Bank, EUR for ING Bank CSV uploads)."
+    )
+    
     # Currency conversion tracking fields
     is_aud_conversion_manual = models.BooleanField(
         default=False,
@@ -170,6 +179,23 @@ class Transaction(models.Model):
         if self.aud_amount is None:
             return None
         amount = self.aud_amount # Already Decimal
+        return -amount if self.direction == 'DEBIT' else amount
+
+    @property
+    def account_amount(self):
+        """Get the amount in the account's base currency"""
+        if self.source == 'up_bank':
+            return self.aud_amount or Decimal('0')  # Up Bank provides authoritative AUD amount
+        elif self.account_base_currency == self.original_currency:
+            return self.original_amount  # CSV upload in account's currency
+        else:
+            # Fallback: convert if somehow original_currency differs from account_base_currency
+            return self.aud_amount if self.aud_amount else self.original_amount
+
+    @property
+    def signed_account_amount(self):
+        """Returns the account amount with correct sign based on direction."""
+        amount = self.account_amount if isinstance(self.account_amount, Decimal) else Decimal(0)
         return -amount if self.direction == 'DEBIT' else amount
 
     def update_aud_amount_if_needed(self, force_recalculation=False):

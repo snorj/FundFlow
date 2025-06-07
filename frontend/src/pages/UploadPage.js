@@ -24,6 +24,10 @@ const UploadPage = () => { // Changed component name
   const [uploadError, setUploadError] = useState(null);
   const [uploadSuccess, setUploadSuccess] = useState(null);
 
+  // State for account base currency selection
+  const [accountBaseCurrency, setAccountBaseCurrency] = useState('EUR');
+  const availableCurrencies = ['AUD', 'EUR', 'USD', 'GBP', 'CAD', 'CHF', 'JPY'];
+
   const [isUpLinked, setIsUpLinked] = useState(false);
   const [isLoadingUpStatus, setIsLoadingUpStatus] = useState(true);
   const [upPatInput, setUpPatInput] = useState('');
@@ -110,7 +114,7 @@ const UploadPage = () => { // Changed component name
     setUploadError(null);
     setUploadSuccess(null);
     try {
-      const response = await transactionService.uploadTransactions(selectedFile);
+      const response = await transactionService.uploadTransactions(selectedFile, accountBaseCurrency);
       setUploadSuccess(response);
       setSelectedFile(null);
       if (document.getElementById('csv-upload-input')) document.getElementById('csv-upload-input').value = '';
@@ -261,6 +265,40 @@ const UploadPage = () => { // Changed component name
       <div className="upload-section card-style">
         <h2 className="section-title">Import Transactions</h2>
          <div className="upload-controls">
+           <div className="currency-selection" style={{ marginBottom: '15px' }}>
+             <label htmlFor="currency-selector" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+               What currency is this bank account denominated in?
+             </label>
+             <select
+               id="currency-selector"
+               value={accountBaseCurrency}
+               onChange={(e) => setAccountBaseCurrency(e.target.value)}
+               disabled={isLoadingUpload}
+               style={{ 
+                 padding: '10px', 
+                 borderRadius: '6px', 
+                 border: '1px solid #ccc', 
+                 fontSize: '14px',
+                 minWidth: '120px'
+               }}
+             >
+               {availableCurrencies.map((currency) => (
+                 <option key={currency} value={currency}>
+                   {currency}
+                 </option>
+               ))}
+             </select>
+             <div style={{ 
+               fontSize: '12px', 
+               color: '#666', 
+               marginTop: '5px',
+               lineHeight: '1.4'
+             }}>
+               Select the base currency of the bank account these transactions are from.<br/>
+               (e.g., EUR for ING Bank Europe, USD for Chase Bank USA)
+             </div>
+           </div>
+           
            <label htmlFor="csv-upload-input" className="file-input-label">Choose CSV File</label>
            <input id="csv-upload-input" type="file" accept=".csv" onChange={handleFileChange} disabled={isLoadingUpload} />
            {selectedFile && <span className="file-name">{selectedFile.name}</span>}

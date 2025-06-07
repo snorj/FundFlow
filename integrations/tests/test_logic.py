@@ -14,21 +14,40 @@ from transactions.models import Transaction # Import your app's Transaction mode
 User = get_user_model()
 
 # Helper to create a mock Up API transaction data structure
-def create_mock_up_transaction(tx_id, created_at_iso, amount_cents, currency_code="AUD", description="Test Transaction"):
-    return {
+def create_mock_up_transaction(tx_id, created_at_iso, aud_amount_cents, foreign_amount_cents=None, foreign_currency_code=None, description="Test Transaction"):
+    """
+    Create a mock Up Bank API transaction.
+    
+    Args:
+        tx_id: Transaction ID
+        created_at_iso: ISO timestamp
+        aud_amount_cents: Actual AUD amount charged by Up Bank (e.g., -1650 for -$16.50)
+        foreign_amount_cents: Original foreign currency amount (e.g., -1000 for -10.00 EUR)
+        foreign_currency_code: Original currency code (e.g., "EUR")
+        description: Transaction description
+    """
+    transaction_data = {
         "id": tx_id,
         "attributes": {
             "createdAt": created_at_iso,
             "description": description,
             "amount": {
-                "currencyCode": currency_code,
-                "valueInBaseUnits": amount_cents, # e.g., -1234 for -12.34
-                "value": str(Decimal(amount_cents) / 100) # For completeness, though logic uses valueInBaseUnits
+                "currencyCode": "AUD",  # Up Bank always charges in AUD
+                "valueInBaseUnits": aud_amount_cents,  # Actual AUD amount charged
+                "value": str(Decimal(aud_amount_cents) / 100)
             },
-            # Add other attributes if your logic starts using them
         },
-        # Add links if your logic uses them (not currently)
     }
+    
+    # Add foreignAmount only if this was a foreign currency transaction
+    if foreign_amount_cents is not None and foreign_currency_code is not None:
+        transaction_data["attributes"]["foreignAmount"] = {
+            "currencyCode": foreign_currency_code,
+            "valueInBaseUnits": foreign_amount_cents,  # Original foreign amount
+            "value": str(Decimal(foreign_amount_cents) / 100)
+        }
+    
+    return transaction_data
 
 class SyncUpTransactionsLogicTests(TestCase):
 
@@ -40,21 +59,11 @@ class SyncUpTransactionsLogicTests(TestCase):
         self.mock_decrypt = self.decrypt_patcher.start()
         self.mock_decrypt.return_value = "decrypted_pat_token" # Ensure this mock is active
 
-        # We don't actually need to mock encrypt_token for these logic tests,
-        # as sync_up_transactions_for_user does not call encrypt_token.
-        # If other logic functions did, we'd patch 'integrations.logic.encrypt_token' similarly.
-
-        # These service layer mocks remain the same, as they are called from integrations.logic
+        # We don't need get_historical_rate anymore since we use actual AUD amounts
         self.get_up_transactions_patcher = mock.patch('integrations.logic.get_up_transactions')
-        self.get_historical_rate_patcher = mock.patch('integrations.logic.get_historical_exchange_rate')
         self.mock_get_up_transactions = self.get_up_transactions_patcher.start()
-        self.mock_get_historical_rate = self.get_historical_rate_patcher.start()
-
 
     def tearDown(self):
-        # It's good practice to stop patchers in reverse order of starting,
-        # though for non-overlapping patches it doesn't strictly matter.
-        self.get_historical_rate_patcher.stop()
         self.get_up_transactions_patcher.stop()
         self.decrypt_patcher.stop()
 
@@ -106,14 +115,13 @@ class SyncUpTransactionsLogicTests(TestCase):
     def test_sync_initial_with_custom_date(self):
         self._create_integration()
         self.mock_get_up_transactions.return_value = []
-        custom_date_str_input = "2023-01-01T00:00:00Z" # Input with Z
-        # Expected output from .isoformat() for a UTC datetime often includes +00:00
-        expected_iso_output = "2023-01-01T00:00:00+00:00" 
+        custom_date_str_input = "2023-01-01"  # Using YYYY-MM-DD format as expected by since_date_str
 
-        sync_up_transactions_for_user(user_id=self.user.id, initial_sync=True, custom_since_iso=custom_date_str_input)
+        sync_up_transactions_for_user(user_id=self.user.id, initial_sync=True, since_date_str=custom_date_str_input)
         
-        # Assert using the expected isoformat output
-        self.mock_get_up_transactions.assert_called_once_with("decrypted_pat_token", since_iso=expected_iso_output)
+        # Expected ISO format for 2023-01-01 start of day
+        expected_iso_output = "2023-01-01T00:00:00+00:00" 
+        self.mock_get_up_transactions.assert_called_once_with("decrypted_pat_token", since_iso=expected_iso_output, until_iso=None)
 
     def test_sync_subsequent(self):
         last_sync = datetime.now(timezone.utc) - timedelta(days=5)
@@ -122,13 +130,13 @@ class SyncUpTransactionsLogicTests(TestCase):
 
         sync_up_transactions_for_user(user_id=self.user.id) # initial_sync is False by default
         expected_since_iso = (last_sync + timedelta(seconds=1)).isoformat()
-        self.mock_get_up_transactions.assert_called_once_with("decrypted_pat_token", since_iso=expected_since_iso)
+        self.mock_get_up_transactions.assert_called_once_with("decrypted_pat_token", since_iso=expected_since_iso, until_iso=None)
 
     def test_sync_creates_new_aud_transactions(self):
         integration = self._create_integration()
         now_iso = datetime.now(timezone.utc).isoformat()
         mock_api_tx = [
-            create_mock_up_transaction("up-tx-1", now_iso, -1000, "AUD", "Coffee AUD"),
+            create_mock_up_transaction("up-tx-1", now_iso, -1000, description="Coffee AUD"),  # AUD domestic transaction
         ]
         self.mock_get_up_transactions.return_value = mock_api_tx
 
@@ -139,10 +147,10 @@ class SyncUpTransactionsLogicTests(TestCase):
         self.assertEqual(Transaction.objects.count(), 1)
         created_tx = Transaction.objects.first()
         self.assertEqual(created_tx.bank_transaction_id, "up-tx-1")
-        self.assertEqual(created_tx.original_amount, Decimal("10.00"))
+        self.assertEqual(created_tx.original_amount, Decimal("10.00"))  # Same as AUD amount for domestic
         self.assertEqual(created_tx.original_currency, "AUD")
         self.assertEqual(created_tx.direction, "DEBIT")
-        self.assertEqual(created_tx.aud_amount, Decimal("10.00")) # AUD to AUD
+        self.assertEqual(created_tx.aud_amount, Decimal("10.00"))  # Up Bank's actual AUD charge
         self.assertEqual(created_tx.exchange_rate_to_aud, Decimal("1.0"))
         self.assertEqual(created_tx.description, "Coffee AUD")
         self.assertEqual(created_tx.source, "up_bank")
@@ -152,6 +160,47 @@ class SyncUpTransactionsLogicTests(TestCase):
         # Check if last_synced_at is close to the transaction's createdAt
         self.assertAlmostEqual(integration.last_synced_at, datetime.fromisoformat(now_iso), delta=timedelta(seconds=1))
 
+    def test_sync_handles_foreign_currency_with_actual_aud_amount(self):
+        """Test that foreign currency transactions use Up Bank's actual AUD amounts rather than calculated conversions."""
+        integration = self._create_integration()
+        tx_date = datetime.now(timezone.utc) - timedelta(days=1)
+        tx_date_iso = tx_date.isoformat()
+
+        # Up Bank charges $16.50 AUD for a 10.00 EUR transaction (includes their fees/margins)
+        mock_api_tx = [
+            create_mock_up_transaction(
+                "up-tx-eur", 
+                tx_date_iso, 
+                -1650,  # Actual AUD amount charged: -$16.50
+                -1000,  # Original foreign amount: -10.00 EUR
+                "EUR",
+                "Souvenir EUR"
+            ),
+        ]
+        self.mock_get_up_transactions.return_value = mock_api_tx
+
+        result = sync_up_transactions_for_user(user_id=self.user.id, initial_sync=True)
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['created_count'], 1)
+        self.assertEqual(Transaction.objects.count(), 1)
+        created_tx = Transaction.objects.first()
+
+        # Should store the original foreign currency info for reference
+        self.assertEqual(created_tx.original_amount, Decimal("10.00"))  # Original EUR amount
+        self.assertEqual(created_tx.original_currency, "EUR")
+        
+        # Should use Up Bank's actual AUD charge (not calculated conversion)
+        self.assertEqual(created_tx.aud_amount, Decimal("16.50"))  # Up Bank's actual AUD charge
+        
+        # Should calculate the effective rate Up Bank used: 16.50 / 10.00 = 1.65
+        self.assertEqual(created_tx.exchange_rate_to_aud, Decimal("1.65"))  # Effective rate
+        
+        self.assertEqual(created_tx.direction, "DEBIT")
+        self.assertEqual(created_tx.description, "Souvenir EUR")
+
+        integration.refresh_from_db()
+        self.assertAlmostEqual(integration.last_synced_at, tx_date, delta=timedelta(seconds=1))
 
     def test_sync_skips_duplicates(self):
         self._create_integration()
@@ -164,8 +213,8 @@ class SyncUpTransactionsLogicTests(TestCase):
             aud_amount=Decimal("5.00"), exchange_rate_to_aud=Decimal("1.0")
         )
         mock_api_tx = [
-            create_mock_up_transaction("up-tx-existing", now_iso, -500, "AUD", "Existing From API"), # Duplicate
-            create_mock_up_transaction("up-tx-new", now_iso, -2000, "AUD", "New From API"),
+            create_mock_up_transaction("up-tx-existing", now_iso, -500, description="Existing From API"), # Duplicate
+            create_mock_up_transaction("up-tx-new", now_iso, -2000, description="New From API"),
         ]
         self.mock_get_up_transactions.return_value = mock_api_tx
 
@@ -176,18 +225,24 @@ class SyncUpTransactionsLogicTests(TestCase):
         self.assertEqual(Transaction.objects.count(), 2) # 1 existing + 1 new
         self.assertTrue(Transaction.objects.filter(bank_transaction_id="up-tx-new").exists())
 
-
     def test_sync_converts_foreign_currency(self):
+        """This test name is now misleading - we don't convert anymore, we use Up Bank's actual AUD amounts."""
         integration = self._create_integration()
         tx_date = datetime.now(timezone.utc) - timedelta(days=1)
         tx_date_iso = tx_date.isoformat()
-        tx_date_str_for_api = tx_date.strftime('%Y-%m-%d')
 
+        # Up Bank charged $16.50 AUD for a 10.00 EUR transaction
         mock_api_tx = [
-            create_mock_up_transaction("up-tx-eur", tx_date_iso, -1000, "EUR", "Souvenir EUR"), # 10 EUR
+            create_mock_up_transaction(
+                "up-tx-eur", 
+                tx_date_iso, 
+                -1650,  # Up Bank's actual AUD charge: -$16.50
+                -1000,  # Original EUR amount: -10.00 EUR
+                "EUR",
+                "Souvenir EUR"
+            ),
         ]
         self.mock_get_up_transactions.return_value = mock_api_tx
-        self.mock_get_historical_rate.return_value = Decimal("1.65") # 1 EUR = 1.65 AUD
 
         result = sync_up_transactions_for_user(user_id=self.user.id, initial_sync=True)
 
@@ -196,38 +251,49 @@ class SyncUpTransactionsLogicTests(TestCase):
         self.assertEqual(Transaction.objects.count(), 1)
         created_tx = Transaction.objects.first()
 
-        self.mock_get_historical_rate.assert_called_once_with(
-            tx_date_str_for_api, "EUR", BASE_CURRENCY_FOR_CONVERSION
-        )
+        # Should store original EUR amount for reference
         self.assertEqual(created_tx.original_amount, Decimal("10.00"))
         self.assertEqual(created_tx.original_currency, "EUR")
-        self.assertEqual(created_tx.aud_amount, Decimal("16.50")) # 10 * 1.65
+        
+        # Should use Up Bank's actual AUD charge
+        self.assertEqual(created_tx.aud_amount, Decimal("16.50"))
+        
+        # Should calculate effective rate: 16.50 / 10.00 = 1.65
         self.assertEqual(created_tx.exchange_rate_to_aud, Decimal("1.65"))
 
         integration.refresh_from_db()
         self.assertAlmostEqual(integration.last_synced_at, tx_date, delta=timedelta(seconds=1))
 
-
     def test_sync_handles_failed_currency_conversion(self):
+        """This test is no longer relevant since we don't do currency conversion - we use actual AUD amounts.
+        Keeping it for backward compatibility but with updated expectations."""
         self._create_integration()
         tx_date_iso = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        
+        # Even foreign currency transactions should succeed now since we use actual AUD amounts
         mock_api_tx = [
-            create_mock_up_transaction("up-tx-jpy", tx_date_iso, -500000, "JPY", "Lunch JPY"), # 5000 JPY
+            create_mock_up_transaction(
+                "up-tx-jpy", 
+                tx_date_iso, 
+                -5000,  # Up Bank's actual AUD charge: -$50.00
+                -500000,  # Original JPY amount: -5000.00 JPY
+                "JPY",
+                "Lunch JPY"
+            ),
         ]
         self.mock_get_up_transactions.return_value = mock_api_tx
-        self.mock_get_historical_rate.return_value = None # Simulate failure to get rate
 
         result = sync_up_transactions_for_user(user_id=self.user.id, initial_sync=True)
 
-        self.assertTrue(result['success']) # Sync itself is successful, but with issues
+        self.assertTrue(result['success'])
         self.assertEqual(result['created_count'], 1)
-        self.assertEqual(result['skipped_conversion_error'], 1)
+        self.assertEqual(result['skipped_conversion_error'], 0)  # No conversion errors anymore
         self.assertEqual(Transaction.objects.count(), 1)
         created_tx = Transaction.objects.first()
-        self.assertEqual(created_tx.original_amount, Decimal("5000.00"))
+        self.assertEqual(created_tx.original_amount, Decimal("5000.00"))  # Original JPY amount
         self.assertEqual(created_tx.original_currency, "JPY")
-        self.assertIsNone(created_tx.aud_amount) # Should be None
-        self.assertIsNone(created_tx.exchange_rate_to_aud) # Should be None
+        self.assertEqual(created_tx.aud_amount, Decimal("50.00"))  # Up Bank's actual AUD charge
+        self.assertEqual(created_tx.exchange_rate_to_aud, Decimal("0.01"))  # Effective rate: 50 / 5000 = 0.01
 
     def test_sync_api_http_error(self):
         self._create_integration()

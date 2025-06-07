@@ -139,65 +139,62 @@ def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, sinc
             if latest_transaction_api_created_at is None or api_created_at_dt > latest_transaction_api_created_at:
                 latest_transaction_api_created_at = api_created_at_dt
 
-            # --- UPDATED: Logic to get original amount and currency from Up API ---
-            original_amount_details = attributes.get('foreignAmount') # Prioritize foreignAmount
-            if original_amount_details and original_amount_details.get('valueInBaseUnits') is not None:
-                # This was a foreign currency transaction
-                original_amount_val_cents = original_amount_details['valueInBaseUnits']
-                original_currency_code = original_amount_details['currencyCode'].upper()
-                logger.debug(f"[Sync User {user_id}]: Tx {bank_id} is foreign: {original_amount_val_cents} {original_currency_code}")
+            # --- FIXED: Use Up Bank's actual AUD amounts ---
+            # Up Bank API provides:
+            # - 'amount': Actual AUD amount charged to account (authoritative)
+            # - 'foreignAmount': Original foreign currency amount (for reference only)
+            
+            # Get the actual AUD amount that Up Bank charged
+            actual_aud_amount_details = attributes['amount']
+            actual_aud_amount_cents = actual_aud_amount_details['valueInBaseUnits']
+            actual_aud_currency = actual_aud_amount_details['currencyCode'].upper()
+            
+            # Verify this is AUD (Up Bank should always charge in AUD)
+            if actual_aud_currency != 'AUD':
+                logger.error(f"[Sync User {user_id}]: Unexpected currency in 'amount' field: {actual_aud_currency}. Expected AUD.")
+                skipped_conversion_error_count += 1
+                continue
+            
+            actual_aud_decimal = Decimal(actual_aud_amount_cents) / 100
+            direction = 'DEBIT' if actual_aud_decimal < 0 else 'CREDIT'
+            abs_aud_amount = abs(actual_aud_decimal)
+            
+            # Get original currency info for reference
+            foreign_amount_details = attributes.get('foreignAmount')
+            if foreign_amount_details and foreign_amount_details.get('valueInBaseUnits') is not None:
+                # This was a foreign currency transaction - store original currency for reference
+                original_amount_cents = foreign_amount_details['valueInBaseUnits'] 
+                original_currency_code = foreign_amount_details['currencyCode'].upper()
+                original_amount_decimal = abs(Decimal(original_amount_cents) / 100)
+                
+                # Calculate the effective exchange rate that Up Bank used
+                if original_amount_decimal > 0:
+                    effective_rate = abs_aud_amount / original_amount_decimal
+                else:
+                    effective_rate = Decimal("1.0")  # Fallback
+                    
+                logger.debug(f"[Sync User {user_id}]: Tx {bank_id} foreign transaction: {original_amount_decimal} {original_currency_code} -> {abs_aud_amount} AUD (effective rate: {effective_rate})")
             else:
-                # Domestic transaction or foreignAmount is null/incomplete
-                original_amount_details = attributes['amount'] # Fallback to primary amount
-                original_amount_val_cents = original_amount_details['valueInBaseUnits']
-                original_currency_code = original_amount_details['currencyCode'].upper()
-                logger.debug(f"[Sync User {user_id}]: Tx {bank_id} is domestic/primary: {original_amount_val_cents} {original_currency_code}")
-            # --- END UPDATED ---
-
-            original_amount_decimal = Decimal(original_amount_val_cents) / 100
-            direction = 'DEBIT' if original_amount_decimal < 0 else 'CREDIT'
-            abs_original_amount = abs(original_amount_decimal)
+                # Domestic AUD transaction
+                original_amount_decimal = abs_aud_amount
+                original_currency_code = 'AUD'
+                effective_rate = Decimal("1.0")
+                logger.debug(f"[Sync User {user_id}]: Tx {bank_id} domestic AUD transaction: {abs_aud_amount} AUD")
             
             description = attributes['description']
 
-            aud_amount_val = None
-            exchange_rate_val = None
-
-            # --- MODIFIED SECTION FOR CURRENCY CONVERSION (Bank API Sync) ---
-            if original_currency_code == BASE_CURRENCY_FOR_CONVERSION: # e.g., 'AUD'
-                aud_amount_val = abs_original_amount
-                exchange_rate_val = Decimal("1.0")
-            else:
-                # Foreign currency transaction: Attempt to convert to AUD immediately.
-                rate = get_historical_rate( # Ensure get_historical_rate is imported from transactions.services
-                    transaction_date_obj, # This should be a date object
-                    original_currency_code,
-                    BASE_CURRENCY_FOR_CONVERSION
-                )
-                if rate is not None:
-                    aud_amount_val = (abs_original_amount * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                    exchange_rate_val = rate
-                    logger.info(f"[Sync User {user_id}]: Converted {original_currency_code} transaction {bank_id} to AUD. Rate: {exchange_rate_val}, AUD Amount: {aud_amount_val}.")
-                else:
-                    # aud_amount_val and exchange_rate_val remain None
-                    logger.warning(f"[Sync User {user_id}]: Could not get exchange rate for {original_currency_code} transaction {bank_id} dated {transaction_date_obj} to AUD. AUD amount will be None.")
-                    
-                    # Track detailed conversion failure information
-                    conversion_failures.append({
-                        'currency': original_currency_code,
-                        'date': transaction_date_obj.isoformat(),
-                        'amount': str(abs_original_amount),
-                        'description': description[:50] + ('...' if len(description) > 50 else ''),
-                        'reason': 'missing_exchange_rate'
-                    })
-                    skipped_conversion_error_count += 1
-
-            # Create the Transaction object
+            # Create the Transaction object using actual Up Bank AUD amounts
             new_tx = Transaction(
-                user=user, bank_transaction_id=bank_id, source='up_bank',
-                transaction_date=transaction_date_obj, description=description,
-                original_amount=abs_original_amount, original_currency=original_currency_code,
-                direction=direction, aud_amount=aud_amount_val, exchange_rate_to_aud=exchange_rate_val
+                user=user, 
+                bank_transaction_id=bank_id, 
+                source='up_bank',
+                transaction_date=transaction_date_obj, 
+                description=description,
+                original_amount=original_amount_decimal,  # Store original foreign amount for reference
+                original_currency=original_currency_code,  # Store original currency for reference
+                direction=direction, 
+                aud_amount=abs_aud_amount,  # Use Up Bank's actual AUD charge (authoritative)
+                exchange_rate_to_aud=effective_rate  # Store Up Bank's effective rate
             )
             transactions_to_create.append(new_tx)
 
