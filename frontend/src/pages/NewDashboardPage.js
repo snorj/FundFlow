@@ -14,6 +14,17 @@ const getCurrencySymbol = (currencyCode) => {
   return symbols[currencyCode] || currencyCode; // Fallback to code if symbol not found
 };
 
+// Helper function to format currency amounts nicely
+const formatCurrencyAmount = (amount, currencyCode) => {
+  const symbol = getCurrencySymbol(currencyCode);
+  const numericAmount = parseFloat(amount);
+  const formatted = numericAmount.toLocaleString(undefined, { 
+    minimumFractionDigits: 2, 
+    maximumFractionDigits: 2 
+  });
+  return `${symbol}${formatted}`;
+};
+
 const NewDashboardPage = () => {
   const [balance, setBalance] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -129,20 +140,21 @@ const NewDashboardPage = () => {
   };
 
   return (
-    <div style={{ padding: '20px' }}>
+    <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
       <h1>Dashboard</h1>
       
       {/* Balance Display Section */}
-      <div style={{ marginBottom: '20px', padding: '15px', border: '1px solid #ccc', borderRadius: '5px' }}>
-        <h2>Total Balance</h2>
-        <div>
-          <label htmlFor="currency-select" style={{ marginRight: '10px' }}>Select Currency:</label>
+      <div style={{ marginBottom: '20px', padding: '20px', border: '1px solid #ccc', borderRadius: '8px', backgroundColor: '#f9f9f9' }}>
+        <h2 style={{ marginBottom: '15px', color: '#333' }}>Your Balance</h2>
+        
+        <div style={{ marginBottom: '15px' }}>
+          <label htmlFor="currency-select" style={{ marginRight: '10px', fontWeight: 'bold' }}>Display in:</label>
           <select 
             id="currency-select" 
             value={selectedCurrency} 
             onChange={handleCurrencyChange}
             disabled={isLoading}
-            style={{ padding: '5px', borderRadius: '3px' }}
+            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '14px' }}
           >
             {availableCurrencies.map(currency => (
               <option key={currency} value={currency}>{currency}</option>
@@ -150,28 +162,106 @@ const NewDashboardPage = () => {
           </select>
         </div>
 
-        {isLoading && <p>Loading balance...</p>}
-        {error && <p style={{ color: 'red' }}>Error: {error}</p>}
+        {isLoading && <p style={{ fontSize: '16px', color: '#666' }}>Loading balance...</p>}
+        {error && <p style={{ color: 'red', fontSize: '16px' }}>Error: {error}</p>}
+        
         {balance !== null && !isLoading && (
           <div>
-            <p style={{
-              fontSize: '24px', 
-              fontWeight: 'bold', 
-              color: balance.total_balance_in_target_currency < 0 ? 'red' : 'inherit' 
-            }}>
-              {balance.total_balance_in_target_currency !== undefined 
-                ? `${getCurrencySymbol(selectedCurrency)}${parseFloat(balance.total_balance_in_target_currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
-                : 'Balance data not available.'}
-            </p>
-            {balance.warning && <p style={{ color: 'orange' }}>Note: {balance.warning}</p>}
-            <p style={{ fontSize: '12px', color: 'gray' }}>
-              Based on {balance.converted_transactions_count} out of {balance.total_transactions_count} transactions. 
-              {balance.unconverted_transactions_count > 0 && 
-               ` ${balance.unconverted_transactions_count} transaction(s) could not be converted to ${selectedCurrency}.`}
-            </p>
+            {/* Total Balance */}
+            <div style={{ marginBottom: '20px' }}>
+              <p style={{
+                fontSize: '32px', 
+                fontWeight: 'bold', 
+                color: balance.total_balance_in_target_currency < 0 ? '#d32f2f' : '#2e7d32',
+                margin: '10px 0'
+              }}>
+                {balance.total_balance_in_target_currency !== undefined 
+                  ? formatCurrencyAmount(balance.total_balance_in_target_currency, selectedCurrency)
+                  : 'Balance data not available.'}
+              </p>
+              <p style={{ fontSize: '14px', color: '#666', margin: '5px 0' }}>
+                Total balance converted to {selectedCurrency}
+              </p>
+            </div>
+
+            {/* Currency Holdings Breakdown */}
+            {balance.holdings_breakdown && balance.holdings_breakdown.length > 0 && (
+              <div style={{ 
+                marginTop: '20px', 
+                padding: '15px', 
+                backgroundColor: 'white', 
+                borderRadius: '6px', 
+                border: '1px solid #e0e0e0' 
+              }}>
+                <h3 style={{ margin: '0 0 15px 0', color: '#333', fontSize: '18px' }}>Your Holdings by Currency</h3>
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+                  gap: '15px' 
+                }}>
+                  {balance.holdings_breakdown.map((holding) => (
+                    <div key={holding.currency} style={{
+                      padding: '15px',
+                      backgroundColor: holding.is_target_currency ? '#e8f5e8' : '#f5f5f5',
+                      borderRadius: '6px',
+                      border: holding.is_target_currency ? '2px solid #4caf50' : '1px solid #ddd',
+                      textAlign: 'center'
+                    }}>
+                      <div style={{
+                        fontSize: '24px',
+                        fontWeight: 'bold',
+                        color: holding.holding_amount < 0 ? '#d32f2f' : '#2e7d32',
+                        marginBottom: '5px'
+                      }}>
+                        {formatCurrencyAmount(holding.holding_amount, holding.currency)}
+                      </div>
+                      <div style={{
+                        fontSize: '14px',
+                        color: '#666',
+                        marginBottom: '8px'
+                      }}>
+                        {holding.currency} Account
+                        {holding.is_target_currency && ' (Display Currency)'}
+                      </div>
+                      <div style={{
+                        fontSize: '12px',
+                        color: '#888'
+                      }}>
+                        {holding.transaction_count} transaction{holding.transaction_count !== 1 ? 's' : ''}
+                      </div>
+                      {!holding.is_target_currency && (
+                        <div style={{
+                          fontSize: '12px',
+                          color: '#666',
+                          marginTop: '5px',
+                          fontStyle: 'italic'
+                        }}>
+                          ≈ {formatCurrencyAmount(holding.converted_amount, selectedCurrency)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Additional Info */}
+            <div style={{ marginTop: '15px', fontSize: '12px', color: '#666' }}>
+              {balance.warning && <p style={{ color: '#f57c00', marginBottom: '5px' }}>⚠️ {balance.warning}</p>}
+              <p style={{ margin: '0' }}>
+                Based on {balance.converted_transactions_count} out of {balance.total_transactions_count} transactions.
+                {balance.unconverted_transactions_count > 0 && 
+                 ` ${balance.unconverted_transactions_count} transaction(s) could not be converted to ${selectedCurrency}.`}
+              </p>
+              {balance.account_count && (
+                <p style={{ margin: '5px 0 0 0' }}>
+                  Holdings across {balance.account_count} account currenc{balance.account_count !== 1 ? 'ies' : 'y'}.
+                </p>
+              )}
+            </div>
           </div>
         )}
-         {balance === null && !isLoading && !error && <p>No balance data to display.</p>}
+        {balance === null && !isLoading && !error && <p>No balance data to display.</p>}
       </div>
 
       {/* Transaction List Section */}
