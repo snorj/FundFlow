@@ -65,29 +65,36 @@ const NewDashboardPage = () => {
     setTransactionsLoading(true);
     setTransactionsError(null);
     try {
-      const response = await transactionService.getTransactions({ page: page });
-      setTransactions(response.results || []); // Ensure it's an array
-      // Calculate total pages: DRF provides 'count' (total items)
-      // If using default DRF PageNumberPagination, response.count is total items
-      if (response.count) {
-        setTotalPages(Math.ceil(response.count / pageSize)); 
+      const response = await transactionService.getTransactions({ page: page, page_size: pageSize });
+      console.log('📊 Dashboard: Fetched transaction response:', response);
+      
+      // Handle DRF paginated response properly
+      if (response && response.results) {
+        // Paginated response from DRF
+        setTransactions(response.results || []); 
+        setTotalPages(Math.ceil(response.count / pageSize));
+        console.log('📋 Dashboard: Set', response.results.length, 'transactions, total pages:', Math.ceil(response.count / pageSize));
+      } else if (Array.isArray(response)) {
+        // Direct array response (non-paginated)
+        setTransactions(response);
+        setTotalPages(1);
+        console.log('📋 Dashboard: Set', response.length, 'transactions (non-paginated)');
       } else {
-        // Fallback if count is not directly available, or if using a different pagination style
-        // This might need adjustment based on API (e.g., if it sends total_pages directly)
-        if (response.next && !response.previous) setTotalPages(2); // crude guess if on page 1 and there's a next
-        else if (!response.next && response.previous) setTotalPages(currentPage); // on last page
-        else if (response.next && response.previous) setTotalPages(currentPage +1); // crude guess mid-way
-        else setTotalPages(1); // Default to 1 page if no info
+        // Unexpected response format
+        console.warn('⚠️ Dashboard: Unexpected response format:', response);
+        setTransactions([]);
+        setTotalPages(0);
       }
 
     } catch (err) {
+      console.error('❌ Dashboard: Failed to fetch transactions:', err);
       setTransactionsError(err.message || 'Failed to fetch transactions. Please try again.');
       setTransactions([]);
       setTotalPages(0);
     } finally {
       setTransactionsLoading(false);
     }
-  }, [pageSize, currentPage]); // Added currentPage to dependencies to re-evaluate totalPages crude guess if needed
+  }, [pageSize]); // Removed currentPage from dependencies since it's passed as parameter
 
   useEffect(() => {
     fetchTransactionsData(currentPage);

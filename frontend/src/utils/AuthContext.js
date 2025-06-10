@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useCallback } from 'react'; // Added useCallback
+import React, { createContext, useState, useEffect, useCallback, useContext } from 'react'; // Added useContext
 import AuthService from '../services/auth';
 // Remove: import { resetAllState } from './StateResetUtil'; // REMOVE THIS IMPORT
 
@@ -100,6 +100,15 @@ export const AuthProvider = ({ children }) => {
       {children}
     </AuthContext.Provider>
   );
+};
+
+// Custom hook to use the AuthContext
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };
 
 // Removed the export default AuthProvider here, assuming it's default exported when used.

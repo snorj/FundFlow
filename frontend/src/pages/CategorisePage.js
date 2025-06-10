@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CategoryTreeNode from '../components/categorization/CategoryTreeNode';
 import categoryService from '../services/categories';
-import { FiPlus, FiLoader, FiAlertCircle, FiEdit, FiArrowRight, FiSearch, FiTag } from 'react-icons/fi';
+import transactionService from '../services/transactions';
+import { FiPlus, FiLoader, FiAlertCircle, FiEdit, FiArrowRight, FiSearch } from 'react-icons/fi';
 import './CategorisePage.css'; // We'll create this CSS file next
 
 const CategorisePage = () => {
@@ -10,6 +11,15 @@ const CategorisePage = () => {
   const [allItems, setAllItems] = useState([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [error, setError] = useState(null);
+
+  // New state for enhanced functionality
+  const [transactions, setTransactions] = useState([]);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
+  const [categorySpendingTotals, setCategorySpendingTotals] = useState({});
+  const [vendorsByCategory, setVendorsByCategory] = useState({});
+  const [selectedCategoryId, setSelectedCategoryId] = useState(null);
+  const [selectedVendorId, setSelectedVendorId] = useState(null);
+  const [selectedTransactionId, setSelectedTransactionId] = useState(null);
 
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -37,9 +47,53 @@ const CategorisePage = () => {
     }
   }, []);
 
+  // New function to fetch transaction data
+  const fetchTransactions = useCallback(async () => {
+    setIsLoadingTransactions(true);
+    console.log('🔄 CategorisePage: Starting transaction fetch...');
+    try {
+      // Fetch all transactions for spending calculations
+      const transactionData = await transactionService.getTransactions({ page_size: 1000 });
+      console.log('📊 CategorisePage: Fetched transactions:', transactionData?.length || 0, 'transactions');
+      console.log('📋 CategorisePage: Sample transaction data:', transactionData?.[0]);
+      setTransactions(transactionData || []);
+      
+      // Try to fetch pre-calculated totals (will fall back gracefully if endpoints don't exist)
+      try {
+        const totals = await transactionService.getCategorySpendingTotals();
+        console.log('💰 CategorisePage: Fetched spending totals:', Object.keys(totals || {}).length, 'categories');
+        setCategorySpendingTotals(totals || {});
+      } catch {
+        // Endpoint doesn't exist yet - we'll calculate client-side
+        console.log('💰 CategorisePage: Using client-side spending calculation (expected)');
+        setCategorySpendingTotals({});
+      }
+      
+      try {
+        const vendorData = await transactionService.getVendorsByCategory();
+        console.log('🏪 CategorisePage: Fetched vendor data:', Object.keys(vendorData || {}).length, 'categories with vendors');
+        setVendorsByCategory(vendorData || {});
+      } catch {
+        // Endpoint doesn't exist yet - we'll calculate client-side
+        console.log('🏪 CategorisePage: Using client-side vendor calculation (expected)');
+        setVendorsByCategory({});
+      }
+    } catch (err) {
+      console.error("❌ CategorisePage: Error fetching transactions:", err);
+      // Don't set error state for transaction fetch failures - just use empty data
+      setTransactions([]);
+      setCategorySpendingTotals({});
+      setVendorsByCategory({});
+    } finally {
+      setIsLoadingTransactions(false);
+      console.log('✅ CategorisePage: Transaction fetch complete');
+    }
+  }, []);
+
   useEffect(() => {
     fetchItems();
-  }, [fetchItems]);
+    fetchTransactions();
+  }, [fetchItems, fetchTransactions]);
 
   const handleCreateCategory = useCallback(async (name, parentId = null) => {
     setIsCreating(true);
@@ -66,6 +120,7 @@ const CategorisePage = () => {
     try {
       await categoryService.deleteCategory(categoryId);
       await fetchItems(); 
+      await fetchTransactions(); // Refresh transaction data after category changes
     } catch (err) {
       console.error(`Error deleting category ${categoryId}:`, err);
       const backendError = err.response?.data?.error || err.message || "Failed to delete category.";
@@ -73,7 +128,27 @@ const CategorisePage = () => {
     } finally {
       setDeletingCategoryId(null);
     }
-  }, [fetchItems]);
+  }, [fetchItems, fetchTransactions]);
+
+  // New handlers for category and vendor selection
+  const handleCategorySelect = useCallback((category) => {
+    setSelectedCategoryId(category.id);
+    setSelectedVendorId(null); // Clear vendor selection when selecting category
+    console.log('Selected category:', category);
+  }, []);
+
+  const handleVendorSelect = useCallback((vendor) => {
+    setSelectedVendorId(vendor.id);
+    console.log('Selected vendor:', vendor);
+  }, []);
+
+  // New handler for transaction selection
+  const handleTransactionSelect = useCallback((transaction) => {
+    setSelectedTransactionId(transaction.id);
+    setSelectedVendorId(null); // Clear vendor selection when selecting transaction
+    setSelectedCategoryId(null); // Clear category selection when selecting transaction
+    console.log('Selected transaction:', transaction);
+  }, []);
 
   const itemsById = useMemo(() => 
     new Map(allItems.map(item => [item.id, item]))
@@ -166,13 +241,25 @@ const CategorisePage = () => {
   };
 
   const isPageBusy = isLoadingCategories || isCreating || deletingCategoryId !== null;
+  const isLoading = isLoadingCategories || isLoadingTransactions;
 
-  if (isLoadingCategories && !deletingCategoryId && !isCreating) {
-    return <div className="page-loading-state"><FiLoader className="spinner" /> <p>Loading Categories & Vendors...</p></div>;
+  if (isLoading && !deletingCategoryId && !isCreating) {
+    return (
+      <div className="page-loading-state">
+        <FiLoader className="spinner" /> 
+        <p>Loading Categories & Transaction Data...</p>
+      </div>
+    );
   }
 
   if (error && !createError && !deleteError) {
-    return <div className="page-error-state"><FiAlertCircle /> <p>Error: {error}</p><button onClick={fetchItems} disabled={isPageBusy}>Retry</button></div>;
+    return (
+      <div className="page-error-state">
+        <FiAlertCircle /> 
+        <p>Error: {error}</p>
+        <button onClick={fetchItems} disabled={isPageBusy}>Retry</button>
+      </div>
+    );
   }
 
   const noResultsFromSearch = searchTerm.trim() && visibleItemIds && visibleItemIds.size === 0;
@@ -236,40 +323,67 @@ const CategorisePage = () => {
         )}
         
         <p className="category-instructions">
-          View your category and vendor structure below. Add new categories or sub-categories directly in the tree. Vendors (merchants) are derived from your transaction mapping rules.
+          View your category structure with real-time spending totals and vendor information. 
+          Click vendor counts to expand vendor lists. Enhanced interactions include selection and smart operations.
         </p>
         
         <div className={`category-tree-view ${isPageBusy ? 'disabled-tree' : ''}`}>
-          {(systemRootCategories.length === 0 && userRootCategories.length === 0 && !showTopLevelInput && !searchTerm.trim() && !isLoadingCategories && !allItems.some(item => item.type === 'vendor')) && (
+          {noItemsToShow && (
             <p>No categories or vendors found. Add a top-level category to get started.</p>
           )}
           {noResultsFromSearch && (
             <p>No categories or vendors match your search term "{searchTerm}".</p>
           )}
-          {systemRootCategories.map(rootCat => (
+          {systemRootCategories.map(category => (
             <CategoryTreeNode
-              key={rootCat.id}
-              item={rootCat}
+              key={category.id}
+              item={category}
               allItems={allItems}
               visibleItemIds={visibleItemIds}
               level={0}
+              onSelectNode={() => console.log(`Selected system category: ${category.name}`)}
+              onCategorySelect={handleCategorySelect}
+              onVendorSelect={handleVendorSelect}
+              onTransactionSelect={handleTransactionSelect}
               onCreateCategory={handleCreateCategory}
               onDeleteCategory={handleDeleteCategory}
               isCreating={isCreating}
-              isDeleting={deletingCategoryId === rootCat.id}
+              isDeleting={deletingCategoryId === category.id}
+              transactions={transactions}
+              categorySpendingTotals={categorySpendingTotals}
+              vendorsByCategory={vendorsByCategory}
+              selectedCategoryId={selectedCategoryId}
+              selectedVendorId={selectedVendorId}
+              selectedTransactionId={selectedTransactionId}
+              showSpendingTotals={true}
+              showVendorCounts={true}
+              enableSmartInteractions={true}
             />
           ))}
-          {userRootCategories.map(rootCat => (
+          {userRootCategories.map(category => (
             <CategoryTreeNode
-              key={rootCat.id}
-              item={rootCat}
+              key={category.id}
+              item={category}
               allItems={allItems}
               visibleItemIds={visibleItemIds}
               level={0}
+              onSelectNode={() => console.log(`Selected user category: ${category.name}`)}
+              onCategorySelect={handleCategorySelect}
+              onVendorSelect={handleVendorSelect}
+              onTransactionSelect={handleTransactionSelect}
               onCreateCategory={handleCreateCategory}
               onDeleteCategory={handleDeleteCategory}
               isCreating={isCreating}
-              isDeleting={deletingCategoryId === rootCat.id}
+              isDeleting={deletingCategoryId === category.id}
+              transactions={transactions}
+              categorySpendingTotals={categorySpendingTotals}
+              vendorsByCategory={vendorsByCategory}
+              selectedCategoryId={selectedCategoryId}
+              selectedVendorId={selectedVendorId}
+              selectedTransactionId={selectedTransactionId}
+              showSpendingTotals={true}
+              showVendorCounts={true}
+              enableSmartInteractions={true}
             />
           ))}
         </div>

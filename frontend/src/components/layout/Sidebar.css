@@ -93,10 +93,24 @@
 
 /* Styles for a potential footer if you add one */
 .sidebar-footer {
-  padding: 20px;
+  padding: 10px;
   border-top: 1px solid var(--sidebar-border-color);
-  text-align: center;
-  font-size: 0.85rem;
+  margin-top: auto; /* Push to bottom */
+}
+
+.sidebar-footer .sidebar-link {
+  background: none;
+  border: none;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  color: var(--sidebar-text-color);
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+.sidebar-footer .sidebar-link:hover {
+  background-color: var(--sidebar-hover-background);
 }
 
 /* Responsive considerations (optional for now) */

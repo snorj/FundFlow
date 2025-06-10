@@ -2,14 +2,14 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../utils/AuthContext';
 import { 
-  Home, 
-  Upload, 
-  Tag, 
-  BarChart3,
-  Settings, 
-  LogOut, 
-  Users
-} from 'lucide-react';
+  FiHome, 
+  FiUpload, 
+  FiTag, 
+  FiBarChart,
+  FiSettings, 
+  FiLogOut, 
+  FiUsers
+} from 'react-icons/fi';
 import './Sidebar.css';
 
 const Sidebar = () => {
@@ -22,12 +22,12 @@ const Sidebar = () => {
   };
 
   const navItems = [
-    { path: '/dashboard', icon: Home, label: 'Dashboard' },
-    { path: '/upload', icon: Upload, label: 'Upload' },
-    { path: '/categorise', icon: Tag, label: 'Categorise' },
-    { path: '/visualise', icon: BarChart3, label: 'Visualise' },
-    { path: '/admin', icon: Users, label: 'Admin' },
-    { path: '/settings', icon: Settings, label: 'Settings' },
+    { path: '/dashboard', icon: FiHome, label: 'Dashboard' },
+    { path: '/upload', icon: FiUpload, label: 'Upload' },
+    { path: '/categorise', icon: FiTag, label: 'Categorise' },
+    { path: '/visualise', icon: FiBarChart, label: 'Visualise' },
+    { path: '/admin', icon: FiUsers, label: 'Admin' },
+    { path: '/settings', icon: FiSettings, label: 'Settings' },
   ];
 
   return (
@@ -37,26 +37,35 @@ const Sidebar = () => {
       </div>
       
       <nav className="sidebar-nav">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            className={({ isActive }) => 
-              `sidebar-item ${isActive ? 'active' : ''}`
-            }
-          >
-            <item.icon className="sidebar-icon" size={20} />
-            <span className="sidebar-label">{item.label}</span>
-          </NavLink>
-        ))}
+        <ul>
+          {navItems.map((item) => (
+            <li key={item.path}>
+              <NavLink
+                to={item.path}
+                className={({ isActive }) => 
+                  `sidebar-link ${isActive ? 'active' : ''}`
+                }
+              >
+                <span className="sidebar-icon">
+                  <item.icon size={20} />
+                </span>
+                <span className="sidebar-label">{item.label}</span>
+              </NavLink>
+            </li>
+          ))}
+        </ul>
         
-        <button
-          onClick={handleLogout}
-          className="sidebar-item logout"
-        >
-          <LogOut className="sidebar-icon" size={20} />
-          <span className="sidebar-label">Logout</span>
-        </button>
+        <div className="sidebar-footer">
+          <button
+            onClick={handleLogout}
+            className="sidebar-link logout"
+          >
+            <span className="sidebar-icon">
+              <FiLogOut size={20} />
+            </span>
+            <span className="sidebar-label">Logout</span>
+          </button>
+        </div>
       </nav>
     </div>
   );

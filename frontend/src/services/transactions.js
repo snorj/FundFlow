@@ -2,47 +2,86 @@
 import api from './api';
 
 const transactionService = {
-    // --- Keep existing functions like getTransactions, uploadTransactions, etc. ---
+    // Enhanced getTransactions function to handle pagination properly
     getTransactions: async (params = {}) => {
         try {
-            // Assuming this function already exists and works
             const response = await api.get('/transactions/', { params });
-            // Handle potential pagination if ListAPIView is used without explicit disabling
-            // return response.data.results || response.data; // Adjust based on DRF pagination
-            return response.data; // If pagination is off or handled differently
+            
+            // Handle DRF pagination - check if response has results property
+            if (response.data && response.data.results) {
+                // Paginated response from DRF
+                return response.data.results;
+            } else if (Array.isArray(response.data)) {
+                // Direct array response
+                return response.data;
+            } else {
+                // Fallback to empty array if structure is unexpected
+                console.warn('Unexpected transaction data structure:', response.data);
+                return [];
+            }
         } catch (error) {
             console.error("Error fetching transactions:", error.response?.data || error.message);
             throw error;
         }
     },
 
-    uploadTransactions: async (file, accountBaseCurrency = 'EUR') => {
+    // Enhanced function with better error handling
+    getCategorySpendingTotals: async () => {
         try {
-            // Assuming this function already exists and works
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('account_base_currency', accountBaseCurrency);
-            const response = await api.post('/transactions/upload/', formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },
-            });
-            return response.data;
+            const response = await api.get('/transactions/category-spending-totals/');
+            return response.data || {};
         } catch (error) {
-            console.error("Error uploading transactions:", error.response?.data || error.message);
-            throw error;
+            // This endpoint doesn't exist yet - graceful fallback
+            console.log("Category spending totals endpoint not available, using client-side calculation");
+            return {};
         }
     },
 
+    // Enhanced function with better error handling  
+    getVendorsByCategory: async () => {
+        try {
+            const response = await api.get('/transactions/vendors-by-category/');
+            return response.data || {};
+        } catch (error) {
+            // This endpoint doesn't exist yet - graceful fallback
+            console.log("Vendors by category endpoint not available, using client-side calculation");
+            return {};
+        }
+    },
+
+    uploadTransactions: async (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await api.post('/transactions/upload/', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+        return response.data;
+    },
+
+    batchCategorizeTransactions: async (transactionIds, categoryId) => {
+        const response = await api.post('/transactions/batch-categorize/', {
+            transaction_ids: transactionIds,
+            category_id: categoryId,
+        });
+        return response.data;
+    },
+
     getUncategorizedGroups: async () => {
-         try {
-            // Assuming this exists
-             const response = await api.get('/transactions/uncategorized-groups/');
-             return response.data;
-         } catch (error) {
-             console.error("Error fetching uncategorized groups:", error.response?.data || error.message);
-             throw error;
-         }
+        const response = await api.get('/transactions/uncategorized-groups/');
+        return response.data;
+    },
+
+    createTransaction: async (transactionData) => {
+        const response = await api.post('/transactions/create/', transactionData);
+        return response.data;
+    },
+
+    updateTransaction: async (id, transactionData) => {
+        const response = await api.put(`/transactions/${id}/`, transactionData);
+        return response.data;
     },
 
     batchUpdateCategory: async (transactionIds, categoryId, originalDescription, cleanName) => {
@@ -61,7 +100,6 @@ const transactionService = {
              throw error;
          }
      },
-
 
     // --- FIX THIS FUNCTION ---
     checkUncategorizedExists: async () => {
@@ -82,16 +120,6 @@ const transactionService = {
         }
     },
     // --- END FIX ---
-
-    updateTransaction: async (id, transactionData) => {
-        try {
-            const response = await api.put(`/transactions/${id}/`, transactionData);
-            return response.data;
-        } catch (error) {
-            console.error(`Error updating transaction ${id}:`, error.response?.data || error.message);
-            throw error.response?.data || error;
-        }
-    },
 
     deleteTransaction: async (id) => {
         try {
@@ -128,7 +156,6 @@ const transactionService = {
             throw new Error(errorMessages);
         }
     },
-
 };
 
 export default transactionService;

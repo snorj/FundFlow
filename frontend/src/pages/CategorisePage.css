@@ -296,4 +296,551 @@
    if CSS somehow overrides JS (though JS should prevent this) */
 .category-tree-node.item-type-vendor .node-actions {
     display: none !important; 
+}
+
+/* Enhanced Category Tree Styling */
+
+.category-tree-node {
+  border-radius: var(--border-radius-small, 4px);
+  margin-bottom: 2px;
+  transition: all 0.2s ease;
+}
+
+.category-tree-node.selected {
+  background-color: var(--accent-color-soft, rgba(14, 165, 233, 0.1));
+  border-left: 3px solid var(--accent-color, #0EA5E9);
+}
+
+.category-tree-node:hover:not(.selected) {
+  background-color: var(--background-hover, rgba(0, 0, 0, 0.02));
+}
+
+.node-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: var(--border-radius-small, 4px);
+  transition: all 0.2s ease;
+  min-height: 36px;
+  outline: none; /* Remove default outline, we'll add custom focus styles */
+}
+
+.node-content:hover {
+  background-color: var(--background-hover, rgba(0, 0, 0, 0.02));
+}
+
+.node-content:focus {
+  background-color: var(--background-hover, rgba(0, 0, 0, 0.02));
+  box-shadow: 0 0 0 2px var(--accent-color, #0EA5E9);
+  z-index: 1;
+  position: relative;
+}
+
+.node-content:focus:not(:focus-visible) {
+  box-shadow: none;
+}
+
+.node-content:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-color, #0EA5E9);
+}
+
+.node-content.selected {
+  background-color: var(--accent-color-soft, rgba(14, 165, 233, 0.1));
+  color: var(--accent-color-dark, #0369A1);
+}
+
+.node-content.selected:focus {
+  background-color: var(--accent-color-soft, rgba(14, 165, 233, 0.15));
+  box-shadow: 0 0 0 2px var(--accent-color-dark, #0369A1);
+}
+
+.node-content.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.expand-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: var(--border-radius-small, 4px);
+  transition: all 0.15s ease;
+  color: var(--text-tertiary, #6B7280);
+}
+
+.expand-icon:hover {
+  background-color: var(--background-medium-light, rgba(0, 0, 0, 0.05));
+  color: var(--text-secondary, #4B5563);
+  transform: scale(1.1);
+}
+
+.expand-icon:focus {
+  outline: 2px solid var(--accent-color, #0EA5E9);
+  outline-offset: 1px;
+}
+
+.expand-icon:active {
+  transform: scale(0.95);
+}
+
+.expand-icon .spacer {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+}
+
+.node-icon {
+  color: var(--text-secondary, #6B7280);
+  transition: color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.category-icon {
+  color: var(--teal-600, #0D9488);
+}
+
+.vendor-icon {
+  color: var(--amber-600, #D97706);
+}
+
+.node-name {
+  flex-grow: 1;
+  font-weight: 500;
+  color: var(--text-primary, #111827);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.category-tree-node.item-type-vendor .node-name {
+  font-weight: 400;
+  color: var(--text-secondary, #6B7280);
+  font-size: 0.9rem;
+}
+
+.category-amount {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background-color: var(--emerald-50, #ECFDF5);
+  color: var(--emerald-700, #047857);
+  border-radius: var(--border-radius-small, 4px);
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid var(--emerald-200, #A7F3D0);
+  white-space: nowrap;
+}
+
+.vendor-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background-color: var(--blue-50, #EFF6FF);
+  color: var(--blue-700, #1D4ED8);
+  border-radius: var(--border-radius-small, 4px);
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid var(--blue-200, #BFDBFE);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  position: relative;
+}
+
+.vendor-count:hover {
+  background-color: var(--blue-100, #DBEAFE);
+  border-color: var(--blue-300, #93C5FD);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.vendor-count:focus {
+  outline: 2px solid var(--blue-500, #3B82F6);
+  outline-offset: 1px;
+}
+
+.vendor-count:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.vendor-count.no-vendors {
+  background-color: var(--orange-50, #FFF7ED);
+  color: var(--orange-700, #C2410C);
+  border-color: var(--orange-200, #FED7AA);
+  cursor: default;
+  opacity: 0.8;
+}
+
+.vendor-count.no-vendors:hover {
+  background-color: var(--orange-50, #FFF7ED);
+  border-color: var(--orange-200, #FED7AA);
+  transform: none;
+  box-shadow: none;
+}
+
+.node-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.category-tree-node:hover .node-actions {
+  opacity: 1;
+}
+
+.action-button-icon {
+  padding: 4px;
+  border: none;
+  background-color: transparent;
+  border-radius: var(--border-radius-small, 4px);
+  cursor: pointer;
+  color: var(--text-tertiary, #9CA3AF);
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.action-button-icon:hover {
+  background-color: var(--background-medium-light, rgba(0, 0, 0, 0.05));
+  color: var(--text-secondary, #6B7280);
+  transform: scale(1.1);
+}
+
+.action-button-icon:focus {
+  outline: 2px solid var(--accent-color, #0EA5E9);
+  outline-offset: 1px;
+  z-index: 2;
+}
+
+.action-button-icon:active {
+  transform: scale(0.95);
+}
+
+.delete-category-button:hover {
+  background-color: var(--error-background-light, #FEE2E2);
+  color: var(--error-color, #DC2626);
+  transform: scale(1.1);
+}
+
+.delete-category-button:focus {
+  outline-color: var(--error-color, #DC2626);
+}
+
+.add-child-button:hover {
+  background-color: var(--emerald-50, #ECFDF5);
+  color: var(--emerald-600, #059669);
+  transform: scale(1.1);
+}
+
+.add-child-button:focus {
+  outline-color: var(--emerald-600, #059669);
+}
+
+.node-children {
+  border-left: 2px solid var(--border-color-light, #E5E7EB);
+  margin-left: 10px;
+  padding-left: 8px;
+}
+
+.vendor-list {
+  margin-top: 4px;
+  border-left: 2px solid var(--amber-200, #FCD34D);
+  background-color: var(--amber-25, #FFFBEB);
+  border-radius: 0 var(--border-radius-small, 4px) var(--border-radius-small, 4px) 0;
+}
+
+.vendor-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: var(--border-radius-small, 4px);
+  transition: all 0.2s ease;
+  margin: 2px 0;
+  outline: none;
+}
+
+.vendor-item:hover {
+  background-color: var(--amber-50, #FFFBEB);
+  transform: translateX(2px);
+}
+
+.vendor-item:focus {
+  background-color: var(--amber-50, #FFFBEB);
+  box-shadow: 0 0 0 2px var(--amber-500, #F59E0B);
+}
+
+.vendor-item:focus:not(:focus-visible) {
+  box-shadow: none;
+}
+
+.vendor-item:focus-visible {
+  box-shadow: 0 0 0 2px var(--amber-500, #F59E0B);
+}
+
+.vendor-item:active {
+  transform: translateX(1px) translateY(1px);
+}
+
+.vendor-item.selected {
+  background-color: var(--amber-100, #FEF3C7);
+  border-left: 3px solid var(--amber-500, #F59E0B);
+  transform: translateX(3px);
+}
+
+.vendor-item .vendor-icon {
+  color: var(--amber-600, #D97706);
+  flex-shrink: 0;
+}
+
+.vendor-item .vendor-name {
+  flex-grow: 1;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #6B7280);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vendor-item .vendor-stats {
+  font-size: 0.75rem;
+  color: var(--text-tertiary, #9CA3AF);
+  white-space: nowrap;
+}
+
+/* Enhanced selection states */
+.category-tree-node.item-type-category.selected .node-content {
+  background-color: var(--teal-50, #F0FDFA);
+  border-left: 3px solid var(--teal-500, #14B8A6);
+}
+
+.category-tree-node.item-type-vendor.selected .node-content {
+  background-color: var(--amber-50, #FFFBEB);
+  border-left: 3px solid var(--amber-500, #F59E0B);
+}
+
+/* Animation for expand/collapse */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+    transform: translateY(0);
+  }
+}
+
+.node-children {
+  animation: slideDown 0.2s ease-out;
+}
+
+/* Enhanced keyboard navigation indicators */
+.category-tree-node[role="treeitem"]:focus-within {
+  position: relative;
+}
+
+.category-tree-node[role="treeitem"]:focus-within::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: var(--accent-color, #0EA5E9);
+  border-radius: 0 2px 2px 0;
+  opacity: 0.8;
+}
+
+/* Enhanced interaction feedback */
+.node-content:active {
+  transform: translateY(1px);
+  background-color: var(--accent-color-soft, rgba(14, 165, 233, 0.15));
+}
+
+/* Context menu indicator */
+.node-content[aria-haspopup="true"]::after {
+  content: '';
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-left: 4px solid var(--text-tertiary, #9CA3AF);
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.node-content:hover[aria-haspopup="true"]::after {
+  opacity: 0.6;
+}
+
+/* Keyboard navigation hints */
+.category-tree-view:focus-within::before {
+  content: 'Use arrow keys to navigate, Enter to select, Space to expand/collapse, F2 to edit, Delete to remove';
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--background-elevated, #FFFFFF);
+  color: var(--text-secondary, #6B7280);
+  padding: 8px 16px;
+  border-radius: var(--border-radius-small, 4px);
+  font-size: 0.8rem;
+  box-shadow: var(--shadow-medium, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+  border: 1px solid var(--border-color-light, #E5E7EB);
+  z-index: 1000;
+  opacity: 0.9;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .node-content:focus {
+    box-shadow: 0 0 0 3px var(--accent-color, #0EA5E9);
+  }
+  
+  .category-tree-node[role="treeitem"]:focus-within::before {
+    width: 4px;
+  }
+  
+  .action-button-icon:focus {
+    outline-width: 3px;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .node-content,
+  .expand-icon,
+  .vendor-count,
+  .action-button-icon {
+    transition: none;
+  }
+  
+  .expand-icon:hover,
+  .action-button-icon:hover {
+    transform: none;
+  }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .node-content {
+    padding: 6px 8px;
+    gap: 6px;
+  }
+  
+  .category-amount,
+  .vendor-count {
+    font-size: 0.7rem;
+    padding: 1px 6px;
+  }
+  
+  .vendor-item {
+    padding: 4px 8px;
+  }
+  
+  .vendor-item .vendor-name,
+  .vendor-item .vendor-stats {
+    font-size: 0.8rem;
+  }
+}
+
+/* Enhanced tree node styling for new structure */
+.category-tree-node.item-type-vendor {
+  border-left: 2px solid #f59e0b; /* Amber border for vendors */
+}
+
+.category-tree-node.item-type-transaction {
+  border-left: 2px solid #10b981; /* Green border for transactions */
+  background-color: #f0f9ff; /* Light blue background */
+}
+
+.vendor-icon {
+  color: #f59e0b; /* Amber color for vendor icons */
+}
+
+.transaction-icon {
+  color: #10b981; /* Green color for transaction icons */
+}
+
+.vendor-amount {
+  color: #f59e0b;
+  font-weight: 500;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.transaction-details {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+
+.transaction-amount {
+  font-weight: 600;
+}
+
+.transaction-amount.debit {
+  color: #ef4444; /* Red for debits */
+}
+
+.transaction-amount.credit {
+  color: #10b981; /* Green for credits */
+}
+
+.transaction-date {
+  color: #6b7280; /* Gray for dates */
+  font-size: 0.8rem;
+}
+
+.transaction-count {
+  color: #6b7280;
+  font-size: 0.8rem;
+  margin-left: 4px;
+}
+
+/* Enhanced selection states for different node types */
+.category-tree-node.item-type-vendor.selected .node-content {
+  background-color: #fef3c7; /* Light amber for selected vendors */
+  border-color: #f59e0b;
+}
+
+.category-tree-node.item-type-transaction.selected .node-content {
+  background-color: #dcfce7; /* Light green for selected transactions */
+  border-color: #10b981;
+}
+
+/* Hover effects for different node types */
+.category-tree-node.item-type-vendor .node-content:hover {
+  background-color: #fffbeb; /* Very light amber on hover */
+}
+
+.category-tree-node.item-type-transaction .node-content:hover {
+  background-color: #f0fdf4; /* Very light green on hover */
 } 
