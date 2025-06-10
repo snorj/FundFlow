@@ -93,9 +93,9 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
     }
     const closeCategoryModal = () => setIsCategoryModalOpen(false); // Use correct setter
 
-    const handleCategorySelected = (categoryId) => {
-        console.log(`Card: Category selected via modal: ID = ${categoryId}`);
-        setSelectedCategoryId(categoryId ? categoryId.toString() : '');
+    const handleCategorySelected = (category) => {
+        console.log(`Card: Category selected via modal: ID = ${category?.id}`);
+        setSelectedCategoryId(category?.id ? category.id.toString() : '');
         closeCategoryModal();
     };
 

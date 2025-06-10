@@ -88,22 +88,23 @@ const CategorySelectorModal = ({
   const handleNodeSelect = useCallback((categoryId) => {
     if (selectionMode === 'immediate') {
       // Immediate mode: select and notify parent immediately
+      const selectedCategory = processedCategories.all.find(c => c.id === categoryId);
       setSelectionState(prev => ({ ...prev, selectedCategoryId: categoryId }));
-      onSelectCategory(categoryId);
+      onSelectCategory(selectedCategory); // Pass the full category object for consistency
       onClose(); // Auto-close modal
     } else if (selectionMode === 'confirm') {
       // Confirm mode: set pending selection for confirmation
       setSelectionState(prev => ({ ...prev, pendingSelectionId: categoryId }));
     }
     // 'none' mode: no selection handling
-  }, [selectionMode, onSelectCategory, onClose]);
+  }, [selectionMode, onSelectCategory, onClose, processedCategories.all]);
 
   const handleConfirm = useCallback(() => {
     if (selectionMode === 'confirm' && selectionState.pendingSelectionId !== null) {
       // Find the full category object to pass to parent
       const selectedCategory = processedCategories.all.find(c => c.id === selectionState.pendingSelectionId);
       setSelectionState(prev => ({ ...prev, selectedCategoryId: prev.pendingSelectionId }));
-      onSelectCategory(selectedCategory); // Pass the full category object, not just ID
+      onSelectCategory(selectedCategory); // Pass the full category object for maximum flexibility
       onClose(); // Close modal after confirming
     }
   }, [selectionMode, selectionState.pendingSelectionId, onSelectCategory, processedCategories.all, onClose]);

@@ -93,7 +93,7 @@ describe('CategorySelectorModal', () => {
       // Click on a category using the mocked component
       fireEvent.click(screen.getByTestId('category-node-1'));
       
-      expect(onSelectCategory).toHaveBeenCalledWith(1);
+      expect(onSelectCategory).toHaveBeenCalledWith(expect.objectContaining({ id: 1, name: 'Food & Dining' }));
       expect(onClose).toHaveBeenCalled();
     });
 
@@ -117,7 +117,7 @@ describe('CategorySelectorModal', () => {
       // Click confirm
       fireEvent.click(screen.getByText('Confirm Selection'));
       
-      expect(onSelectCategory).toHaveBeenCalledWith(1);
+      expect(onSelectCategory).toHaveBeenCalledWith(expect.objectContaining({ id: 1, name: 'Food & Dining' }));
     });
 
     test('none mode disables selection', () => {
@@ -300,7 +300,7 @@ describe('CategorySelectorModal', () => {
       
       // Select category should immediately trigger callback
       fireEvent.click(screen.getByTestId('category-node-1'));
-      expect(onSelectCategory).toHaveBeenCalledWith(1);
+      expect(onSelectCategory).toHaveBeenCalledWith(expect.objectContaining({ id: 1, name: 'Food & Dining' }));
       expect(onClose).toHaveBeenCalled();
     });
 
@@ -328,7 +328,7 @@ describe('CategorySelectorModal', () => {
       expect(onSelectCategory).not.toHaveBeenCalled();
       
       fireEvent.click(screen.getByText('Confirm Selection'));
-      expect(onSelectCategory).toHaveBeenCalledWith(1);
+      expect(onSelectCategory).toHaveBeenCalledWith(expect.objectContaining({ id: 1, name: 'Food & Dining' }));
     });
   });
 }); 
