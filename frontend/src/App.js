@@ -12,7 +12,7 @@ import VisualisePage from './pages/VisualisePage';
 import MainLayout from './components/layout/MainLayout';
 
 const Settings = () => <div style={{ padding: '20px' }}>Settings Page Content</div>;
-const AddTransaction = () => <div style={{ padding: '20px' }}>Add Transaction Manually Page</div>;
+const Admin = () => <div style={{ padding: '20px' }}>Admin Page Content</div>;
 
 function App() {
   return (
@@ -22,25 +22,22 @@ function App() {
           {/* Public routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-
-          {/* Protected routes with MainLayout (includes Sidebar) */}
+          
+          {/* Protected routes */}
           <Route element={<PrivateRoute />}>
-            <Route path="/" element={<MainLayout />}>
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<NewDashboardPage />} />
-                <Route path="upload" element={<UploadPage />} />
-                <Route path="categorise" element={<CategorisePage />} />
-                <Route path="categorise/transactions" element={<CategoriseTransactionsPage />} />
-                <Route path="visualise" element={<VisualisePage />} />
-                <Route path="settings" element={<Settings />} />
-                <Route path="add-transaction" element={<AddTransaction />} />
+            <Route element={<MainLayout />}>
+              <Route path="/dashboard" element={<NewDashboardPage />} />
+              <Route path="/upload" element={<UploadPage />} />
+              <Route path="/categorise" element={<CategorisePage />} />
+              <Route path="/categorise/transactions" element={<CategoriseTransactionsPage />} />
+              <Route path="/visualise" element={<VisualisePage />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/admin" element={<Admin />} />
             </Route>
           </Route>
-
-          {/* Fallback for any other unmatched routes, redirect to dashboard */}
-          {/* This also handles the initial / redirect before PrivateRoute logic kicks in fully if needed */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-
+          
+          {/* Default redirect */}
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Router>
     </AuthProvider>

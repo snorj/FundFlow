@@ -1,42 +1,64 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
-import { FiGrid, FiUpload, FiEdit, FiBarChart2, FiSettings } from 'react-icons/fi';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../utils/AuthContext';
+import { 
+  Home, 
+  Upload, 
+  Tag, 
+  BarChart3,
+  Settings, 
+  LogOut, 
+  Users
+} from 'lucide-react';
 import './Sidebar.css';
-import logoLight from '../../assets/logoLight.svg'; // Assuming logo is here
 
 const Sidebar = () => {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
   const navItems = [
-    { to: '/dashboard', icon: <FiGrid />, label: 'Dashboard' },
-    { to: '/upload', icon: <FiUpload />, label: 'Import' }, // Changed from 'Upload' to 'Import' for clarity
-    { to: '/categorise', icon: <FiEdit />, label: 'Categorise' },
-    { to: '/visualise', icon: <FiBarChart2 />, label: 'Visualise' },
-    { to: '/settings', icon: <FiSettings />, label: 'Settings' }, // Kept settings as it was in App.js
+    { path: '/dashboard', icon: Home, label: 'Dashboard' },
+    { path: '/upload', icon: Upload, label: 'Upload' },
+    { path: '/categorise', icon: Tag, label: 'Categorise' },
+    { path: '/visualise', icon: BarChart3, label: 'Visualise' },
+    { path: '/admin', icon: Users, label: 'Admin' },
+    { path: '/settings', icon: Settings, label: 'Settings' },
   ];
 
   return (
-    <aside className="sidebar">
+    <div className="sidebar">
       <div className="sidebar-header">
-        <img src={logoLight} alt="FundFlow Logo" className="sidebar-logo" />
-        {/* <span className="sidebar-title">FundFlow</span> */}
+        <h1 className="sidebar-title">FundFlow</h1>
       </div>
+      
       <nav className="sidebar-nav">
-        <ul>
-          {navItems.map((item) => (
-            <li key={item.to}>
-              <NavLink
-                to={item.to}
-                className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}
-              >
-                <span className="sidebar-icon">{item.icon}</span>
-                <span className="sidebar-label">{item.label}</span>
-              </NavLink>
-            </li>
-          ))}
-        </ul>
+        {navItems.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            className={({ isActive }) => 
+              `sidebar-item ${isActive ? 'active' : ''}`
+            }
+          >
+            <item.icon className="sidebar-icon" size={20} />
+            <span className="sidebar-label">{item.label}</span>
+          </NavLink>
+        ))}
+        
+        <button
+          onClick={handleLogout}
+          className="sidebar-item logout"
+        >
+          <LogOut className="sidebar-icon" size={20} />
+          <span className="sidebar-label">Logout</span>
+        </button>
       </nav>
-      {/* Add a footer or other elements if needed */}
-      {/* <div className="sidebar-footer">User Profile / Logout</div> */}
-    </aside>
+    </div>
   );
 };
 

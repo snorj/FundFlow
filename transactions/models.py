@@ -43,6 +43,11 @@ class Category(models.Model):
         verbose_name_plural = "Categories"
         unique_together = ('user', 'parent', 'name')
         ordering = ['name']
+        indexes = [
+            models.Index(fields=['user', 'parent']),
+            models.Index(fields=['parent']),
+            models.Index(fields=['created_at']),
+        ]
 
     def __str__(self):
         if self.parent:
@@ -57,6 +62,15 @@ class Vendor(models.Model):
         max_length=255,
         help_text="Name of the vendor (e.g., 'Woolworths', 'Shell', 'Coffee Club')."
     )
+    display_name = models.CharField(
+        max_length=255,
+        default="",
+        help_text="Display name for the vendor, used in UI (e.g., 'Woolworths Supermarket', 'Shell Gas Station')."
+    )
+    description_patterns = models.JSONField(
+        default=list,
+        help_text="Array of description patterns that help identify this vendor in transaction descriptions."
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -69,10 +83,408 @@ class Vendor(models.Model):
 
     class Meta:
         unique_together = ('user', 'name')
-        ordering = ['name']
+        ordering = ['display_name', 'name']
+        indexes = [
+            models.Index(fields=['user']),
+            models.Index(fields=['display_name']),
+            models.Index(fields=['created_at']),
+        ]
 
     def __str__(self):
-        return self.name
+        return self.display_name or self.name
+
+class VendorMerge(models.Model):
+    """
+    Tracks vendor merge operations - which vendors have been merged together
+    and which one is the primary vendor that all transactions should point to.
+    """
+    id = models.CharField(
+        max_length=36,
+        primary_key=True,
+        help_text="UUID for the vendor merge operation."
+    )
+    primary_vendor = models.ForeignKey(
+        Vendor,
+        on_delete=models.CASCADE,
+        related_name='primary_merges',
+        db_index=True,
+        help_text="The vendor that remains active after merging."
+    )
+    merged_vendor_ids = models.JSONField(
+        help_text="Array of vendor IDs that have been merged into the primary vendor."
+    )
+    merged_descriptions = models.JSONField(
+        help_text="Array of original vendor descriptions/names that were merged."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        help_text="User who performed the merge operation."
+    )
+
+    class Meta:
+        verbose_name = "Vendor Merge"
+        verbose_name_plural = "Vendor Merges"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['primary_vendor']),
+            models.Index(fields=['created_at']),
+        ]
+
+    def __str__(self):
+        merged_count = len(self.merged_vendor_ids) if self.merged_vendor_ids else 0
+        return f"Merge: {merged_count} vendors -> {self.primary_vendor.name}"
+
+class VendorRule(models.Model):
+    """
+    Defines categorization rules for vendors, supporting pattern-based matching
+    and automatic assignment with priority handling for conflict resolution.
+    """
+    PRIORITY_CHOICES = [
+        (1, 'Very High'),
+        (2, 'High'),
+        (3, 'Medium'),
+        (4, 'Low'),
+        (5, 'Very Low'),
+    ]
+    
+    id = models.CharField(
+        max_length=36,
+        primary_key=True,
+        help_text="UUID for the vendor rule."
+    )
+    vendor = models.ForeignKey(
+        Vendor,
+        on_delete=models.CASCADE,
+        related_name='categorization_rules',
+        db_index=True,
+        help_text="The vendor this rule applies to."
+    )
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.CASCADE,
+        related_name='vendor_rules',
+        db_index=True,
+        help_text="The category to assign when this rule matches."
+    )
+    pattern = models.CharField(
+        max_length=500,
+        null=True,
+        blank=True,
+        help_text="Optional regex pattern for description matching. If null, rule applies to all transactions from this vendor."
+    )
+    is_persistent = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="If true, automatically assign this category to future transactions from this vendor."
+    )
+    priority = models.IntegerField(
+        choices=PRIORITY_CHOICES,
+        default=3,
+        db_index=True,
+        help_text="Priority level for rule conflict resolution (1=highest, 5=lowest)."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Vendor Rule"
+        verbose_name_plural = "Vendor Rules"
+        ordering = ['priority', '-created_at']
+        indexes = [
+            models.Index(fields=['vendor', 'priority']),
+            models.Index(fields=['category']),
+            models.Index(fields=['is_persistent']),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(priority__gte=1) & models.Q(priority__lte=5),
+                name='valid_priority_range'
+            ),
+        ]
+
+    def __str__(self):
+        pattern_text = f" (pattern: {self.pattern})" if self.pattern else ""
+        persistent_text = " [Auto]" if self.is_persistent else ""
+        return f"{self.vendor.name} -> {self.category.name}{pattern_text}{persistent_text}"
+
+class SplitTransaction(models.Model):
+    """
+    Represents a split portion of a parent transaction, allowing users to 
+    categorize different parts of a single transaction into separate categories.
+    """
+    id = models.CharField(
+        max_length=36,
+        primary_key=True,
+        help_text="UUID for the split transaction."
+    )
+    parent_transaction = models.ForeignKey(
+        'Transaction',  # Forward reference since Transaction is defined later
+        on_delete=models.CASCADE,
+        related_name='split_transactions',
+        db_index=True,
+        help_text="The original transaction that this split belongs to."
+    )
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="The amount allocated to this split (must be positive)."
+    )
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.CASCADE,
+        related_name='split_transactions',
+        db_index=True,
+        help_text="The category assigned to this split portion."
+    )
+    description = models.CharField(
+        max_length=500,
+        help_text="Custom description for this split portion (e.g., 'Groceries portion of Walmart purchase')."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Split Transaction"
+        verbose_name_plural = "Split Transactions"
+        ordering = ['parent_transaction', 'created_at']
+        indexes = [
+            models.Index(fields=['parent_transaction']),
+            models.Index(fields=['category']),
+            models.Index(fields=['created_at']),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__gt=0),
+                name='positive_split_amount'
+            ),
+        ]
+
+    def __str__(self):
+        return f"Split: {self.amount} → {self.category.name} ({self.parent_transaction.description[:30]})"
+
+    def clean(self):
+        """Validate that amount is positive and doesn't exceed parent transaction amount."""
+        from django.core.exceptions import ValidationError
+        
+        if self.amount <= 0:
+            raise ValidationError("Split amount must be positive.")
+        
+        if self.parent_transaction_id:
+            # Check that total splits don't exceed parent transaction amount
+            other_splits = SplitTransaction.objects.filter(
+                parent_transaction=self.parent_transaction
+            ).exclude(id=self.id)
+            
+            total_other_splits = sum(split.amount for split in other_splits)
+            parent_amount = abs(self.parent_transaction.original_amount)
+            
+            if total_other_splits + self.amount > parent_amount:
+                raise ValidationError(
+                    f"Total split amount ({total_other_splits + self.amount}) "
+                    f"cannot exceed parent transaction amount ({parent_amount})."
+                )
+
+class CustomView(models.Model):
+    """
+    Represents a custom user-defined view for organizing and analyzing transactions
+    based on specific search criteria and custom categorization schemes.
+    """
+    id = models.CharField(
+        max_length=36,
+        primary_key=True,
+        help_text="UUID for the custom view."
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='custom_views',
+        db_index=True,
+        help_text="User who owns this custom view."
+    )
+    name = models.CharField(
+        max_length=255,
+        help_text="Name of the custom view (e.g., 'Q4 Business Expenses', 'Vacation Planning')."
+    )
+    description = models.TextField(
+        null=True,
+        blank=True,
+        help_text="Optional description of what this view is used for."
+    )
+    search_criteria = models.JSONField(
+        help_text="JSON object containing search parameters like date ranges, vendors, amounts, etc."
+    )
+    is_archived = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Whether this view has been archived (hidden from active use)."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Custom View"
+        verbose_name_plural = "Custom Views"
+        unique_together = ('user', 'name')
+        ordering = ['-updated_at', 'name']
+        indexes = [
+            models.Index(fields=['user', 'is_archived']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['updated_at']),
+        ]
+
+    def __str__(self):
+        archived_text = " [Archived]" if self.is_archived else ""
+        return f"{self.name} ({self.user.username}){archived_text}"
+
+    def get_matching_transactions(self):
+        """
+        Apply the search criteria to find matching transactions.
+        Returns a QuerySet of transactions that match this view's criteria.
+        """
+        from django.db.models import Q
+        from datetime import datetime
+        
+        queryset = Transaction.objects.filter(user=self.user)
+        criteria = self.search_criteria
+        
+        if not criteria:
+            return queryset.none()
+        
+        # Apply date range filters
+        if 'date_from' in criteria and criteria['date_from']:
+            try:
+                date_from = datetime.strptime(criteria['date_from'], '%Y-%m-%d').date()
+                queryset = queryset.filter(transaction_date__gte=date_from)
+            except ValueError:
+                pass
+        
+        if 'date_to' in criteria and criteria['date_to']:
+            try:
+                date_to = datetime.strptime(criteria['date_to'], '%Y-%m-%d').date()
+                queryset = queryset.filter(transaction_date__lte=date_to)
+            except ValueError:
+                pass
+        
+        # Apply amount filters
+        if 'amount_min' in criteria and criteria['amount_min']:
+            try:
+                amount_min = Decimal(str(criteria['amount_min']))
+                queryset = queryset.filter(original_amount__gte=amount_min)
+            except (ValueError, TypeError):
+                pass
+        
+        if 'amount_max' in criteria and criteria['amount_max']:
+            try:
+                amount_max = Decimal(str(criteria['amount_max']))
+                queryset = queryset.filter(original_amount__lte=amount_max)
+            except (ValueError, TypeError):
+                pass
+        
+        # Apply vendor filters
+        if 'vendor_ids' in criteria and criteria['vendor_ids']:
+            vendor_ids = criteria['vendor_ids']
+            if isinstance(vendor_ids, list):
+                queryset = queryset.filter(vendor_id__in=vendor_ids)
+        
+        # Apply category filters
+        if 'category_ids' in criteria and criteria['category_ids']:
+            category_ids = criteria['category_ids']
+            if isinstance(category_ids, list):
+                queryset = queryset.filter(category_id__in=category_ids)
+        
+        # Apply direction filter
+        if 'direction' in criteria and criteria['direction']:
+            queryset = queryset.filter(direction=criteria['direction'])
+        
+        # Apply description search
+        if 'description_contains' in criteria and criteria['description_contains']:
+            search_term = criteria['description_contains']
+            queryset = queryset.filter(description__icontains=search_term)
+        
+        return queryset.select_related('vendor', 'category').order_by('-transaction_date')
+
+class CustomCategory(models.Model):
+    """
+    Represents a custom category within a specific CustomView, allowing users
+    to create personalized category hierarchies for different analysis purposes.
+    """
+    id = models.CharField(
+        max_length=36,
+        primary_key=True,
+        help_text="UUID for the custom category."
+    )
+    custom_view = models.ForeignKey(
+        CustomView,
+        on_delete=models.CASCADE,
+        related_name='custom_categories',
+        db_index=True,
+        help_text="The custom view this category belongs to."
+    )
+    name = models.CharField(
+        max_length=255,
+        help_text="Name of the custom category (e.g., 'Travel Food', 'Project Expenses')."
+    )
+    parent = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='children',
+        db_index=True,
+        help_text="Parent custom category for creating hierarchy. Null for top-level categories."
+    )
+    order = models.IntegerField(
+        default=0,
+        help_text="Display order within the parent category or view."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Custom Category"
+        verbose_name_plural = "Custom Categories"
+        unique_together = ('custom_view', 'parent', 'name')
+        ordering = ['custom_view', 'order', 'name']
+        indexes = [
+            models.Index(fields=['custom_view', 'parent']),
+            models.Index(fields=['custom_view', 'order']),
+            models.Index(fields=['parent']),
+        ]
+
+    def __str__(self):
+        if self.parent:
+            return f"{self.parent.name} > {self.name} ({self.custom_view.name})"
+        return f"{self.name} ({self.custom_view.name})"
+
+    def get_full_path(self):
+        """Get the full hierarchical path of this category."""
+        path = [self.name]
+        current = self.parent
+        while current:
+            path.insert(0, current.name)
+            current = current.parent
+        return " > ".join(path)
+
+    def get_descendants(self, include_self=False):
+        """Get all descendant categories (children, grandchildren, etc.)."""
+        descendants = list(self.children.all())
+        if include_self:
+            descendants.insert(0, self)
+        
+        for child in list(descendants):
+            descendants.extend(child.get_descendants())
+        
+        return descendants
+
+    def get_level(self):
+        """Get the hierarchical level of this category (0 = root level)."""
+        level = 0
+        current = self.parent
+        while current:
+            level += 1
+            current = current.parent
+        return level
 
 class Transaction(models.Model):
     SOURCE_CHOICES = [
@@ -88,6 +500,23 @@ class Transaction(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions', db_index=True)
     transaction_date = models.DateField(db_index=True)
     description = models.TextField(help_text="Description of the transaction (e.g., merchant name, notes).")
+
+    # --- Transaction Splitting Fields ---
+    is_parent_split = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="True if this transaction has been split into multiple categories."
+    )
+    parent_transaction = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='child_transactions',
+        db_index=True,
+        help_text="If this is a child transaction from a split, reference to the parent."
+    )
+    # --- END Transaction Splitting Fields ---
 
     # --- RENAMED and NEW Currency Fields ---
     original_amount = models.DecimalField( # RENAMED from 'amount'
@@ -154,6 +583,32 @@ class Transaction(models.Model):
 
     class Meta:
         ordering = ['-transaction_date', '-created_at']
+        indexes = [
+            models.Index(fields=['user', 'transaction_date']),
+            models.Index(fields=['user', 'category']),
+            models.Index(fields=['user', 'vendor']),
+            models.Index(fields=['transaction_date', 'original_currency']),
+            models.Index(fields=['source', 'user']),
+            models.Index(fields=['is_parent_split']),
+            models.Index(fields=['parent_transaction']),
+            models.Index(fields=['bank_transaction_id']),
+            models.Index(fields=['original_currency', 'transaction_date']),
+            models.Index(fields=['user', 'created_at']),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(original_amount__gt=0),
+                name='positive_original_amount'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(aud_amount__isnull=True) | models.Q(aud_amount__gt=0),
+                name='positive_aud_amount_when_present'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(exchange_rate_to_aud__isnull=True) | models.Q(exchange_rate_to_aud__gt=0),
+                name='positive_exchange_rate_when_present'
+            ),
+        ]
 
     def __str__(self):
         # Update string representation if desired
@@ -197,6 +652,64 @@ class Transaction(models.Model):
         """Returns the account amount with correct sign based on direction."""
         amount = self.account_amount if isinstance(self.account_amount, Decimal) else Decimal(0)
         return -amount if self.direction == 'DEBIT' else amount
+
+    # --- Split Transaction Helper Methods ---
+    @property
+    def total_split_amount(self):
+        """Calculate the total amount allocated to splits for this transaction."""
+        if not self.is_parent_split:
+            return Decimal('0')
+        return sum(split.amount for split in self.split_transactions.all())
+
+    @property
+    def remaining_split_amount(self):
+        """Calculate how much of the transaction amount is not yet allocated to splits."""
+        parent_amount = abs(self.original_amount)
+        return parent_amount - self.total_split_amount
+
+    @property
+    def is_fully_split(self):
+        """Check if the transaction has been completely allocated to splits."""
+        return self.is_parent_split and self.remaining_split_amount <= Decimal('0.01')  # Allow for rounding
+
+    def can_add_split(self, amount):
+        """Check if a split of the given amount can be added to this transaction."""
+        if not isinstance(amount, Decimal):
+            amount = Decimal(str(amount))
+        return self.remaining_split_amount >= amount
+
+    def get_effective_category(self):
+        """
+        Get the effective category for this transaction.
+        For split transactions, returns None since category is determined by splits.
+        For regular transactions, returns the assigned category.
+        """
+        if self.is_parent_split:
+            return None  # Category is determined by individual splits
+        return self.category
+
+    def get_split_summary(self):
+        """Get a summary of all splits for this transaction."""
+        if not self.is_parent_split:
+            return None
+        
+        splits = self.split_transactions.select_related('category').all()
+        return {
+            'total_splits': len(splits),
+            'total_amount': self.total_split_amount,
+            'remaining_amount': self.remaining_split_amount,
+            'is_fully_split': self.is_fully_split,
+            'splits': [
+                {
+                    'id': split.id,
+                    'amount': split.amount,
+                    'category': split.category.name,
+                    'description': split.description
+                }
+                for split in splits
+            ]
+        }
+    # --- END Split Transaction Helper Methods ---
 
     def update_aud_amount_if_needed(self, force_recalculation=False):
         """
@@ -283,7 +796,6 @@ class Transaction(models.Model):
 
 # --- Keep existing DescriptionMapping model ---
 class DescriptionMapping(models.Model):
-    # ... (DescriptionMapping model definition remains unchanged) ...
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
         related_name='description_mappings'
@@ -309,6 +821,11 @@ class DescriptionMapping(models.Model):
         ordering = ['original_description']
         verbose_name = "Description Mapping"
         verbose_name_plural = "Description Mappings"
+        indexes = [
+            models.Index(fields=['user']),
+            models.Index(fields=['assigned_category']),
+            models.Index(fields=['created_at']),
+        ]
 
     def __str__(self):
         return f"'{self.original_description}' -> '{self.clean_name}' ({self.user.username})"
@@ -346,6 +863,17 @@ class HistoricalExchangeRate(models.Model):
         verbose_name_plural = "Historical Exchange Rates"
         unique_together = ('date', 'source_currency', 'target_currency')
         ordering = ['-date', 'source_currency', 'target_currency'] # Most recent first
+        indexes = [
+            models.Index(fields=['date', 'source_currency']),
+            models.Index(fields=['source_currency', 'target_currency']),
+            models.Index(fields=['date']),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(rate__gt=0),
+                name='positive_exchange_rate'
+            ),
+        ]
 
     def __str__(self):
         return f"{self.date}: 1 {self.source_currency} = {self.rate} {self.target_currency}"
