@@ -1,13 +1,11 @@
 .categorization-page {
     padding: 20px;
-    max-width: 800px;
+    max-width: 900px; /* Slightly wider for new layout */
     margin: 0 auto;
   }
   
   .categorization-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    text-align: center;
     margin-bottom: 30px;
     padding-bottom: 15px;
     border-bottom: 1px solid var(--gray-border);
@@ -17,6 +15,13 @@
     font-size: 24px;
     font-weight: 600;
     color: var(--deep-navy);
+    margin: 0 0 5px 0;
+  }
+
+  .transaction-count {
+    font-size: 0.95em;
+    font-weight: 500;
+    color: var(--text-muted-dark);
     margin: 0;
   }
   
@@ -28,7 +33,247 @@
     padding: 5px 10px;
     border-radius: 4px;
   }
-  
+
+  /* Selection Controls */
+  .selection-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background-color: var(--light-gray);
+    border-radius: 8px;
+    margin-bottom: 25px;
+    gap: 15px;
+    flex-wrap: wrap;
+  }
+
+  .bulk-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+  }
+
+  .select-all-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: 1px solid var(--gray-border);
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    color: var(--medium-blue);
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .select-all-button:hover:not(:disabled) {
+    background-color: var(--white);
+    border-color: var(--teal);
+    color: var(--teal);
+  }
+
+  .select-all-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .selection-count {
+    font-size: 0.9em;
+    color: var(--text-muted-dark);
+    font-weight: 500;
+  }
+
+  .categorization-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .category-select-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--white);
+    border: 1px solid var(--gray-border);
+    padding: 8px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    color: var(--medium-blue);
+    font-weight: 500;
+    transition: all 0.2s;
+    min-width: 160px;
+    justify-content: flex-start;
+  }
+
+  .category-select-button:hover:not(:disabled) {
+    border-color: var(--teal);
+    color: var(--teal);
+  }
+
+  .category-select-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .categorize-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--teal);
+    border: 1px solid var(--teal);
+    padding: 8px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    color: var(--white);
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+
+  .categorize-button:hover:not(:disabled) {
+    background-color: var(--teal-darker);
+    border-color: var(--teal-darker);
+  }
+
+  .categorize-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .spinner-inline {
+    animation: spin 1s linear infinite;
+  }
+
+  /* Transaction Groups */
+  .transaction-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .transaction-group {
+    background-color: var(--white);
+    border: 1px solid var(--gray-border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .group-header {
+    display: flex;
+    align-items: center;
+    padding: 15px 20px;
+    background-color: var(--light-gray);
+    border-bottom: 1px solid var(--gray-border);
+    gap: 15px;
+  }
+
+  .group-select-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--medium-blue);
+    font-size: 18px;
+    padding: 2px;
+    transition: color 0.2s;
+    flex-shrink: 0;
+  }
+
+  .group-select-button:hover:not(:disabled) {
+    color: var(--teal);
+  }
+
+  .group-select-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .group-select-button .partial {
+    color: var(--warm-orange);
+  }
+
+  .group-info {
+    flex-grow: 1;
+  }
+
+  .group-description {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--deep-navy);
+    margin: 0 0 4px 0;
+  }
+
+  .group-meta {
+    font-size: 0.9em;
+    color: var(--text-muted-dark);
+  }
+
+  .group-transactions {
+    padding: 0;
+  }
+
+  .transaction-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--light-gray);
+    gap: 15px;
+    transition: background-color 0.2s;
+  }
+
+  .transaction-item:last-child {
+    border-bottom: none;
+  }
+
+  .transaction-item:hover {
+    background-color: var(--light-gray);
+  }
+
+  .transaction-select-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--medium-blue);
+    font-size: 16px;
+    padding: 2px;
+    transition: color 0.2s;
+    flex-shrink: 0;
+  }
+
+  .transaction-select-button:hover:not(:disabled) {
+    color: var(--teal);
+  }
+
+  .transaction-select-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .transaction-details {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-grow: 1;
+  }
+
+  .transaction-date {
+    font-size: 0.9em;
+    color: var(--text-muted-dark);
+    font-weight: 500;
+  }
+
+  .transaction-amount {
+    font-weight: 600;
+    font-size: 0.95em;
+  }
+
+  .transaction-amount.amount-debit {
+    color: var(--warm-orange-darker);
+  }
+
+  .transaction-amount.amount-credit {
+    color: var(--teal);
+  }
+
   /* Loading and Error States */
   .categorization-page.loading-state,
   .categorization-page.error-state,
@@ -100,8 +345,52 @@
       gap: 10px;
       font-size: 14px;
   }
+
+  /* Responsive Design */
+  @media (max-width: 768px) {
+    .categorization-page {
+      padding: 15px;
+      max-width: 100%;
+    }
+
+    .selection-controls {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 15px;
+    }
+
+    .bulk-controls,
+    .categorization-controls {
+      justify-content: center;
+    }
+
+    .categorization-controls {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .category-select-button,
+    .categorize-button {
+      min-width: auto;
+      justify-content: center;
+    }
+
+    .group-header {
+      padding: 12px 15px;
+    }
+
+    .transaction-item {
+      padding: 10px 15px;
+    }
+
+    .transaction-details {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+    }
+  }
   
-  /* --- Card Transition Styles --- */
+  /* --- Deprecated: Card Transition Styles (kept for compatibility) --- */
   
   /* Container rendered by TransitionGroup */
   .categorization-card-container {
@@ -145,7 +434,7 @@
     transform: scale(0.95) translateY(-20px);
   }
   
-/* --- NEW: Description Editing Styles --- */
+/* --- Deprecated: Description Editing Styles (kept for compatibility) --- */
 .card-header {
   display: flex;
   align-items: flex-start; /* Align items to top */

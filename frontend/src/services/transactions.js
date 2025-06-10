@@ -61,10 +61,12 @@ const transactionService = {
         return response.data;
     },
 
-    batchCategorizeTransactions: async (transactionIds, categoryId) => {
-        const response = await api.post('/transactions/batch-categorize/', {
+    batchCategorizeTransactions: async (transactionIds, categoryId, originalDescription = 'Individual Selection') => {
+        const response = await api.patch('/transactions/batch-categorize/', {
             transaction_ids: transactionIds,
             category_id: categoryId,
+            original_description: originalDescription,
+            clean_name: null // Optional - using original description as clean name
         });
         return response.data;
     },
