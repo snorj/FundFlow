@@ -274,6 +274,130 @@
     color: var(--teal);
   }
 
+  .transaction-info-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--text-muted);
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .transaction-info-button:hover:not(:disabled) {
+    background: var(--gray-border);
+    color: var(--teal);
+  }
+
+  .transaction-info-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Vendor Editing */
+  .vendor-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .vendor-edit-button {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+
+  .group-info:hover .vendor-edit-button {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .vendor-edit-button:hover {
+    color: var(--teal);
+    background-color: var(--gray-border);
+  }
+
+  .vendor-edit-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .vendor-edit-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .vendor-edit-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 2px solid var(--gray-border);
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: 600;
+    transition: border-color 0.2s ease;
+    color: var(--deep-navy);
+  }
+
+  .vendor-edit-input:focus {
+    outline: none;
+    border-color: var(--teal);
+  }
+
+  .vendor-edit-input:disabled {
+    background-color: var(--light-gray);
+    opacity: 0.6;
+  }
+
+  .vendor-edit-actions {
+    display: flex;
+    gap: 4px;
+  }
+
+  .vendor-save-button, .vendor-cancel-button {
+    background: none;
+    border: none;
+    padding: 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: all 0.2s ease;
+  }
+
+  .vendor-save-button {
+    color: var(--success-green);
+  }
+
+  .vendor-save-button:hover:not(:disabled) {
+    background-color: var(--success-green-light);
+  }
+
+  .vendor-cancel-button {
+    color: var(--warm-orange);
+  }
+
+  .vendor-cancel-button:hover:not(:disabled) {
+    background-color: var(--warm-orange-lighter);
+  }
+
+  .vendor-save-button:disabled, .vendor-cancel-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
   /* Loading and Error States */
   .categorization-page.loading-state,
   .categorization-page.error-state,

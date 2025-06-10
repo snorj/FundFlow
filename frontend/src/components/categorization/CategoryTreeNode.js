@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 // Enhanced icons for the improved interface
 import { 
@@ -11,41 +11,49 @@ import {
   FiTrash2, 
   FiTag,
   FiDollarSign,
-  FiShoppingBag,
   FiFolder,
-  FiFolderPlus
+  FiInfo,
+  FiEdit3,
+  FiCheck,
+  FiX
 } from 'react-icons/fi';
+import { formatCurrency } from '../../utils/formatting';
+import transactionService from '../../services/transactions';
 
 const CategoryTreeNode = ({
-  item, // Can be category, vendor, or transaction
-  allItems, // All categories and vendors
+  item,
+  allItems,
   visibleItemIds,
   level = 0,
   onSelectNode = () => {},
   onCategorySelect,
   onVendorSelect,
-  onTransactionSelect, // New prop for transaction selection
-  pendingSelectionId = null,
+  onTransactionSelect,
+  onTransactionInfo,
   onCreateCategory,
   onDeleteCategory,
   isCreating,
   isDeleting,
-  // Enhanced functionality props
-  transactions = [], // All transactions for calculating totals and creating vendor children
+  transactions = [],
   categorySpendingTotals = {},
-  vendorsByCategory = {},
   selectedCategoryId = null,
   selectedVendorId = null,
-  selectedTransactionId = null, // New prop for transaction selection
+  selectedTransactionId = null,
   showSpendingTotals = true,
-  showVendorCounts = true,
   enableSmartInteractions = true,
+  collapseAllTrigger,
 }) => {
   const [isExpanded, setIsExpanded] = useState(level < 2 && item.type !== 'transaction'); 
   const [showAddInput, setShowAddInput] = useState(false);
   const [newChildName, setNewChildName] = useState('');
   const [isSavingChild, setIsSavingChild] = useState(false);
   const [addChildError, setAddChildError] = useState(null);
+  
+  // Vendor editing state
+  const [isEditingVendor, setIsEditingVendor] = useState(false);
+  const [editedVendorName, setEditedVendorName] = useState('');
+  const [isUpdatingVendor, setIsUpdatingVendor] = useState(false);
+  const [vendorEditError, setVendorEditError] = useState(null);
 
   // Calculate spending total for this category (including subcategories)
   const calculateCategoryTotal = useCallback((categoryId) => {
@@ -68,16 +76,6 @@ const CategoryTreeNode = ({
     return directTotal + childTotal;
   }, [allItems, transactions]);
 
-  // Format currency amount in AUD
-  const formatCurrency = useCallback((amount) => {
-    return new Intl.NumberFormat('en-AU', {
-      style: 'currency',
-      currency: 'AUD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(amount);
-  }, []);
-
   // Get vendor children for categories (vendors that have transactions in this category)
   const getVendorChildren = useCallback(() => {
     if (item.type !== 'category') return [];
@@ -89,8 +87,9 @@ const CategoryTreeNode = ({
     transactionsArray
       .filter(t => t.category === item.id)
       .forEach(t => {
-        const vendorName = t.vendor_name || t.description || 'Unknown Vendor';
-        const vendorId = t.vendor_id || `vendor_${vendorName}`;
+        const vendorName = t.description || 'Unknown Vendor';
+        // Use description for vendor ID to ensure consistent grouping
+        const vendorId = `vendor_${vendorName}`;
         
         if (!vendorMap[vendorId]) {
           vendorMap[vendorId] = {
@@ -117,14 +116,19 @@ const CategoryTreeNode = ({
     if (item.type !== 'vendor') return [];
     
     const transactionsArray = Array.isArray(transactions) ? transactions : [];
-    const vendorName = item.name;
+    const vendorId = item.id;
     
     // Find transactions for this vendor under the parent category
     return transactionsArray
       .filter(t => {
         if (t.category !== item.parent) return false;
-        const txVendorName = t.vendor_name || t.description || 'Unknown Vendor';
-        return txVendorName === vendorName;
+        
+        // Create the same vendor ID logic as in getVendorChildren
+        const vendorName = t.description || 'Unknown Vendor';
+        const expectedVendorId = `vendor_${vendorName}`;
+        
+        // Match by vendor ID to properly group transactions
+        return expectedVendorId === vendorId;
       })
       .map(t => ({
         id: `transaction_${t.id}`,
@@ -171,20 +175,12 @@ const CategoryTreeNode = ({
   // Calculate totals and vendor data
   const categoryTotal = useMemo(() => {
     if (item.type !== 'category') return 0;
-    // Use pre-calculated totals if available, otherwise calculate
-    const total = categorySpendingTotals[item.id] || calculateCategoryTotal(item.id);
-    if (total > 0) {
-      console.log(`💰 CategoryTreeNode: Category "${item.name}" total: ${formatCurrency(total)}`);
-    }
-    return total;
-  }, [item.id, item.type, item.name, categorySpendingTotals, calculateCategoryTotal, formatCurrency]);
+    return categorySpendingTotals[item.id] || calculateCategoryTotal(item.id);
+  }, [item.id, item.type, categorySpendingTotals, calculateCategoryTotal]);
 
   const hasChildren = displayChildren.length > 0;
-  const hasSubcategories = displayChildren.filter(child => child.type === 'category').length > 0;
-  const hasVendors = displayChildren.filter(child => child.type === 'vendor').length > 0;
-  const hasTransactions = displayChildren.filter(child => child.type === 'transaction').length > 0;
 
-  // Event handlers with smart interactions
+  // Event handlers
   const handleToggleExpand = useCallback((e) => { 
     e.stopPropagation(); 
     if (item.type !== 'transaction' && hasChildren) {
@@ -206,104 +202,19 @@ const CategoryTreeNode = ({
   }, [item, enableSmartInteractions, onSelectNode, onCategorySelect, onVendorSelect, onTransactionSelect]);
 
   const handleDoubleClick = useCallback((e) => {
-    if (!enableSmartInteractions) return;
     e.stopPropagation();
-    
-    // Double click to edit (more robust implementation)
-    if (item.type === 'category' && item.is_custom) {
-      // TODO: Implement inline editing for user-owned categories
-      console.log(`Edit category "${item.name}" (ID: ${item.id})`);
-      // This could trigger an inline editing mode or open an edit modal
-    } else if (item.type === 'vendor') {
-      // TODO: Implement vendor editing
-      console.log(`Edit vendor "${item.name}" (ID: ${item.id})`);
-    } else {
-      console.log(`Cannot edit system category "${item.name}"`);
+    if (item.type === 'category' && hasChildren) {
+      setIsExpanded(!isExpanded);
     }
-  }, [item, enableSmartInteractions]);
+  }, [item.type, hasChildren, isExpanded]);
 
-  const handleRightClick = useCallback((e) => {
-    if (!enableSmartInteractions) return;
-    e.preventDefault();
+  const handleTransactionInfoClick = (e) => {
     e.stopPropagation();
-    
-    // Right click context menu (enhanced implementation)
-    const contextMenuItems = [];
-    
-    if (item.type === 'category') {
-      if (item.is_custom) {
-        contextMenuItems.push(
-          { label: 'Edit Category', action: () => console.log(`Edit category ${item.name}`) },
-          { label: 'Add Subcategory', action: () => console.log(`Add subcategory to ${item.name}`) },
-          { label: 'Delete Category', action: () => console.log(`Delete category ${item.name}`) },
-          { separator: true },
-          { label: 'View Transactions', action: () => console.log(`View transactions for ${item.name}`) }
-        );
-      } else {
-        contextMenuItems.push(
-          { label: 'Add Subcategory', action: () => console.log(`Add subcategory to ${item.name}`) },
-          { label: 'View Transactions', action: () => console.log(`View transactions for ${item.name}`) }
-        );
-      }
-    } else if (item.type === 'vendor') {
-      contextMenuItems.push(
-        { label: 'Edit Vendor', action: () => console.log(`Edit vendor ${item.name}`) },
-        { label: 'View Transactions', action: () => console.log(`View transactions for ${item.name}`) },
-        { label: 'Merge with Another Vendor', action: () => console.log(`Merge vendor ${item.name}`) }
-      );
+    if (item.type === 'transaction' && onTransactionInfo) {
+      const transactionToPass = item.originalTransaction || item;
+      onTransactionInfo(transactionToPass);
     }
-    
-    // TODO: Implement actual context menu component
-    console.log(`Context menu for ${item.type} "${item.name}":`, contextMenuItems);
-  }, [item, enableSmartInteractions]);
-
-  const handleKeyDown = useCallback((e) => {
-    if (!enableSmartInteractions) return;
-    
-    switch (e.key) {
-      case 'Enter':
-        // Enter key selects the item
-        e.preventDefault();
-        handleSelect();
-        break;
-      case ' ':
-        // Space key toggles expansion for categories and vendors
-        e.preventDefault();
-        if ((item.type === 'category' || item.type === 'vendor') && hasChildren) {
-          handleToggleExpand(e);
-        }
-        break;
-      case 'ArrowRight':
-        // Right arrow expands categories and vendors
-        e.preventDefault();
-        if ((item.type === 'category' || item.type === 'vendor') && hasChildren && !isExpanded) {
-          setIsExpanded(true);
-        }
-        break;
-      case 'ArrowLeft':
-        // Left arrow collapses categories and vendors
-        e.preventDefault();
-        if ((item.type === 'category' || item.type === 'vendor') && hasChildren && isExpanded) {
-          setIsExpanded(false);
-        }
-        break;
-      case 'F2':
-        // F2 key triggers edit mode
-        e.preventDefault();
-        handleDoubleClick(e);
-        break;
-      case 'Delete':
-        // Delete key for user-owned categories
-        e.preventDefault();
-        if (item.type === 'category' && item.is_custom && onDeleteCategory) {
-          handleDeleteClick(e);
-        }
-        break;
-      default:
-        // Allow other keys to bubble up
-        break;
-    }
-  }, [item, enableSmartInteractions, handleSelect, handleToggleExpand, handleDoubleClick, hasChildren, isExpanded, onDeleteCategory]);
+  };
 
   // Existing handlers
   const handleAddChildClick = (e) => {
@@ -359,13 +270,83 @@ const CategoryTreeNode = ({
     }
   };
 
+  // Vendor editing handlers
+  const handleEditVendorClick = (e) => {
+    e.stopPropagation();
+    if (item.type !== 'vendor' || isUpdatingVendor) return;
+    setIsEditingVendor(true);
+    setEditedVendorName(item.name || '');
+    setVendorEditError(null);
+  };
+
+  const handleSaveVendor = async (e) => {
+    e.stopPropagation();
+    if (!editedVendorName.trim()) {
+      setVendorEditError('Vendor name cannot be empty');
+      return;
+    }
+
+    if (editedVendorName.trim() === item.name) {
+      handleCancelVendorEdit();
+      return;
+    }
+
+    setIsUpdatingVendor(true);
+    setVendorEditError(null);
+
+    try {
+      // Find all transactions for this vendor
+      const vendorTransactions = transactions.filter(t => {
+        if (t.category !== item.parent) return false;
+        const vendorName = t.description || 'Unknown Vendor';
+        const expectedVendorId = `vendor_${vendorName}`;
+        return expectedVendorId === item.id;
+      });
+
+      // Update all transactions with the new vendor name
+      const promises = vendorTransactions.map(transaction => 
+        transactionService.updateTransactionDescription(transaction.id, editedVendorName.trim())
+      );
+      
+      await Promise.all(promises);
+      
+      // Reset editing state
+      setIsEditingVendor(false);
+      setEditedVendorName('');
+      
+      // Trigger a refresh of transaction data in the parent component
+      // This will cause the vendor name to be updated in the tree
+      if (window.location.pathname === '/categorise') {
+        // For the manage categories page, we might need to refresh the data
+        window.location.reload();
+      }
+      
+    } catch (error) {
+      console.error('Failed to update vendor name:', error);
+      setVendorEditError(error.message || 'Failed to update vendor name');
+    } finally {
+      setIsUpdatingVendor(false);
+    }
+  };
+
+  const handleCancelVendorEdit = () => {
+    setIsEditingVendor(false);
+    setEditedVendorName('');
+    setVendorEditError(null);
+  };
+
   // Selection states
   const isSelected = (item.type === 'category' && selectedCategoryId === item.id) || 
                    (item.type === 'vendor' && selectedVendorId === item.id) ||
-                   (item.type === 'transaction' && selectedTransactionId === item.id) ||
-                   pendingSelectionId === item.id;
+                   (item.type === 'transaction' && selectedTransactionId === item.id);
   const isDisabled = isCreating || isSavingChild || (item.type === 'category' && isDeleting); 
   const isUserOwnedContext = item.user !== null && item.is_custom === true; 
+
+  useEffect(() => {
+    if (collapseAllTrigger) {
+      setIsExpanded(false);
+    }
+  }, [collapseAllTrigger]);
 
   if (visibleItemIds !== null && !visibleItemIds.has(item.id)) {
     return null; 
@@ -377,8 +358,6 @@ const CategoryTreeNode = ({
         className={`node-content ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}`} 
         onClick={!isDisabled ? handleSelect : undefined}
         onDoubleClick={!isDisabled ? handleDoubleClick : undefined}
-        onContextMenu={!isDisabled ? handleRightClick : undefined}
-        onKeyDown={!isDisabled ? handleKeyDown : undefined}
         tabIndex={enableSmartInteractions && !isDisabled ? 0 : -1}
         role="treeitem"
         aria-expanded={item.type === 'category' ? isExpanded : undefined}
@@ -399,13 +378,65 @@ const CategoryTreeNode = ({
         {/* Enhanced icons for different node types */}
         {item.type === 'category' && (
           <span className="node-icon category-icon">
-            {isExpanded ? <FiFolderPlus size="16" /> : <FiFolder size="16" />}
+            {isExpanded ? <FiFolder size="16" /> : <FiFolder size="16" />}
           </span>
         )}
         {item.type === 'vendor' && <FiTag size="14" className="node-icon vendor-icon" title="Vendor"/>}
         {item.type === 'transaction' && <FiDollarSign size="14" className="node-icon transaction-icon" title="Transaction"/>}
         
-        <span className="node-name">{item.name}</span>
+        {/* Vendor name with editing capability */}
+        {item.type === 'vendor' && !isEditingVendor && (
+          <span className="node-name vendor-name">
+            {item.name}
+            <button 
+              className="vendor-edit-button"
+              onClick={handleEditVendorClick}
+              title="Edit vendor name"
+              disabled={isUpdatingVendor || isDeleting || isCreating}
+            >
+              <FiEdit3 size="12" />
+            </button>
+          </span>
+        )}
+        
+        {/* Vendor editing input */}
+        {item.type === 'vendor' && isEditingVendor && (
+          <div className="vendor-edit-form">
+            <input
+              type="text"
+              value={editedVendorName}
+              onChange={(e) => setEditedVendorName(e.target.value)}
+              className="vendor-edit-input"
+              disabled={isUpdatingVendor}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveVendor(e);
+                if (e.key === 'Escape') handleCancelVendorEdit();
+              }}
+            />
+            <div className="vendor-edit-actions">
+              <button 
+                onClick={handleSaveVendor}
+                disabled={isUpdatingVendor || !editedVendorName.trim()}
+                className="vendor-save-button"
+                title="Save"
+              >
+                {isUpdatingVendor ? <FiLoader size="12" className="spinner-inline" /> : <FiCheck size="12" />}
+              </button>
+              <button 
+                onClick={handleCancelVendorEdit}
+                disabled={isUpdatingVendor}
+                className="vendor-cancel-button"
+                title="Cancel"
+              >
+                <FiX size="12" />
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {/* Regular node name for non-vendor items and non-transaction items under vendors */}
+        {item.type !== 'vendor' && !(item.type === 'transaction' && level > 0 && allItems.find(parent => parent.id === item.parent)?.type === 'vendor') && <span className="node-name">{item.name}</span>}
         
         {/* Amount display for different node types */}
         {item.type === 'category' && showSpendingTotals && categoryTotal !== 0 && (
@@ -426,8 +457,7 @@ const CategoryTreeNode = ({
         {item.type === 'transaction' && (
           <span className="transaction-details">
             <span className={`transaction-amount ${item.direction === 'DEBIT' ? 'debit' : 'credit'}`}>
-              {item.direction === 'DEBIT' ? '-' : '+'}
-              {formatCurrency(item.amount || 0)}
+              {formatCurrency(item.amount || 0, item.direction)}
             </span>
             <span className="transaction-date">
               {new Date(item.date).toLocaleDateString('en-AU', { 
@@ -436,6 +466,14 @@ const CategoryTreeNode = ({
                 year: '2-digit'
               })}
             </span>
+            <button 
+              className="action-button-icon transaction-info-button" 
+              title={`View details for transaction`}
+              onClick={handleTransactionInfoClick} 
+              disabled={isDisabled}
+            >
+              <FiInfo size="14"/>
+            </button>
           </span>
         )}
         
@@ -467,6 +505,13 @@ const CategoryTreeNode = ({
           </div>
         )}
       </div>
+
+      {/* Vendor editing error */}
+      {item.type === 'vendor' && vendorEditError && (
+        <div className="vendor-edit-error" style={{ paddingLeft: `${(level + 1) * 20}px` }}>
+          {vendorEditError}
+        </div>
+      )}
 
       {item.type === 'category' && showAddInput && (
           <div className="add-child-input-area" style={{ paddingLeft: `${(level + 1) * 10}px` }}>
@@ -502,21 +547,19 @@ const CategoryTreeNode = ({
               onCategorySelect={onCategorySelect}
               onVendorSelect={onVendorSelect}
               onTransactionSelect={onTransactionSelect}
-              pendingSelectionId={pendingSelectionId}
+              onTransactionInfo={onTransactionInfo}
               onCreateCategory={onCreateCategory}
               onDeleteCategory={onDeleteCategory}
               isCreating={isCreating}
               isDeleting={onDeleteCategory ? isDeleting : false}
-              // Pass through enhanced props
               transactions={transactions}
               categorySpendingTotals={categorySpendingTotals}
-              vendorsByCategory={vendorsByCategory}
               selectedCategoryId={selectedCategoryId}
               selectedVendorId={selectedVendorId}
               selectedTransactionId={selectedTransactionId}
               showSpendingTotals={showSpendingTotals}
-              showVendorCounts={showVendorCounts}
               enableSmartInteractions={enableSmartInteractions}
+              collapseAllTrigger={collapseAllTrigger}
             />
           ))}
         </div>
@@ -530,8 +573,8 @@ CategoryTreeNode.propTypes = {
     id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
     name: PropTypes.string.isRequired,
     parent: PropTypes.oneOfType([PropTypes.string, PropTypes.number]), 
-    user: PropTypes.number, // User ID or null for system categories
-    is_custom: PropTypes.bool, // True for user categories and vendors
+    user: PropTypes.number,
+    is_custom: PropTypes.bool,
     type: PropTypes.oneOf(['category', 'vendor', 'transaction']).isRequired,
   }).isRequired,
   allItems: PropTypes.array.isRequired,
@@ -541,20 +584,19 @@ CategoryTreeNode.propTypes = {
   onCategorySelect: PropTypes.func,
   onVendorSelect: PropTypes.func,
   onTransactionSelect: PropTypes.func,
-  pendingSelectionId: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.oneOf([null])]),
+  onTransactionInfo: PropTypes.func,
   onCreateCategory: PropTypes.func,
   onDeleteCategory: PropTypes.func,
   isCreating: PropTypes.bool, 
   isDeleting: PropTypes.bool,
   transactions: PropTypes.array,
   categorySpendingTotals: PropTypes.object,
-  vendorsByCategory: PropTypes.object,
   selectedCategoryId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   selectedVendorId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   selectedTransactionId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   showSpendingTotals: PropTypes.bool,
-  showVendorCounts: PropTypes.bool,
   enableSmartInteractions: PropTypes.bool,
+  collapseAllTrigger: PropTypes.number,
 };
 
 export default CategoryTreeNode;

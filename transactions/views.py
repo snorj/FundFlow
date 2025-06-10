@@ -411,6 +411,7 @@ class UncategorizedTransactionGroupView(APIView):
             grouped_transactions[description]['previews'].append({
                  'id': tx.id,
                  'date': tx.transaction_date,
+                 'description': tx.description, # Add description for vendor editing
                  # --- FIX: Use original_amount ---
                  'amount': tx.original_amount,
                  # --- FIX: Use original_currency ---

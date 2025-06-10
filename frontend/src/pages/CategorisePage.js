@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CategoryTreeNode from '../components/categorization/CategoryTreeNode';
+import TransactionDetailsModal from '../components/transactions/TransactionDetailsModal';
 import categoryService from '../services/categories';
 import transactionService from '../services/transactions';
 import { FiPlus, FiLoader, FiAlertCircle, FiEdit, FiArrowRight, FiSearch } from 'react-icons/fi';
@@ -16,7 +17,6 @@ const CategorisePage = () => {
   const [transactions, setTransactions] = useState([]);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
   const [categorySpendingTotals, setCategorySpendingTotals] = useState({});
-  const [vendorsByCategory, setVendorsByCategory] = useState({});
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [selectedVendorId, setSelectedVendorId] = useState(null);
   const [selectedTransactionId, setSelectedTransactionId] = useState(null);
@@ -30,6 +30,13 @@ const CategorisePage = () => {
 
   const [deletingCategoryId, setDeletingCategoryId] = useState(null);
   const [deleteError, setDeleteError] = useState(null);
+
+  // Transaction details modal state
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [isTransactionDetailsOpen, setIsTransactionDetailsOpen] = useState(false);
+  
+  // Collapse all functionality
+  const [collapseAllTrigger, setCollapseAllTrigger] = useState(0);
 
   const fetchItems = useCallback(async () => {
     setIsLoadingCategories(true);
@@ -50,43 +57,22 @@ const CategorisePage = () => {
   // New function to fetch transaction data
   const fetchTransactions = useCallback(async () => {
     setIsLoadingTransactions(true);
-    console.log('🔄 CategorisePage: Starting transaction fetch...');
     try {
-      // Fetch all transactions for spending calculations
       const transactionData = await transactionService.getTransactions({ page_size: 1000 });
-      console.log('📊 CategorisePage: Fetched transactions:', transactionData?.length || 0, 'transactions');
-      console.log('📋 CategorisePage: Sample transaction data:', transactionData?.[0]);
       setTransactions(transactionData || []);
       
-      // Try to fetch pre-calculated totals (will fall back gracefully if endpoints don't exist)
       try {
         const totals = await transactionService.getCategorySpendingTotals();
-        console.log('💰 CategorisePage: Fetched spending totals:', Object.keys(totals || {}).length, 'categories');
         setCategorySpendingTotals(totals || {});
       } catch {
-        // Endpoint doesn't exist yet - we'll calculate client-side
-        console.log('💰 CategorisePage: Using client-side spending calculation (expected)');
         setCategorySpendingTotals({});
       }
-      
-      try {
-        const vendorData = await transactionService.getVendorsByCategory();
-        console.log('🏪 CategorisePage: Fetched vendor data:', Object.keys(vendorData || {}).length, 'categories with vendors');
-        setVendorsByCategory(vendorData || {});
-      } catch {
-        // Endpoint doesn't exist yet - we'll calculate client-side
-        console.log('🏪 CategorisePage: Using client-side vendor calculation (expected)');
-        setVendorsByCategory({});
-      }
     } catch (err) {
-      console.error("❌ CategorisePage: Error fetching transactions:", err);
-      // Don't set error state for transaction fetch failures - just use empty data
+      console.error("Error fetching transactions:", err);
       setTransactions([]);
       setCategorySpendingTotals({});
-      setVendorsByCategory({});
     } finally {
       setIsLoadingTransactions(false);
-      console.log('✅ CategorisePage: Transaction fetch complete');
     }
   }, []);
 
@@ -106,7 +92,6 @@ const CategorisePage = () => {
       setShowTopLevelInput(false);
       setNewTopLevelName('');
     } catch (error) {
-      console.error("Failed to create category:", error);
       setCreateError(error.message || "Failed to create category.");
     } finally {
       setIsCreating(false);
@@ -120,9 +105,8 @@ const CategorisePage = () => {
     try {
       await categoryService.deleteCategory(categoryId);
       await fetchItems(); 
-      await fetchTransactions(); // Refresh transaction data after category changes
+      await fetchTransactions();
     } catch (err) {
-      console.error(`Error deleting category ${categoryId}:`, err);
       const backendError = err.response?.data?.error || err.message || "Failed to delete category.";
       setDeleteError(backendError);
     } finally {
@@ -133,21 +117,24 @@ const CategorisePage = () => {
   // New handlers for category and vendor selection
   const handleCategorySelect = useCallback((category) => {
     setSelectedCategoryId(category.id);
-    setSelectedVendorId(null); // Clear vendor selection when selecting category
-    console.log('Selected category:', category);
+    setSelectedVendorId(null);
   }, []);
 
   const handleVendorSelect = useCallback((vendor) => {
     setSelectedVendorId(vendor.id);
-    console.log('Selected vendor:', vendor);
   }, []);
 
   // New handler for transaction selection
   const handleTransactionSelect = useCallback((transaction) => {
     setSelectedTransactionId(transaction.id);
-    setSelectedVendorId(null); // Clear vendor selection when selecting transaction
-    setSelectedCategoryId(null); // Clear category selection when selecting transaction
-    console.log('Selected transaction:', transaction);
+    setSelectedVendorId(null);
+    setSelectedCategoryId(null);
+  }, []);
+
+  // New handler for transaction info display
+  const handleTransactionInfo = useCallback((transaction) => {
+    setSelectedTransaction(transaction);
+    setIsTransactionDetailsOpen(true);
   }, []);
 
   const itemsById = useMemo(() => 
@@ -240,6 +227,10 @@ const CategorisePage = () => {
     navigate('/categorise/transactions');
   };
 
+  const handleCollapseAll = () => {
+    setCollapseAllTrigger(prev => prev + 1);
+  };
+
   const isPageBusy = isLoadingCategories || isCreating || deletingCategoryId !== null;
   const isLoading = isLoadingCategories || isLoadingTransactions;
 
@@ -294,11 +285,21 @@ const CategorisePage = () => {
               disabled={isPageBusy}
             />
           </div>
-          {!showTopLevelInput && (
-            <button className="add-category-button" onClick={handleAddTopLevelClick} disabled={isPageBusy}>
-              <FiPlus /> Add Top-Level Category
+          <div className="toolbar-actions">
+            <button 
+              className="collapse-all-button" 
+              onClick={handleCollapseAll} 
+              disabled={isPageBusy}
+              title="Collapse all categories"
+            >
+              Collapse All
             </button>
-          )}
+            {!showTopLevelInput && (
+              <button className="add-category-button" onClick={handleAddTopLevelClick} disabled={isPageBusy}>
+                <FiPlus /> Add Top-Level Category
+              </button>
+            )}
+          </div>
         </div>
         
         {showTopLevelInput && (
@@ -341,23 +342,23 @@ const CategorisePage = () => {
               allItems={allItems}
               visibleItemIds={visibleItemIds}
               level={0}
-              onSelectNode={() => console.log(`Selected system category: ${category.name}`)}
+              onSelectNode={() => {}}
               onCategorySelect={handleCategorySelect}
               onVendorSelect={handleVendorSelect}
               onTransactionSelect={handleTransactionSelect}
+              onTransactionInfo={handleTransactionInfo}
               onCreateCategory={handleCreateCategory}
               onDeleteCategory={handleDeleteCategory}
               isCreating={isCreating}
               isDeleting={deletingCategoryId === category.id}
               transactions={transactions}
               categorySpendingTotals={categorySpendingTotals}
-              vendorsByCategory={vendorsByCategory}
               selectedCategoryId={selectedCategoryId}
               selectedVendorId={selectedVendorId}
               selectedTransactionId={selectedTransactionId}
               showSpendingTotals={true}
-              showVendorCounts={true}
               enableSmartInteractions={true}
+              collapseAllTrigger={collapseAllTrigger}
             />
           ))}
           {userRootCategories.map(category => (
@@ -367,27 +368,37 @@ const CategorisePage = () => {
               allItems={allItems}
               visibleItemIds={visibleItemIds}
               level={0}
-              onSelectNode={() => console.log(`Selected user category: ${category.name}`)}
+              onSelectNode={() => {}}
               onCategorySelect={handleCategorySelect}
               onVendorSelect={handleVendorSelect}
               onTransactionSelect={handleTransactionSelect}
+              onTransactionInfo={handleTransactionInfo}
               onCreateCategory={handleCreateCategory}
               onDeleteCategory={handleDeleteCategory}
               isCreating={isCreating}
               isDeleting={deletingCategoryId === category.id}
               transactions={transactions}
               categorySpendingTotals={categorySpendingTotals}
-              vendorsByCategory={vendorsByCategory}
               selectedCategoryId={selectedCategoryId}
               selectedVendorId={selectedVendorId}
               selectedTransactionId={selectedTransactionId}
               showSpendingTotals={true}
-              showVendorCounts={true}
               enableSmartInteractions={true}
+              collapseAllTrigger={collapseAllTrigger}
             />
           ))}
         </div>
       </div>
+
+      {/* Transaction Details Modal */}
+      <TransactionDetailsModal
+        isOpen={isTransactionDetailsOpen}
+        onClose={() => {
+          setIsTransactionDetailsOpen(false);
+          setSelectedTransaction(null);
+        }}
+        transaction={selectedTransaction}
+      />
     </div>
   );
 };

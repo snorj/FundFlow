@@ -86,6 +86,13 @@ const transactionService = {
         return response.data;
     },
 
+    updateTransactionDescription: async (id, description) => {
+        const response = await api.patch(`/transactions/${id}/`, {
+            description: description
+        });
+        return response.data;
+    },
+
     batchUpdateCategory: async (transactionIds, categoryId, originalDescription, cleanName) => {
          try {
             // Assuming this exists

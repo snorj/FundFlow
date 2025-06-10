@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import transactionService from '../services/transactions';
 import categoryService from '../services/categories';
 import CategorySelectorModal from '../components/categorization/CategorySelectorModal';
+import TransactionDetailsModal from '../components/transactions/TransactionDetailsModal';
 import './CategoriseTransactions.css';
-import { FiLoader, FiInbox, FiAlertCircle, FiCheck, FiTag, FiSquare, FiCheckSquare } from 'react-icons/fi';
+import { FiLoader, FiInbox, FiAlertCircle, FiCheck, FiTag, FiSquare, FiCheckSquare, FiInfo, FiEdit3, FiX } from 'react-icons/fi';
 import { formatDate, formatCurrency } from '../utils/formatting';
 
 const CategoriseTransactionsPage = () => {
@@ -18,10 +19,13 @@ const CategoriseTransactionsPage = () => {
     const [error, setError] = useState(null);
     const [submitError, setSubmitError] = useState(null);
     const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+    const [selectedTransaction, setSelectedTransaction] = useState(null);
+    const [isTransactionDetailsOpen, setIsTransactionDetailsOpen] = useState(false);
+    const [editingVendor, setEditingVendor] = useState(null);
+    const [isUpdatingVendor, setIsUpdatingVendor] = useState(false);
     const navigate = useNavigate();
 
     const handleCategoriesUpdate = useCallback(async () => {
-        console.log("Refreshing categories list after update...");
         try {
             const categoriesData = await categoryService.getCategories();
             setAvailableCategories(categoriesData || []);
@@ -43,9 +47,6 @@ const CategoriseTransactionsPage = () => {
             ]);
             setGroupedTransactions(groupsData || []);
             setAvailableCategories(categoriesData || []);
-            if (!groupsData || groupsData.length === 0) {
-                console.log("No uncategorized groups found.");
-            }
         } catch (err) {
             console.error("Error fetching data for categorization:", err);
             setError(err.message || 'Failed to load data needed for categorization.');
@@ -105,6 +106,63 @@ const CategoriseTransactionsPage = () => {
         setIsCategoryModalOpen(false);
     };
 
+    const handleTransactionDetails = (transaction) => {
+        setSelectedTransaction(transaction);
+        setIsTransactionDetailsOpen(true);
+    };
+
+    const handleEditVendor = (groupIndex, currentDescription) => {
+        setEditingVendor({ groupIndex, newName: currentDescription });
+    };
+
+    const handleSaveVendor = async (groupIndex) => {
+        if (!editingVendor || editingVendor.groupIndex !== groupIndex) return;
+        
+        setIsUpdatingVendor(true);
+        setSubmitError(null);
+        
+        try {
+            const group = groupedTransactions[groupIndex];
+            const newDescription = editingVendor.newName.trim();
+            
+            if (!newDescription || newDescription === group.description) {
+                setEditingVendor(null);
+                return;
+            }
+
+            // Update all transactions in this group
+            const promises = group.transaction_ids.map(transactionId => 
+                transactionService.updateTransactionDescription(transactionId, newDescription)
+            );
+            
+            await Promise.all(promises);
+            
+            // Update the local state
+            setGroupedTransactions(prev => {
+                return prev.map((g, index) => {
+                    if (index === groupIndex) {
+                        return {
+                            ...g,
+                            description: newDescription,
+                            previews: g.previews.map(preview => ({ ...preview, description: newDescription }))
+                        };
+                    }
+                    return g;
+                });
+            });
+
+            setEditingVendor(null);
+        } catch (error) {
+            setSubmitError(error.message || 'Failed to update vendor name. Please try again.');
+        } finally {
+            setIsUpdatingVendor(false);
+        }
+    };
+
+    const handleCancelVendorEdit = () => {
+        setEditingVendor(null);
+    };
+
     const handleCategorizeSelected = async () => {
         if (!selectedCategory || selectedTransactionIds.size === 0) return;
         
@@ -125,7 +183,7 @@ const CategoriseTransactionsPage = () => {
             // Make separate API calls for each description group
             const promises = Array.from(transactionsByDescription.entries()).map(([description, transactionIds]) => {
                 return transactionService.batchCategorizeTransactions(
-                    transactionIds,
+                 transactionIds,
                     selectedCategory.id,
                     description // Use the actual description from the group
                 );
@@ -151,10 +209,10 @@ const CategoriseTransactionsPage = () => {
             console.error("Error categorizing transactions:", err);
             setSubmitError(err.message || 'Failed to categorize transactions. Please try again.');
         } finally {
-            setIsSubmitting(false);
+             setIsSubmitting(false);
         }
     };
-
+    
     const isLoading = isLoadingGroups || isLoadingCategories;
     const totalTransactions = groupedTransactions.reduce((sum, group) => sum + group.count, 0);
     const allTransactionIds = groupedTransactions.flatMap(group => group.transaction_ids);
@@ -170,7 +228,7 @@ const CategoriseTransactionsPage = () => {
     }
 
     if (error && !isLoading) {
-        return (
+         return (
             <div className="categorization-page error-state">
                 <FiAlertCircle />
                 <p>Error loading data: {error}</p>
@@ -180,30 +238,30 @@ const CategoriseTransactionsPage = () => {
     }
 
     if (!isLoading && !error && totalTransactions === 0) {
-        return (
+         return (
             <div className="categorization-page empty-state">
-                <FiInbox />
-                <h2>All Caught Up!</h2>
-                <p>There are no transactions waiting for categorization.</p>
-                <button onClick={() => navigate('/dashboard')} className="action-button teal-button">
-                    Back to Dashboard
-                </button>
+                 <FiInbox />
+                 <h2>All Caught Up!</h2>
+                 <p>There are no transactions waiting for categorization.</p>
+                 <button onClick={() => navigate('/dashboard')} className="action-button teal-button">
+                     Back to Dashboard
+                 </button>
             </div>
-        );
+         );
     }
 
     return (
         <div className="categorization-page">
             <div className="categorization-header">
-                <h1>Review Uncategorized Transactions</h1>
+                <h1>Review Uncategorized Transactions</h1> 
                 <p className="transaction-count">{totalTransactions} transactions in {groupedTransactions.length} groups</p>
             </div>
 
-            {submitError && (
+             {submitError && (
                 <div className="categorization-error error-message">
-                    <FiAlertCircle /> {submitError}
+                   <FiAlertCircle /> {submitError}
                 </div>
-            )}
+             )}
 
             {/* Selection Controls */}
             <div className="selection-controls">
@@ -262,7 +320,47 @@ const CategoriseTransactionsPage = () => {
                                 </button>
                                 
                                 <div className="group-info">
-                                    <h3 className="group-description">{group.description}</h3>
+                                    {editingVendor?.groupIndex === groupIndex ? (
+                                        <div className="vendor-edit-container">
+                                            <input
+                                                type="text"
+                                                value={editingVendor.newName}
+                                                onChange={(e) => setEditingVendor(prev => ({ ...prev, newName: e.target.value }))}
+                                                className="vendor-edit-input"
+                                                placeholder="Enter vendor name"
+                                                autoFocus
+                                                disabled={isUpdatingVendor}
+                                            />
+                                            <div className="vendor-edit-actions">
+                                                <button 
+                                                    className="vendor-save-button"
+                                                    onClick={() => handleSaveVendor(groupIndex)}
+                                                    disabled={isUpdatingVendor || !editingVendor.newName.trim()}
+                                                >
+                                                    <FiCheck />
+                                                </button>
+                                                <button 
+                                                    className="vendor-cancel-button"
+                                                    onClick={handleCancelVendorEdit}
+                                                    disabled={isUpdatingVendor}
+                                                >
+                                                    <FiX />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="vendor-display">
+                                            <h3 className="group-description">{group.description}</h3>
+                                            <button
+                                                className="vendor-edit-button"
+                                                onClick={() => handleEditVendor(groupIndex, group.description)}
+                                                title="Edit vendor name"
+                                                disabled={isSubmitting || isUpdatingVendor}
+                                            >
+                                                <FiEdit3 />
+                                            </button>
+                                        </div>
+                                    )}
                                     <span className="group-meta">
                                         {group.count} transaction(s)
                                         {group.earliest_date && ` • ${formatDate(group.earliest_date)}`}
@@ -287,6 +385,15 @@ const CategoriseTransactionsPage = () => {
                                                 {formatCurrency(transaction.amount, transaction.direction, transaction.currency)}
                                             </span>
                                         </div>
+
+                                        <button
+                                            className="transaction-info-button"
+                                            onClick={() => handleTransactionDetails(transaction)}
+                                            title="View transaction details"
+                                            disabled={isSubmitting}
+                                        >
+                                            <FiInfo />
+                                        </button>
                                     </div>
                                 ))}
                             </div>
@@ -301,9 +408,16 @@ const CategoriseTransactionsPage = () => {
                 onClose={() => setIsCategoryModalOpen(false)}
                 onSelectCategory={handleCategorySelect}
                 categories={availableCategories}
-                onCategoriesUpdate={handleCategoriesUpdate}
+                            onCategoriesUpdate={handleCategoriesUpdate}
                 selectionMode="confirm"
                 modalTitle="Select Category for Transactions"
+            />
+
+            {/* Transaction Details Modal */}
+            <TransactionDetailsModal
+                isOpen={isTransactionDetailsOpen}
+                onClose={() => setIsTransactionDetailsOpen(false)}
+                transaction={selectedTransaction}
             />
         </div>
     );

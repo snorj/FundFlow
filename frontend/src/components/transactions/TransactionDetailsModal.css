@@ -1,0 +1,186 @@
+/* TransactionDetailsModal.css */
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.transaction-details-modal {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    max-width: 500px;
+    width: 90%;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--gray-border);
+    background: var(--light-gray);
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--deep-navy);
+}
+
+.close-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--text-muted);
+    font-size: 1.25rem;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.close-button:hover {
+    background: var(--gray-border);
+    color: var(--deep-navy);
+}
+
+.modal-content {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.detail-row {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    gap: 16px;
+}
+
+.detail-row:last-child {
+    margin-bottom: 0;
+}
+
+.detail-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 140px;
+    font-weight: 500;
+    color: var(--text-muted-dark);
+    font-size: 0.9rem;
+}
+
+.detail-label svg {
+    font-size: 1rem;
+    color: var(--teal);
+}
+
+.detail-value {
+    flex: 1;
+    color: var(--deep-navy);
+    font-weight: 500;
+}
+
+.amount {
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.amount-outflow {
+    color: var(--expense-red);
+}
+
+.amount-inflow {
+    color: var(--income-green);
+}
+
+/* Amount styling */
+.amount.amount-debit {
+    color: var(--expense-red);
+}
+
+.amount.amount-credit {
+    color: var(--income-green);
+}
+
+/* Modal Sections */
+.detail-section {
+    margin-bottom: 24px;
+}
+
+.detail-section:last-child {
+    margin-bottom: 0;
+}
+
+.section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--deep-navy);
+    margin: 0 0 16px 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--gray-border);
+}
+
+/* Modal Footer */
+.modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--gray-border);
+    background: var(--light-gray);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.close-modal-button {
+    background: var(--gray-border);
+    color: var(--text-muted-dark);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.close-modal-button:hover {
+    background: var(--text-muted);
+    color: white;
+}
+
+/* Responsive adjustments */
+@media (max-width: 500px) {
+    .transaction-details-modal {
+        width: 95%;
+        max-height: 90vh;
+    }
+    
+    .modal-header {
+        padding: 16px 20px;
+    }
+    
+    .modal-content {
+        padding: 20px;
+    }
+    
+    .detail-row {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .detail-label {
+        min-width: auto;
+    }
+} 
