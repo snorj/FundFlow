@@ -9,8 +9,8 @@ from rest_framework.views import APIView # Use APIView for custom logic
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser # For file uploads
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import Category, Transaction, Vendor, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
-from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, TransactionCreateSerializer, TransactionSearchSerializer, TransactionSearchResultSerializer # Add TransactionCreateSerializer
+from .models import Category, Transaction, Vendor, VendorRule, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
+from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, TransactionCreateSerializer, TransactionSearchSerializer, TransactionSearchResultSerializer, VendorRuleSerializer, VendorRuleCreateSerializer, VendorRuleUpdateSerializer # Add TransactionCreateSerializer
 from .permissions import IsOwnerOrSystemReadOnly, IsOwner # Import IsOwner
 import logging
 from django.db.models import Count, Min, Sum, Case, When, Value, DecimalField
@@ -842,17 +842,67 @@ class TransactionCSVUploadView(APIView):
             duplicate_count = 0
             skipped_conversion_error_count = 0
             applied_rules_count = 0
+            vendor_rules_applied_count = 0
             user_mappings = { m.original_description.strip().lower(): m for m in DescriptionMapping.objects.filter(user=current_user) }
 
             for data_item in potential_transactions_data:
                 raw_description = data_item['raw_description']
                 final_description = raw_description
                 assigned_category = None
+                assigned_vendor = None
+                
+                # Phase 3a: Apply DescriptionMapping rules (existing logic)
                 matched_mapping = user_mappings.get(raw_description.strip().lower())
                 if matched_mapping:
                     final_description = matched_mapping.clean_name
                     assigned_category = matched_mapping.assigned_category
                     if assigned_category: applied_rules_count += 1
+
+                # Phase 3b: Vendor lookup/creation and VendorRule application
+                try:
+                    # Extract vendor name from description (use final_description if available)
+                    vendor_name = final_description.strip()
+                    
+                    # Try to find existing vendor (system or user's own)
+                    vendor_queryset = Vendor.objects.filter(
+                        Q(user=current_user) | Q(user__isnull=True),
+                        name__iexact=vendor_name
+                    )
+                    
+                    if vendor_queryset.exists():
+                        assigned_vendor = vendor_queryset.first()
+                    else:
+                        # Create new vendor for the user
+                        assigned_vendor = Vendor.objects.create(
+                            name=vendor_name,
+                            display_name=vendor_name,
+                            user=current_user
+                        )
+                        logger.debug(f"User {current_user.id}: Created new vendor '{vendor_name}' (ID: {assigned_vendor.id})")
+                    
+                    # Apply VendorRule if vendor is assigned and no category from DescriptionMapping
+                    if assigned_vendor and not assigned_category:
+                        # Query for active vendor rules for this vendor
+                        vendor_rules = VendorRule.objects.filter(
+                            vendor=assigned_vendor,
+                            is_persistent=True
+                        ).filter(
+                            # Ensure user has access to the rule (vendor is system or user's own)
+                            Q(vendor__user=current_user) | Q(vendor__user__isnull=True)
+                        ).order_by('priority', '-created_at')
+                        
+                        if vendor_rules.exists():
+                            # Apply the highest priority rule
+                            applied_rule = vendor_rules.first()
+                            assigned_category = applied_rule.category
+                            vendor_rules_applied_count += 1
+                            logger.debug(f"User {current_user.id}: Applied vendor rule {applied_rule.id} "
+                                       f"({assigned_vendor.name} → {assigned_category.name})")
+                
+                except Exception as vendor_error:
+                    logger.warning(f"User {current_user.id} - Row {data_item['row_num']}: "
+                                 f"Vendor processing error: {vendor_error}")
+                    # Continue processing without vendor assignment
 
                 duplicate_check_key = (
                     data_item['transaction_date'], data_item['original_amount'],
@@ -888,7 +938,7 @@ class TransactionCSVUploadView(APIView):
 
                 transactions_to_create.append(
                     Transaction(
-                        user=current_user, category=assigned_category, description=final_description,
+                        user=current_user, category=assigned_category, vendor=assigned_vendor, description=final_description,
                         transaction_date=data_item['transaction_date'],
                         original_amount=data_item['original_amount'], original_currency=original_currency_code,
                         direction=data_item['direction'], aud_amount=aud_amount_val, exchange_rate_to_aud=exchange_rate_val,
@@ -901,7 +951,7 @@ class TransactionCSVUploadView(APIView):
                     )
                 )
             # ... (Phase 4: Bulk Create and Phase 5: Prepare Response - logic remains the same) ...
-            logger.info(f"User {current_user.id}: Phase 3 Complete. Dups: {duplicate_count}. New: {len(transactions_to_create)}. Convert Errors: {skipped_conversion_error_count}.")
+            logger.info(f"User {current_user.id}: Phase 3 Complete. Dups: {duplicate_count}. New: {len(transactions_to_create)}. Convert Errors: {skipped_conversion_error_count}. Vendor Rules Applied: {vendor_rules_applied_count}.")
             created_count = 0
             if transactions_to_create:
                 try:
@@ -919,6 +969,7 @@ class TransactionCSVUploadView(APIView):
             else: message += " No new transactions were imported."
             if duplicate_count > 0: message += f" Skipped {duplicate_count} potential duplicates."
             if applied_rules_count > 0: message += f" Applied {applied_rules_count} description rules."
+            if vendor_rules_applied_count > 0: message += f" Applied {vendor_rules_applied_count} vendor rules."
             if skipped_conversion_error_count > 0: message += f" Failed to convert currency for {skipped_conversion_error_count} transactions to {BASE_CURRENCY_FOR_CONVERSION}."
             if error_count > 0: message += f" Encountered {error_count} errors."
 
@@ -928,7 +979,8 @@ class TransactionCSVUploadView(APIView):
 
             return Response({
                 'message': message, 'imported_count': created_count, 'duplicate_count': duplicate_count,
-                'auto_categorized_count': applied_rules_count, 'conversion_error_count': skipped_conversion_error_count,
+                'auto_categorized_count': applied_rules_count, 'vendor_rules_applied_count': vendor_rules_applied_count,
+                'conversion_error_count': skipped_conversion_error_count,
                 'total_rows_processed': processed_rows, 'errors': errors
             }, status=response_status)
 
@@ -1347,3 +1399,310 @@ class TransactionSearchView(APIView):
                 'uncategorized_count': uncategorized_count,
             }
         }
+
+# --- VendorRule Views ---
+
+class VendorRuleListCreateView(generics.ListCreateAPIView):
+    """
+    API endpoint to list and create vendor rules for the authenticated user.
+    Lists all rules for vendors accessible to the user (system + own vendors).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
+    ordering_fields = ['priority', 'created_at', 'vendor__name', 'category__name']
+    ordering = ['priority', '-created_at']  # Default: priority first, then newest
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method == 'POST':
+            return VendorRuleCreateSerializer
+        return VendorRuleSerializer
+    
+    def get_queryset(self):
+        """
+        Return vendor rules for vendors accessible to the user.
+        This includes rules for system vendors and user's own vendors.
+        """
+        user = self.request.user
+        
+        # Get vendor rules for vendors that are either system vendors or belong to the user
+        return VendorRule.objects.filter(
+            Q(vendor__user__isnull=True) | Q(vendor__user=user)
+        ).select_related('vendor', 'category')
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def create(self, request, *args, **kwargs):
+        """
+        Create a new vendor rule with enhanced response and conflict handling.
+        Returns 409 Conflict if a persistent rule already exists for the vendor.
+        """
+        serializer = self.get_serializer(data=request.data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            vendor_rule = serializer.save()
+            
+            # Use read serializer for response to include vendor/category names
+            response_serializer = VendorRuleSerializer(vendor_rule, context={'request': request})
+            
+            response_data = {
+                'vendor_rule': response_serializer.data,
+                'message': f'Vendor rule created successfully for {vendor_rule.vendor.name} → {vendor_rule.category.name}',
+                'is_persistent': vendor_rule.is_persistent
+            }
+            
+            logger.info(f"User {request.user.id}: Created vendor rule {vendor_rule.id} "
+                       f"({vendor_rule.vendor.name} → {vendor_rule.category.name})")
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+            
+        except serializers.ValidationError as e:
+            # Check if this is a conflict error (vendor rule already exists)
+            if 'vendor' in e.detail and 'persistent rule already exists' in str(e.detail['vendor'][0]):
+                # Extract vendor ID from request data to get existing rule details
+                vendor_id = request.data.get('vendor')
+                if vendor_id:
+                    try:
+                        existing_rule = VendorRule.objects.filter(
+                            vendor_id=vendor_id,
+                            is_persistent=True
+                        ).select_related('vendor', 'category').first()
+                        
+                        if existing_rule:
+                            existing_rule_data = VendorRuleSerializer(existing_rule, context={'request': request}).data
+                            
+                            return Response({
+                                'error': 'conflict',
+                                'message': f'A persistent rule already exists for {existing_rule.vendor.name}',
+                                'existing_rule': existing_rule_data,
+                                'requested_rule': {
+                                    'vendor': vendor_id,
+                                    'category': request.data.get('category'),
+                                    'is_persistent': request.data.get('is_persistent', False),
+                                    'priority': request.data.get('priority', 3)
+                                }
+                            }, status=status.HTTP_409_CONFLICT)
+                    except Exception as lookup_error:
+                        logger.warning(f"User {request.user.id}: Failed to lookup existing rule for conflict response: {lookup_error}")
+            
+            # For other validation errors, return normal 400 response
+            logger.error(f"User {request.user.id}: Validation error creating vendor rule: {e.detail}")
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to create vendor rule: {e}", exc_info=True)
+            
+            return Response(
+                {'error': 'Failed to create vendor rule. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class VendorRuleDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint to retrieve, update, or delete a specific vendor rule.
+    Users can only access rules for vendors they have access to.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'pk'
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method in ['PUT', 'PATCH']:
+            return VendorRuleUpdateSerializer
+        return VendorRuleSerializer
+    
+    def get_queryset(self):
+        """
+        Return vendor rules for vendors accessible to the user.
+        """
+        user = self.request.user
+        
+        return VendorRule.objects.filter(
+            Q(vendor__user__isnull=True) | Q(vendor__user=user)
+        ).select_related('vendor', 'category')
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def update(self, request, *args, **kwargs):
+        """
+        Update a vendor rule with enhanced response.
+        """
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            vendor_rule = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = VendorRuleSerializer(vendor_rule, context={'request': request})
+            
+            response_data = {
+                'vendor_rule': response_serializer.data,
+                'message': f'Vendor rule updated successfully for {vendor_rule.vendor.name} → {vendor_rule.category.name}',
+                'is_persistent': vendor_rule.is_persistent
+            }
+            
+            logger.info(f"User {request.user.id}: Updated vendor rule {vendor_rule.id}")
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to update vendor rule {instance.id}: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to update vendor rule. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete a vendor rule with enhanced response.
+        """
+        instance = self.get_object()
+        vendor_name = instance.vendor.name
+        category_name = instance.category.name
+        rule_id = instance.id
+        
+        try:
+            self.perform_destroy(instance)
+            
+            logger.info(f"User {request.user.id}: Deleted vendor rule {rule_id} "
+                       f"({vendor_name} → {category_name})")
+            
+            return Response(
+                {
+                    'message': f'Vendor rule deleted successfully ({vendor_name} → {category_name})',
+                    'deleted_rule_id': rule_id
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to delete vendor rule {rule_id}: {e}", exc_info=True)
+            
+            return Response(
+                {'error': 'Failed to delete vendor rule. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class VendorRuleConflictResolveView(APIView):
+    """
+    API endpoint to resolve vendor rule conflicts.
+    Handles replace/keep decisions when creating rules that conflict with existing ones.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+    
+    def post(self, request, *args, **kwargs):
+        """
+        Resolve a vendor rule conflict by either replacing the existing rule or keeping it.
+        
+        Expected payload:
+        {
+            "action": "replace" | "keep",
+            "existing_rule_id": "uuid",
+            "new_rule_data": {
+                "vendor": int,
+                "category": int,
+                "is_persistent": bool,
+                "priority": int,
+                "pattern": str (optional)
+            }
+        }
+        """
+        user = request.user
+        action = request.data.get('action')
+        existing_rule_id = request.data.get('existing_rule_id')
+        new_rule_data = request.data.get('new_rule_data', {})
+        
+        # Validate input
+        if action not in ['replace', 'keep']:
+            return Response(
+                {'error': 'Invalid action. Must be "replace" or "keep".'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not existing_rule_id:
+            return Response(
+                {'error': 'existing_rule_id is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Get the existing rule and verify user access
+            existing_rule = VendorRule.objects.filter(
+                id=existing_rule_id
+            ).filter(
+                Q(vendor__user__isnull=True) | Q(vendor__user=user)
+            ).select_related('vendor', 'category').first()
+            
+            if not existing_rule:
+                return Response(
+                    {'error': 'Existing rule not found or access denied.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            if action == 'keep':
+                # User chose to keep existing rule, return success without changes
+                existing_rule_data = VendorRuleSerializer(existing_rule, context={'request': request}).data
+                
+                logger.info(f"User {user.id}: Kept existing vendor rule {existing_rule.id} "
+                           f"({existing_rule.vendor.name} → {existing_rule.category.name})")
+                
+                return Response({
+                    'action': 'kept',
+                    'message': f'Kept existing rule for {existing_rule.vendor.name} → {existing_rule.category.name}',
+                    'rule': existing_rule_data
+                }, status=status.HTTP_200_OK)
+            
+            elif action == 'replace':
+                # User chose to replace existing rule
+                if not new_rule_data:
+                    return Response(
+                        {'error': 'new_rule_data is required when action is "replace".'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Use the update serializer to validate and update the existing rule
+                serializer = VendorRuleUpdateSerializer(
+                    existing_rule,
+                    data=new_rule_data,
+                    partial=True,
+                    context={'request': request}
+                )
+                
+                if serializer.is_valid():
+                    updated_rule = serializer.save()
+                    
+                    # Use read serializer for response
+                    response_serializer = VendorRuleSerializer(updated_rule, context={'request': request})
+                    
+                    logger.info(f"User {user.id}: Replaced vendor rule {updated_rule.id} "
+                               f"({updated_rule.vendor.name} → {updated_rule.category.name})")
+                    
+                    return Response({
+                        'action': 'replaced',
+                        'message': f'Updated rule for {updated_rule.vendor.name} → {updated_rule.category.name}',
+                        'rule': response_serializer.data
+                    }, status=status.HTTP_200_OK)
+                else:
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        except Exception as e:
+            logger.error(f"User {user.id}: Failed to resolve vendor rule conflict: {e}", exc_info=True)
+            return Response(
+                {'error': 'Failed to resolve conflict. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

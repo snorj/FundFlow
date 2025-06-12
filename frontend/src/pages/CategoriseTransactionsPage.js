@@ -4,6 +4,7 @@ import transactionService from '../services/transactions';
 import categoryService from '../services/categories';
 import CategorySelectorModal from '../components/categorization/CategorySelectorModal';
 import TransactionDetailsModal from '../components/transactions/TransactionDetailsModal';
+import VendorRuleModal from '../components/modals/VendorRuleModal';
 import './CategoriseTransactions.css';
 import { FiLoader, FiInbox, FiAlertCircle, FiCheck, FiTag, FiSquare, FiCheckSquare, FiInfo, FiEdit3, FiX } from 'react-icons/fi';
 import { formatDate, formatCurrency } from '../utils/formatting';
@@ -23,6 +24,13 @@ const CategoriseTransactionsPage = () => {
     const [isTransactionDetailsOpen, setIsTransactionDetailsOpen] = useState(false);
     const [editingVendor, setEditingVendor] = useState(null);
     const [isUpdatingVendor, setIsUpdatingVendor] = useState(false);
+    const [vendorRuleModal, setVendorRuleModal] = useState({
+        isOpen: false,
+        vendorName: '',
+        categoryName: '',
+        vendorId: null,
+        categoryId: null
+    });
     const navigate = useNavigate();
 
     const handleCategoriesUpdate = useCallback(async () => {
@@ -163,6 +171,21 @@ const CategoriseTransactionsPage = () => {
         setEditingVendor(null);
     };
 
+    const handleVendorRuleModalClose = () => {
+        setVendorRuleModal({
+            isOpen: false,
+            vendorName: '',
+            categoryName: '',
+            vendorId: null,
+            categoryId: null
+        });
+    };
+
+    const handleVendorRuleCreated = (response) => {
+        console.log('Vendor rule created:', response);
+        // Could show a success message or update some state here
+    };
+
     const handleCategorizeSelected = async () => {
         if (!selectedCategory || selectedTransactionIds.size === 0) return;
         
@@ -200,6 +223,18 @@ const CategoriseTransactionsPage = () => {
                     count: group.transaction_ids.filter(id => !selectedTransactionIds.has(id)).length
                 })).filter(group => group.count > 0); // Remove empty groups
             });
+            
+            // Show vendor rule modal if we have a single vendor description
+            if (transactionsByDescription.size === 1) {
+                const [vendorDescription] = transactionsByDescription.keys();
+                setVendorRuleModal({
+                    isOpen: true,
+                    vendorName: vendorDescription,
+                    categoryName: selectedCategory.name,
+                    vendorId: null, // We'll handle vendor creation in the modal
+                    categoryId: selectedCategory.id
+                });
+            }
             
             // Clear selections
             setSelectedTransactionIds(new Set());
@@ -418,6 +453,17 @@ const CategoriseTransactionsPage = () => {
                 isOpen={isTransactionDetailsOpen}
                 onClose={() => setIsTransactionDetailsOpen(false)}
                 transaction={selectedTransaction}
+            />
+
+            {/* Vendor Rule Modal */}
+            <VendorRuleModal
+                isOpen={vendorRuleModal.isOpen}
+                onClose={handleVendorRuleModalClose}
+                vendorName={vendorRuleModal.vendorName}
+                categoryName={vendorRuleModal.categoryName}
+                vendorId={vendorRuleModal.vendorId}
+                categoryId={vendorRuleModal.categoryId}
+                onRuleCreated={handleVendorRuleCreated}
             />
         </div>
     );

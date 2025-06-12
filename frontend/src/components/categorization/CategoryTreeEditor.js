@@ -16,6 +16,8 @@ import {
   FiX
 } from 'react-icons/fi';
 import { formatCurrency } from '../../utils/formatting';
+import vendorRuleService from '../../services/vendorRules';
+import VendorRuleUpdateModal from '../modals/VendorRuleUpdateModal';
 import './CategoryTreeEditor.css';
 
 const CategoryTreeEditor = ({ 
@@ -38,6 +40,18 @@ const CategoryTreeEditor = ({
   const [validationError, setValidationError] = useState('');
   const [focusedNodeId, setFocusedNodeId] = useState(null);
   const [announceText, setAnnounceText] = useState('');
+  
+  // State for vendor rule update modal
+  const [vendorRuleUpdateModal, setVendorRuleUpdateModal] = useState({
+    isOpen: false,
+    vendorName: '',
+    oldCategoryName: '',
+    newCategoryName: '',
+    existingRule: null,
+    newCategoryId: null,
+    pendingMoveArgs: null
+  });
+  
   const editInputRef = useRef(null);
   const treeRef = useRef(null);
 
@@ -398,8 +412,8 @@ const CategoryTreeEditor = ({
     );
   };
 
-  // Enhanced move handler with validation
-  const handleMove = (args) => {
+  // Enhanced move handler with validation and vendor rule checking
+  const handleMove = async (args) => {
     const { dragIds, parentId, index } = args;
     
     // Validation logic to prevent invalid drops
@@ -410,6 +424,51 @@ const CategoryTreeEditor = ({
       return;
     }
 
+    const dragNode = findNodeById(dragIds[0], data);
+    const targetParent = parentId ? findNodeById(parentId, data) : null;
+
+    // Check if this is a vendor being moved to a different category
+    if (dragNode && dragNode.type === 'vendor' && targetParent && targetParent.type === 'category') {
+      const oldCategoryId = dragNode.parent;
+      const newCategoryId = targetParent.id;
+      
+      // Only check for vendor rules if the category is actually changing
+      if (oldCategoryId !== newCategoryId) {
+        try {
+          // Check if there's an existing vendor rule for this vendor
+          const vendorRules = await vendorRuleService.getVendorRules();
+          const existingRule = vendorRules.results?.find(rule => 
+            rule.vendor_id === dragNode.originalData?.vendor_id || 
+            rule.vendor_name === dragNode.name
+          );
+
+          if (existingRule) {
+            // Find category names for display
+            const oldCategory = findNodeById(oldCategoryId, data);
+            const newCategory = findNodeById(newCategoryId, data);
+            
+            // Show vendor rule update modal
+            setVendorRuleUpdateModal({
+              isOpen: true,
+              vendorName: dragNode.name,
+              oldCategoryName: oldCategory?.name || 'Unknown Category',
+              newCategoryName: newCategory?.name || 'Unknown Category',
+              existingRule: existingRule,
+              newCategoryId: newCategoryId,
+              pendingMoveArgs: args
+            });
+            
+            // Don't proceed with the move yet - wait for user decision
+            return;
+          }
+        } catch (error) {
+          console.error('Error checking vendor rules:', error);
+          // Continue with the move if there's an error checking rules
+        }
+      }
+    }
+
+    // Proceed with the move if no vendor rule conflicts or not a vendor move
     if (onMove) {
       onMove(args);
     }
@@ -612,6 +671,44 @@ const CategoryTreeEditor = ({
     }
   };
 
+  // Vendor rule update modal handlers
+  const handleVendorRuleUpdated = (result) => {
+    const { pendingMoveArgs } = vendorRuleUpdateModal;
+    
+    // Close the modal
+    setVendorRuleUpdateModal({
+      isOpen: false,
+      vendorName: '',
+      oldCategoryName: '',
+      newCategoryName: '',
+      existingRule: null,
+      newCategoryId: null,
+      pendingMoveArgs: null
+    });
+
+    // Proceed with the move regardless of the rule action
+    if (pendingMoveArgs && onMove) {
+      onMove(pendingMoveArgs);
+    }
+
+    // Announce the result to screen readers
+    if (result.message) {
+      announceToScreenReader(result.message);
+    }
+  };
+
+  const handleVendorRuleModalClose = () => {
+    setVendorRuleUpdateModal({
+      isOpen: false,
+      vendorName: '',
+      oldCategoryName: '',
+      newCategoryName: '',
+      existingRule: null,
+      newCategoryId: null,
+      pendingMoveArgs: null
+    });
+  };
+
   // Context Menu Component
   const ContextMenu = () => {
     if (!contextMenu.visible) return null;
@@ -808,6 +905,17 @@ const CategoryTreeEditor = ({
       </div>
       
       <ContextMenu />
+      
+      <VendorRuleUpdateModal
+        isOpen={vendorRuleUpdateModal.isOpen}
+        onClose={handleVendorRuleModalClose}
+        vendorName={vendorRuleUpdateModal.vendorName}
+        oldCategoryName={vendorRuleUpdateModal.oldCategoryName}
+        newCategoryName={vendorRuleUpdateModal.newCategoryName}
+        existingRule={vendorRuleUpdateModal.existingRule}
+        newCategoryId={vendorRuleUpdateModal.newCategoryId}
+        onRuleUpdated={handleVendorRuleUpdated}
+      />
     </div>
   );
 };

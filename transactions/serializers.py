@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Category, Transaction, Vendor, BASE_CURRENCY_FOR_CONVERSION
+from .models import Category, Transaction, Vendor, VendorRule, BASE_CURRENCY_FOR_CONVERSION
 from django.db.models import Q
+import uuid
 
 User = get_user_model()
 
@@ -711,3 +712,131 @@ class TransactionSearchResultSerializer(serializers.ModelSerializer):
             return float(obj.aud_amount)
         else:
             return -float(obj.aud_amount)
+
+class VendorRuleSerializer(serializers.ModelSerializer):
+    """
+    Serializer for VendorRule model for reading operations.
+    Includes vendor and category names for display purposes.
+    """
+    vendor_name = serializers.CharField(source='vendor.name', read_only=True)
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    
+    class Meta:
+        model = VendorRule
+        fields = [
+            'id',
+            'vendor',
+            'vendor_name',
+            'category',
+            'category_name',
+            'pattern',
+            'is_persistent',
+            'priority',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'vendor_name', 'category_name', 'created_at', 'updated_at']
+
+
+class VendorRuleCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating and updating VendorRule instances.
+    Handles validation and ensures proper user access to vendors and categories.
+    """
+    # Use PrimaryKeyRelatedField for better control over validation
+    vendor = serializers.PrimaryKeyRelatedField(
+        queryset=Vendor.objects.all(),
+        help_text="The vendor this rule applies to"
+    )
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(),
+        help_text="The category to assign when this rule matches"
+    )
+    
+    class Meta:
+        model = VendorRule
+        fields = [
+            'vendor',
+            'category',
+            'pattern',
+            'is_persistent',
+            'priority'
+        ]
+    
+    def validate_vendor(self, value):
+        """Ensure the vendor is accessible to the current user."""
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available")
+        
+        # Vendor must be a system vendor (user=None) or belong to the current user
+        if not (value.user is None or value.user == request.user):
+            raise serializers.ValidationError("You can only create rules for system vendors or your own vendors")
+        
+        return value
+    
+    def validate_category(self, value):
+        """Ensure the category is accessible to the current user."""
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available")
+        
+        # Category must be a system category (user=None) or belong to the current user
+        if not (value.user is None or value.user == request.user):
+            raise serializers.ValidationError("You can only assign system categories or your own categories")
+        
+        return value
+    
+    def validate(self, data):
+        """
+        Object-level validation to check for conflicts.
+        Ensure only one active rule per vendor (for simple implementation).
+        """
+        vendor = data.get('vendor')
+        is_persistent = data.get('is_persistent', False)
+        
+        if vendor and is_persistent:
+            # Check for existing persistent rules for this vendor
+            existing_rules = VendorRule.objects.filter(
+                vendor=vendor,
+                is_persistent=True
+            )
+            
+            # If updating, exclude the current instance
+            if self.instance:
+                existing_rules = existing_rules.exclude(id=self.instance.id)
+            
+            if existing_rules.exists():
+                existing_rule = existing_rules.first()
+                raise serializers.ValidationError({
+                    'vendor': f"A persistent rule already exists for this vendor (assigns to {existing_rule.category.name}). "
+                             f"Please update or delete the existing rule first."
+                })
+        
+        return data
+    
+    def create(self, validated_data):
+        """Create a new VendorRule with a UUID."""
+        validated_data['id'] = str(uuid.uuid4())
+        return super().create(validated_data)
+
+
+class VendorRuleUpdateSerializer(VendorRuleCreateSerializer):
+    """
+    Serializer for updating VendorRule instances.
+    Inherits from create serializer but allows partial updates.
+    """
+    vendor = serializers.PrimaryKeyRelatedField(
+        queryset=Vendor.objects.all(),
+        required=False,
+        help_text="The vendor this rule applies to"
+    )
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(),
+        required=False,
+        help_text="The category to assign when this rule matches"
+    )
+    
+    class Meta(VendorRuleCreateSerializer.Meta):
+        # All fields are optional for updates
+        pass
