@@ -10,7 +10,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser # For
 from rest_framework.response import Response
 from django.db.models import Q
 from .models import Category, Transaction, Vendor, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
-from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, TransactionCreateSerializer # Add TransactionCreateSerializer
+from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, TransactionCreateSerializer, TransactionSearchSerializer, TransactionSearchResultSerializer # Add TransactionCreateSerializer
 from .permissions import IsOwnerOrSystemReadOnly, IsOwner # Import IsOwner
 import logging
 from django.db.models import Count, Min, Sum, Case, When, Value, DecimalField
@@ -1042,3 +1042,308 @@ class DashboardBalanceView(views.APIView):
                 'conversion_purpose': 'Display only - core holdings remain in native currencies'
             }
         })
+
+class TransactionSearchView(APIView):
+    """
+    Advanced search API endpoint for transactions with multiple filter criteria.
+    Supports:
+    - Vendor filtering (by ID or name)
+    - Category filtering (by ID)
+    - Date range filtering
+    - Amount range filtering 
+    - Keyword searching in descriptions
+    - Transaction direction filtering (inflow/outflow/all)
+    - AND/OR logic operators
+    - Sorting and pagination
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        """
+        Handle POST request with search criteria in the request body.
+        Returns paginated and sorted search results.
+        """
+        # Validate search parameters
+        search_serializer = TransactionSearchSerializer(
+            data=request.data, 
+            context={'request': request}
+        )
+        
+        if not search_serializer.is_valid():
+            return Response(
+                {'errors': search_serializer.errors}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        validated_data = search_serializer.validated_data
+        user = request.user
+        
+        # Start with base queryset
+        queryset = Transaction.objects.filter(user=user)
+        
+        # Apply filters based on logic operator
+        logic_operator = validated_data.get('logic', 'AND')
+        
+        if logic_operator == 'AND':
+            queryset = self._apply_and_filters(queryset, validated_data)
+        else:  # OR logic
+            queryset = self._apply_or_filters(queryset, validated_data, user)
+        
+        # Apply sorting
+        sort_by = validated_data.get('sort_by', '-transaction_date')
+        queryset = queryset.order_by(sort_by)
+        
+        # Select related for performance
+        queryset = queryset.select_related('category', 'vendor')
+        
+        # Apply pagination
+        page = validated_data.get('page', 1)
+        page_size = validated_data.get('page_size', 50)
+        
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        
+        total_count = queryset.count()
+        paginated_results = queryset[start_index:end_index]
+        
+        # Serialize results
+        results_serializer = TransactionSearchResultSerializer(
+            paginated_results, 
+            many=True,
+            context={'request': request}
+        )
+        
+        # Calculate summary statistics
+        summary_stats = self._calculate_summary_stats(queryset)
+        
+        # Prepare response
+        response_data = {
+            'results': results_serializer.data,
+            'pagination': {
+                'page': page,
+                'page_size': page_size,
+                'total_count': total_count,
+                'total_pages': (total_count + page_size - 1) // page_size,
+                'has_next': end_index < total_count,
+                'has_previous': page > 1,
+            },
+            'summary': summary_stats,
+            'search_criteria': validated_data,
+            'logic_operator': logic_operator
+        }
+        
+        logger.info(f"User {user.id}: Transaction search completed. "
+                   f"Found {total_count} results with {logic_operator} logic.")
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    def _apply_and_filters(self, queryset, validated_data):
+        """Apply all filters with AND logic."""
+        
+        # Vendor filtering
+        vendors = validated_data.get('vendors', [])
+        if vendors:
+            vendor_q = Q()
+            vendor_ids = []
+            vendor_names = []
+            
+            for vendor_identifier in vendors:
+                if vendor_identifier.isdigit():
+                    vendor_ids.append(int(vendor_identifier))
+                else:
+                    vendor_names.append(vendor_identifier)
+            
+            if vendor_ids:
+                vendor_q |= Q(vendor__id__in=vendor_ids)
+            if vendor_names:
+                vendor_q |= Q(vendor__name__in=vendor_names)
+            
+            queryset = queryset.filter(vendor_q)
+        
+        # Category filtering
+        categories = validated_data.get('categories', [])
+        if categories:
+            queryset = queryset.filter(category__id__in=categories)
+        
+        # Date range filtering
+        date_range = validated_data.get('date_range', {})
+        if date_range:
+            start_date = date_range.get('start')
+            end_date = date_range.get('end')
+            
+            if start_date:
+                queryset = queryset.filter(transaction_date__gte=start_date)
+            if end_date:
+                queryset = queryset.filter(transaction_date__lte=end_date)
+        
+        # Amount range filtering
+        amount_range = validated_data.get('amount_range', {})
+        if amount_range:
+            min_amount = amount_range.get('min')
+            max_amount = amount_range.get('max')
+            
+            if min_amount is not None:
+                queryset = queryset.filter(original_amount__gte=min_amount)
+            if max_amount is not None:
+                queryset = queryset.filter(original_amount__lte=max_amount)
+        
+        # Keywords filtering
+        keywords = validated_data.get('keywords', '').strip()
+        if keywords:
+            # Split keywords and search for each in description
+            keyword_list = keywords.split()
+            for keyword in keyword_list:
+                queryset = queryset.filter(description__icontains=keyword)
+        
+        # Direction filtering
+        direction = validated_data.get('direction', 'all')
+        if direction == 'inflow':
+            queryset = queryset.filter(direction='CREDIT')
+        elif direction == 'outflow':
+            queryset = queryset.filter(direction='DEBIT')
+        
+        return queryset
+
+    def _apply_or_filters(self, queryset, validated_data, user):
+        """Apply filters with OR logic - any filter match includes the transaction."""
+        
+        combined_q = Q()
+        any_filters_applied = False
+        
+        # Vendor filtering
+        vendors = validated_data.get('vendors', [])
+        if vendors:
+            vendor_q = Q()
+            vendor_ids = []
+            vendor_names = []
+            
+            for vendor_identifier in vendors:
+                if vendor_identifier.isdigit():
+                    vendor_ids.append(int(vendor_identifier))
+                else:
+                    vendor_names.append(vendor_identifier)
+            
+            if vendor_ids:
+                vendor_q |= Q(vendor__id__in=vendor_ids)
+            if vendor_names:
+                vendor_q |= Q(vendor__name__in=vendor_names)
+            
+            combined_q |= vendor_q
+            any_filters_applied = True
+        
+        # Category filtering
+        categories = validated_data.get('categories', [])
+        if categories:
+            combined_q |= Q(category__id__in=categories)
+            any_filters_applied = True
+        
+        # Date range filtering
+        date_range = validated_data.get('date_range', {})
+        if date_range:
+            start_date = date_range.get('start')
+            end_date = date_range.get('end')
+            
+            date_q = Q()
+            if start_date and end_date:
+                date_q = Q(transaction_date__gte=start_date, transaction_date__lte=end_date)
+            elif start_date:
+                date_q = Q(transaction_date__gte=start_date)
+            elif end_date:
+                date_q = Q(transaction_date__lte=end_date)
+            
+            if date_q:
+                combined_q |= date_q
+                any_filters_applied = True
+        
+        # Amount range filtering
+        amount_range = validated_data.get('amount_range', {})
+        if amount_range:
+            min_amount = amount_range.get('min')
+            max_amount = amount_range.get('max')
+            
+            amount_q = Q()
+            if min_amount is not None and max_amount is not None:
+                amount_q = Q(original_amount__gte=min_amount, original_amount__lte=max_amount)
+            elif min_amount is not None:
+                amount_q = Q(original_amount__gte=min_amount)
+            elif max_amount is not None:
+                amount_q = Q(original_amount__lte=max_amount)
+            
+            if amount_q:
+                combined_q |= amount_q
+                any_filters_applied = True
+        
+        # Keywords filtering
+        keywords = validated_data.get('keywords', '').strip()
+        if keywords:
+            keyword_q = Q()
+            keyword_list = keywords.split()
+            for keyword in keyword_list:
+                keyword_q |= Q(description__icontains=keyword)
+            
+            combined_q |= keyword_q
+            any_filters_applied = True
+        
+        # Direction filtering
+        direction = validated_data.get('direction', 'all')
+        if direction != 'all':
+            direction_q = Q()
+            if direction == 'inflow':
+                direction_q = Q(direction='CREDIT')
+            elif direction == 'outflow':
+                direction_q = Q(direction='DEBIT')
+            
+            combined_q |= direction_q
+            any_filters_applied = True
+        
+        # If no filters were applied, return all transactions for the user
+        if not any_filters_applied:
+            return queryset
+        
+        # Apply the combined OR filter
+        return queryset.filter(combined_q)
+
+    def _calculate_summary_stats(self, queryset):
+        """Calculate summary statistics for the search results."""
+        from django.db.models import Sum, Count, Min, Max
+        
+        stats = queryset.aggregate(
+            total_count=Count('id'),
+            total_amount=Sum('original_amount'),
+            total_aud_amount=Sum('aud_amount'),
+            min_date=Min('transaction_date'),
+            max_date=Max('transaction_date'),
+            min_amount=Min('original_amount'),
+            max_amount=Max('original_amount'),
+        )
+        
+        # Count by direction
+        credit_count = queryset.filter(direction='CREDIT').count()
+        debit_count = queryset.filter(direction='DEBIT').count()
+        
+        # Count by categorization status
+        categorized_count = queryset.exclude(category__isnull=True).count()
+        uncategorized_count = queryset.filter(category__isnull=True).count()
+        
+        return {
+            'total_transactions': stats['total_count'] or 0,
+            'total_amount': float(stats['total_amount']) if stats['total_amount'] else 0.0,
+            'total_aud_amount': float(stats['total_aud_amount']) if stats['total_aud_amount'] else 0.0,
+            'date_range': {
+                'earliest': stats['min_date'].isoformat() if stats['min_date'] else None,
+                'latest': stats['max_date'].isoformat() if stats['max_date'] else None,
+            },
+            'amount_range': {
+                'minimum': float(stats['min_amount']) if stats['min_amount'] else 0.0,
+                'maximum': float(stats['max_amount']) if stats['max_amount'] else 0.0,
+            },
+            'by_direction': {
+                'inflow_count': credit_count,
+                'outflow_count': debit_count,
+            },
+            'by_categorization': {
+                'categorized_count': categorized_count,
+                'uncategorized_count': uncategorized_count,
+            }
+        }

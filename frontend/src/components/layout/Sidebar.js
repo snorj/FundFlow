@@ -6,6 +6,7 @@ import {
   FiUpload, 
   FiTag, 
   FiBarChart,
+  FiSearch,
   FiSettings, 
   FiLogOut, 
   FiUsers
@@ -25,6 +26,7 @@ const Sidebar = () => {
     { path: '/dashboard', icon: FiHome, label: 'Dashboard' },
     { path: '/upload', icon: FiUpload, label: 'Upload' },
     { path: '/categorise', icon: FiTag, label: 'Categorise' },
+    { path: '/search', icon: FiSearch, label: 'Search' },
     { path: '/visualise', icon: FiBarChart, label: 'Visualise' },
     { path: '/admin', icon: FiUsers, label: 'Admin' },
     { path: '/settings', icon: FiSettings, label: 'Settings' },

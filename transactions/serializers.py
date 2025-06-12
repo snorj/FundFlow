@@ -483,3 +483,231 @@ class TransactionCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Failed to create transaction. Please check your input and try again."
             )
+
+class TransactionSearchSerializer(serializers.Serializer):
+    """
+    Serializer for validating and processing transaction search requests.
+    Handles all the filter parameters from the frontend search form.
+    """
+    # Vendor filter - array of vendor IDs or names
+    vendors = serializers.ListField(
+        child=serializers.CharField(max_length=255),
+        required=False,
+        allow_empty=True,
+        help_text="List of vendor IDs or names to filter by"
+    )
+    
+    # Category filter - array of category IDs
+    categories = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_empty=True,
+        help_text="List of category IDs to filter by"
+    )
+    
+    # Date range filter
+    date_range = serializers.DictField(
+        child=serializers.DateField(allow_null=True),
+        required=False,
+        help_text="Date range with 'start' and 'end' keys"
+    )
+    
+    # Amount range filter
+    amount_range = serializers.DictField(
+        child=serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True),
+        required=False,
+        help_text="Amount range with 'min' and 'max' keys"
+    )
+    
+    # Keywords search
+    keywords = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=500,
+        help_text="Keywords to search in transaction descriptions"
+    )
+    
+    # Transaction direction filter
+    direction = serializers.ChoiceField(
+        choices=[('all', 'All'), ('inflow', 'Credit'), ('outflow', 'Debit')],
+        required=False,
+        default='all',
+        help_text="Transaction direction filter"
+    )
+    
+    # Logic operator
+    logic = serializers.ChoiceField(
+        choices=[('AND', 'AND'), ('OR', 'OR')],
+        required=False,
+        default='AND',
+        help_text="Logic operator for combining filters"
+    )
+    
+    # Pagination parameters
+    page = serializers.IntegerField(
+        required=False,
+        default=1,
+        min_value=1,
+        help_text="Page number for pagination"
+    )
+    
+    page_size = serializers.IntegerField(
+        required=False,
+        default=50,
+        min_value=1,
+        max_value=1000,
+        help_text="Number of results per page"
+    )
+    
+    # Sorting parameters
+    sort_by = serializers.ChoiceField(
+        choices=[
+            ('transaction_date', 'Date'),
+            ('-transaction_date', 'Date (desc)'),
+            ('original_amount', 'Amount'),
+            ('-original_amount', 'Amount (desc)'),
+            ('description', 'Description'),
+            ('-description', 'Description (desc)'),
+            ('category__name', 'Category'),
+            ('-category__name', 'Category (desc)'),
+            ('vendor__name', 'Vendor'),
+            ('-vendor__name', 'Vendor (desc)'),
+        ],
+        required=False,
+        default='-transaction_date',
+        help_text="Field to sort results by"
+    )
+
+    def validate_date_range(self, value):
+        """Validate date range has proper start/end format"""
+        if not value:
+            return value
+            
+        start_date = value.get('start')
+        end_date = value.get('end')
+        
+        if start_date and end_date and start_date > end_date:
+            raise serializers.ValidationError("Start date cannot be after end date")
+            
+        return value
+    
+    def validate_amount_range(self, value):
+        """Validate amount range has proper min/max format"""
+        if not value:
+            return value
+            
+        min_amount = value.get('min')
+        max_amount = value.get('max')
+        
+        if min_amount is not None and min_amount < 0:
+            raise serializers.ValidationError("Minimum amount cannot be negative")
+            
+        if max_amount is not None and max_amount < 0:
+            raise serializers.ValidationError("Maximum amount cannot be negative")
+            
+        if (min_amount is not None and max_amount is not None and 
+            min_amount > max_amount):
+            raise serializers.ValidationError("Minimum amount cannot be greater than maximum amount")
+            
+        return value
+
+    def validate_vendors(self, value):
+        """Ensure vendor IDs exist and are accessible to the user"""
+        if not value:
+            return value
+            
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available")
+        
+        # Filter vendors to ensure they belong to the user or are system vendors
+        from .models import Vendor
+        vendor_ids = []
+        vendor_names = []
+        
+        for vendor_identifier in value:
+            if vendor_identifier.isdigit():
+                vendor_ids.append(int(vendor_identifier))
+            else:
+                vendor_names.append(vendor_identifier)
+        
+        # Check vendor IDs exist and are accessible
+        if vendor_ids:
+            accessible_vendor_ids = Vendor.objects.filter(
+                Q(id__in=vendor_ids) & 
+                (Q(user=request.user) | Q(user__isnull=True))
+            ).values_list('id', flat=True)
+            
+            invalid_ids = set(vendor_ids) - set(accessible_vendor_ids)
+            if invalid_ids:
+                raise serializers.ValidationError(f"Invalid vendor IDs: {list(invalid_ids)}")
+        
+        return value
+
+    def validate_categories(self, value):
+        """Ensure category IDs exist and are accessible to the user"""
+        if not value:
+            return value
+            
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available")
+        
+        # Check categories exist and are accessible
+        accessible_category_ids = Category.objects.filter(
+            Q(id__in=value) & 
+            (Q(user=request.user) | Q(user__isnull=True))
+        ).values_list('id', flat=True)
+        
+        invalid_ids = set(value) - set(accessible_category_ids)
+        if invalid_ids:
+            raise serializers.ValidationError(f"Invalid category IDs: {list(invalid_ids)}")
+            
+        return value
+
+
+class TransactionSearchResultSerializer(serializers.ModelSerializer):
+    """
+    Optimized serializer for transaction search results.
+    Includes computed fields and related data for efficient display.
+    """
+    vendor_name = serializers.CharField(source='vendor.name', read_only=True)
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    signed_original_amount = serializers.SerializerMethodField()
+    signed_aud_amount = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Transaction
+        fields = [
+            'id',
+            'transaction_date',
+            'description',
+            'vendor_name',
+            'category_name',
+            'original_amount',
+            'original_currency',
+            'aud_amount',
+            'signed_original_amount',
+            'signed_aud_amount',
+            'direction',
+            'source',
+            'created_at',
+            'updated_at'
+        ]
+    
+    def get_signed_original_amount(self, obj):
+        """Return amount with proper sign based on direction."""
+        if obj.direction == 'CREDIT':
+            return float(obj.original_amount)
+        else:
+            return -float(obj.original_amount)
+    
+    def get_signed_aud_amount(self, obj):
+        """Return AUD amount with proper sign based on direction."""
+        if obj.aud_amount is None:
+            return None
+        
+        if obj.direction == 'CREDIT':
+            return float(obj.aud_amount)
+        else:
+            return -float(obj.aud_amount)

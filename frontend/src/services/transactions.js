@@ -165,6 +165,31 @@ const transactionService = {
             throw new Error(errorMessages);
         }
     },
+
+    /**
+     * Search transactions with advanced filters
+     * @param {Object} searchCriteria - The search criteria object
+     * @param {Array} searchCriteria.vendors - Array of vendor IDs or names
+     * @param {Array} searchCriteria.categories - Array of category IDs
+     * @param {Object} searchCriteria.dateRange - Date range with start/end
+     * @param {Object} searchCriteria.amountRange - Amount range with min/max
+     * @param {string} searchCriteria.keywords - Keywords to search in descriptions
+     * @param {string} searchCriteria.direction - Transaction direction (all/inflow/outflow)
+     * @param {string} searchCriteria.logic - Logic operator (AND/OR)
+     * @param {number} searchCriteria.page - Page number for pagination
+     * @param {number} searchCriteria.page_size - Page size for pagination
+     * @param {string} searchCriteria.sort_by - Sort field
+     * @returns {Promise<Object>} Promise resolving to search results with pagination and summary
+     */
+    searchTransactions: async (searchCriteria) => {
+        try {
+            const response = await api.post('/transactions/search/', searchCriteria);
+            return response.data;
+        } catch (error) {
+            console.error('Error searching transactions:', error.response?.data || error.message);
+            throw error;
+        }
+    },
 };
 
 export default transactionService;

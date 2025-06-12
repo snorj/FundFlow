@@ -3,11 +3,11 @@ import PropTypes from 'prop-types';
 import { Tree } from 'react-arborist';
 import { 
   FiFolder, 
-  FiFolderOpen,
   FiTag,
   FiDollarSign,
   FiMoreVertical,
   FiChevronRight,
+  FiChevronDown,
   FiEdit3,
   FiTrash2,
   FiPlus,
@@ -49,13 +49,7 @@ const CategoryTreeEditor = ({
   }, []);
 
   // Enhanced focus management
-  const focusNode = useCallback((nodeId) => {
-    setFocusedNodeId(nodeId);
-    const nodeElement = document.querySelector(`[data-node-id="${nodeId}"]`);
-    if (nodeElement) {
-      nodeElement.focus();
-    }
-  }, []);
+  // Note: focusNode function removed as it was unused
 
   // Transform data for react-arborist format
   const treeData = useMemo(() => {
@@ -314,7 +308,7 @@ const CategoryTreeEditor = ({
 
           {/* Icon with enhanced styling */}
           <span className={`node-icon ${isCategory ? 'category-icon' : ''} ${isVendor ? 'vendor-icon' : ''} ${isTransaction ? 'transaction-icon' : ''}`}>
-            {isCategory && (isOpen ? <FiFolderOpen /> : <FiFolder />)}
+                          {isCategory && <FiFolder />}
             {isVendor && <FiTag />}
             {isTransaction && <FiDollarSign />}
           </span>
