@@ -36,7 +36,42 @@ const categoryService = {
     }
   },
 
-  // Add updateCategory, deleteCategory functions later if needed for the Settings page
+  /**
+   * Updates an existing category.
+   * @param {string|number} categoryId - The ID of the category to update
+   * @param {object} categoryData - Object containing updated category details
+   * @returns {Promise<object>} - Promise resolving to the updated category object.
+   */
+  updateCategory: async (categoryId, categoryData) => {
+    try {
+      const response = await api.put(`/categories/${categoryId}/`, categoryData);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating category:', error.response || error);
+      const errorMessages = error.response?.data ?
+         Object.values(error.response.data).flat().join(' ')
+         : 'Failed to update category.';
+      throw new Error(errorMessages);
+    }
+  },
+
+  /**
+   * Deletes a category by ID.
+   * @param {string|number} categoryId - The ID of the category to delete
+   * @returns {Promise<void>} - Promise resolving when category is deleted.
+   */
+  deleteCategory: async (categoryId) => {
+    try {
+      const response = await api.delete(`/categories/${categoryId}/`);
+      return response.data;
+    } catch (error) {
+      console.error('Error deleting category:', error.response || error);
+      const errorMessages = error.response?.data ?
+         Object.values(error.response.data).flat().join(' ')
+         : 'Failed to delete category.';
+      throw new Error(errorMessages);
+    }
+  },
 };
 
 export default categoryService;

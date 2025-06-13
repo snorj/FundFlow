@@ -360,132 +360,155 @@ export const ReviewProvider = ({ children, initialData = {} }) => {
   ]);
 
   // Action creators (memoized for performance)
-  const actions = useMemo(() => ({
-    // Data loading actions
-    setLoading: useCallback((loading) => {
-      dispatch({ type: REVIEW_ACTIONS.SET_LOADING, payload: loading });
-    }, []),
+  const setLoading = useCallback((loading) => {
+    dispatch({ type: REVIEW_ACTIONS.SET_LOADING, payload: loading });
+  }, []);
 
-    setProcessing: useCallback((processing) => {
-      dispatch({ type: REVIEW_ACTIONS.SET_PROCESSING, payload: processing });
-    }, []),
+  const setProcessing = useCallback((processing) => {
+    dispatch({ type: REVIEW_ACTIONS.SET_PROCESSING, payload: processing });
+  }, []);
 
-    setError: useCallback((error) => {
-      dispatch({ type: REVIEW_ACTIONS.SET_ERROR, payload: error });
-    }, []),
+  const setError = useCallback((error) => {
+    dispatch({ type: REVIEW_ACTIONS.SET_ERROR, payload: error });
+  }, []);
 
-    clearError: useCallback(() => {
-      dispatch({ type: REVIEW_ACTIONS.CLEAR_ERROR });
-    }, []),
+  const clearError = useCallback(() => {
+    dispatch({ type: REVIEW_ACTIONS.CLEAR_ERROR });
+  }, []);
 
-    loadVendorGroups: useCallback((vendorGroups, sessionId) => {
-      dispatch({
-        type: REVIEW_ACTIONS.LOAD_VENDOR_GROUPS,
-        payload: { vendorGroups, sessionId }
-      });
-    }, []),
+  const loadVendorGroups = useCallback((vendorGroups, sessionId) => {
+    dispatch({
+      type: REVIEW_ACTIONS.LOAD_VENDOR_GROUPS,
+      payload: { vendorGroups, sessionId }
+    });
+  }, []);
 
-    loadCategories: useCallback((categories) => {
-      dispatch({ type: REVIEW_ACTIONS.LOAD_CATEGORIES, payload: categories });
-    }, []),
+  const loadCategories = useCallback((categories) => {
+    dispatch({ type: REVIEW_ACTIONS.LOAD_CATEGORIES, payload: categories });
+  }, []);
 
-    // Selection actions
-    selectVendorGroup: useCallback((vendorGroupId) => {
-      dispatch({ type: REVIEW_ACTIONS.SELECT_VENDOR_GROUP, payload: vendorGroupId });
-    }, []),
+  const selectVendorGroup = useCallback((vendorGroupId) => {
+    dispatch({ type: REVIEW_ACTIONS.SELECT_VENDOR_GROUP, payload: vendorGroupId });
+  }, []);
 
-    toggleVendorGroupSelection: useCallback((vendorGroupId) => {
-      dispatch({ type: REVIEW_ACTIONS.TOGGLE_VENDOR_GROUP_SELECTION, payload: vendorGroupId });
-    }, []),
+  const toggleVendorGroupSelection = useCallback((vendorGroupId) => {
+    dispatch({ type: REVIEW_ACTIONS.TOGGLE_VENDOR_GROUP_SELECTION, payload: vendorGroupId });
+  }, []);
 
-    selectAllVendorGroups: useCallback(() => {
-      dispatch({ type: REVIEW_ACTIONS.SELECT_ALL_VENDOR_GROUPS });
-    }, []),
+  const selectAllVendorGroups = useCallback(() => {
+    dispatch({ type: REVIEW_ACTIONS.SELECT_ALL_VENDOR_GROUPS });
+  }, []);
 
-    deselectAllVendorGroups: useCallback(() => {
-      dispatch({ type: REVIEW_ACTIONS.DESELECT_ALL_VENDOR_GROUPS });
-    }, []),
+  const deselectAllVendorGroups = useCallback(() => {
+    dispatch({ type: REVIEW_ACTIONS.DESELECT_ALL_VENDOR_GROUPS });
+  }, []);
 
-    // Category assignment actions
-    updateVendorCategory: useCallback((vendorGroupId, categoryId) => {
-      dispatch({
-        type: REVIEW_ACTIONS.UPDATE_VENDOR_CATEGORY,
-        payload: { vendorGroupId, categoryId }
-      });
-    }, []),
+  const updateVendorCategory = useCallback((vendorGroupId, categoryId) => {
+    dispatch({
+      type: REVIEW_ACTIONS.UPDATE_VENDOR_CATEGORY,
+      payload: { vendorGroupId, categoryId }
+    });
+  }, []);
 
-    // Review actions
-    approveVendorGroup: useCallback((vendorGroupId) => {
-      dispatch({ type: REVIEW_ACTIONS.APPROVE_VENDOR_GROUP, payload: vendorGroupId });
-    }, []),
+  const approveVendorGroup = useCallback((vendorGroupId) => {
+    dispatch({ type: REVIEW_ACTIONS.APPROVE_VENDOR_GROUP, payload: vendorGroupId });
+  }, []);
 
-    rejectVendorGroup: useCallback((vendorGroupId) => {
-      dispatch({ type: REVIEW_ACTIONS.REJECT_VENDOR_GROUP, payload: vendorGroupId });
-    }, []),
+  const rejectVendorGroup = useCallback((vendorGroupId) => {
+    dispatch({ type: REVIEW_ACTIONS.REJECT_VENDOR_GROUP, payload: vendorGroupId });
+  }, []);
 
-    bulkApprove: useCallback((vendorGroupIds) => {
-      dispatch({ type: REVIEW_ACTIONS.BULK_APPROVE, payload: vendorGroupIds });
-    }, []),
+  const bulkApprove = useCallback((vendorGroupIds) => {
+    dispatch({ type: REVIEW_ACTIONS.BULK_APPROVE, payload: vendorGroupIds });
+  }, []);
 
-    bulkReject: useCallback((vendorGroupIds) => {
-      dispatch({ type: REVIEW_ACTIONS.BULK_REJECT, payload: vendorGroupIds });
-    }, []),
+  const bulkReject = useCallback((vendorGroupIds) => {
+    dispatch({ type: REVIEW_ACTIONS.BULK_REJECT, payload: vendorGroupIds });
+  }, []);
 
-    // Rule management actions
-    createRule: useCallback((rule) => {
-      dispatch({ type: REVIEW_ACTIONS.CREATE_RULE, payload: rule });
-    }, []),
+  const createRule = useCallback((rule) => {
+    dispatch({ type: REVIEW_ACTIONS.CREATE_RULE, payload: rule });
+  }, []);
 
-    updateRule: useCallback((rule) => {
-      dispatch({ type: REVIEW_ACTIONS.UPDATE_RULE, payload: rule });
-    }, []),
+  const updateRule = useCallback((rule) => {
+    dispatch({ type: REVIEW_ACTIONS.UPDATE_RULE, payload: rule });
+  }, []);
 
-    deleteRule: useCallback((ruleId) => {
-      dispatch({ type: REVIEW_ACTIONS.DELETE_RULE, payload: ruleId });
-    }, []),
+  const deleteRule = useCallback((ruleId) => {
+    dispatch({ type: REVIEW_ACTIONS.DELETE_RULE, payload: ruleId });
+  }, []);
 
-    // Progress and completion actions
-    saveProgress: useCallback(() => {
-      if (state.sessionId) {
-        const progressData = {
-          selectedVendors: Array.from(state.selectedVendorGroups),
-          categoryChanges: Array.from(state.categoryChanges.entries()),
-          approvedGroups: Array.from(state.approvedGroups),
-          rejectedGroups: Array.from(state.rejectedGroups),
-          completedGroups: Array.from(state.completedGroups),
-          createdRules: state.createdRules
-        };
+  const saveProgress = useCallback(() => {
+    if (state.sessionId) {
+      const progressData = {
+        selectedVendors: Array.from(state.selectedVendorGroups),
+        categoryChanges: Array.from(state.categoryChanges.entries()),
+        approvedGroups: Array.from(state.approvedGroups),
+        rejectedGroups: Array.from(state.rejectedGroups),
+        completedGroups: Array.from(state.completedGroups),
+        createdRules: state.createdRules
+      };
 
-        if (reviewStorageUtils.saveProgress(state.sessionId, progressData)) {
-          dispatch({ type: REVIEW_ACTIONS.SAVE_PROGRESS });
-          return true;
-        }
-      }
-      return false;
-    }, [state.sessionId, state.selectedVendorGroups, state.categoryChanges, state.approvedGroups, state.rejectedGroups, state.completedGroups, state.createdRules]),
-
-    loadProgress: useCallback((sessionId) => {
-      const progress = reviewStorageUtils.loadProgress(sessionId);
-      if (progress) {
-        dispatch({ type: REVIEW_ACTIONS.LOAD_PROGRESS, payload: { progress } });
+      if (reviewStorageUtils.saveProgress(state.sessionId, progressData)) {
+        dispatch({ type: REVIEW_ACTIONS.SAVE_PROGRESS });
         return true;
       }
-      return false;
-    }, []),
+    }
+    return false;
+  }, [state.sessionId, state.selectedVendorGroups, state.categoryChanges, state.approvedGroups, state.rejectedGroups, state.completedGroups, state.createdRules]);
 
-    completeReview: useCallback(() => {
-      dispatch({ type: REVIEW_ACTIONS.COMPLETE_REVIEW });
-    }, []),
+  const loadProgress = useCallback((sessionId) => {
+    const progress = reviewStorageUtils.loadProgress(sessionId);
+    if (progress) {
+      dispatch({ type: REVIEW_ACTIONS.LOAD_PROGRESS, payload: { progress } });
+      return true;
+    }
+    return false;
+  }, []);
 
-    // UI state actions
-    setFilters: useCallback((filters) => {
-      dispatch({ type: REVIEW_ACTIONS.SET_FILTERS, payload: filters });
-    }, []),
+  const completeReview = useCallback(() => {
+    dispatch({ type: REVIEW_ACTIONS.COMPLETE_REVIEW });
+  }, []);
 
-    setSortOrder: useCallback((sortBy, sortOrder) => {
-      dispatch({ type: REVIEW_ACTIONS.SET_SORT_ORDER, payload: { sortBy, sortOrder } });
-    }, [])
-  }), [state.sessionId, state.selectedVendorGroups, state.categoryChanges, state.approvedGroups, state.rejectedGroups, state.completedGroups, state.createdRules]);
+  const setFilters = useCallback((filters) => {
+    dispatch({ type: REVIEW_ACTIONS.SET_FILTERS, payload: filters });
+  }, []);
+
+  const setSortOrder = useCallback((sortBy, sortOrder) => {
+    dispatch({ type: REVIEW_ACTIONS.SET_SORT_ORDER, payload: { sortBy, sortOrder } });
+  }, []);
+
+  const actions = useMemo(() => ({
+    setLoading,
+    setProcessing,
+    setError,
+    clearError,
+    loadVendorGroups,
+    loadCategories,
+    selectVendorGroup,
+    toggleVendorGroupSelection,
+    selectAllVendorGroups,
+    deselectAllVendorGroups,
+    updateVendorCategory,
+    approveVendorGroup,
+    rejectVendorGroup,
+    bulkApprove,
+    bulkReject,
+    createRule,
+    updateRule,
+    deleteRule,
+    saveProgress,
+    loadProgress,
+    completeReview,
+    setFilters,
+    setSortOrder
+  }), [
+    setLoading, setProcessing, setError, clearError, loadVendorGroups, loadCategories,
+    selectVendorGroup, toggleVendorGroupSelection, selectAllVendorGroups, deselectAllVendorGroups,
+    updateVendorCategory, approveVendorGroup, rejectVendorGroup, bulkApprove, bulkReject,
+    createRule, updateRule, deleteRule, saveProgress, loadProgress, completeReview,
+    setFilters, setSortOrder
+  ]);
 
   // Computed values (memoized for performance)
   const computed = useMemo(() => ({

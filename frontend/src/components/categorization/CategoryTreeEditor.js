@@ -18,6 +18,7 @@ import {
 import { formatCurrency } from '../../utils/formatting';
 import vendorRuleService from '../../services/vendorRules';
 import VendorRuleUpdateModal from '../modals/VendorRuleUpdateModal';
+import CategoryCreationModal from '../modals/CategoryCreationModal';
 import './CategoryTreeEditor.css';
 
 const CategoryTreeEditor = ({ 
@@ -27,7 +28,9 @@ const CategoryTreeEditor = ({
   onSelect,
   onDelete,
   onCreateChild,
+  onCreateRoot,
   onDuplicate,
+  onCategoryCreated,
   transactions = [],
   categorySpendingTotals = {},
   selectedNodeId = null,
@@ -50,6 +53,12 @@ const CategoryTreeEditor = ({
     existingRule: null,
     newCategoryId: null,
     pendingMoveArgs: null
+  });
+  
+  // State for category creation modal
+  const [categoryCreationModal, setCategoryCreationModal] = useState({
+    isOpen: false,
+    preSelectedParent: null
   });
   
   const editInputRef = useRef(null);
@@ -653,6 +662,9 @@ const CategoryTreeEditor = ({
       case 'add-child':
         if (onCreateChild) {
           onCreateChild({ parentId: nodeId, parentNode: node });
+        } else {
+          // Use internal modal if no external handler provided
+          handleCreateChildCategory(nodeId, node);
         }
         break;
       case 'duplicate':
@@ -708,6 +720,41 @@ const CategoryTreeEditor = ({
       pendingMoveArgs: null
     });
   };
+
+  // Category creation modal handlers
+  const handleCreateRootCategory = useCallback(() => {
+    setCategoryCreationModal({
+      isOpen: true,
+      preSelectedParent: null
+    });
+  }, []);
+
+  const handleCreateChildCategory = useCallback((parentId, parentNode) => {
+    setCategoryCreationModal({
+      isOpen: true,
+      preSelectedParent: {
+        id: parentId,
+        name: parentNode.name
+      }
+    });
+  }, []);
+
+  const handleCategoryCreationModalClose = () => {
+    setCategoryCreationModal({
+      isOpen: false,
+      preSelectedParent: null
+    });
+  };
+
+  const handleCategoryCreated = useCallback((newCategory) => {
+    // Notify parent component about the new category
+    if (onCategoryCreated) {
+      onCategoryCreated(newCategory);
+    }
+    
+    // Announce to screen readers
+    announceToScreenReader(`Category "${newCategory.name}" created successfully`);
+  }, [onCategoryCreated, announceToScreenReader]);
 
   // Context Menu Component
   const ContextMenu = () => {
@@ -831,6 +878,20 @@ const CategoryTreeEditor = ({
         {announceText}
       </div>
 
+      {/* Tree editor toolbar */}
+      <div className="tree-editor-toolbar">
+        <button
+          type="button"
+          className="btn btn-primary tree-add-root-btn"
+          onClick={handleCreateRootCategory}
+          title="Create a new root-level category"
+          aria-label="Create new category"
+        >
+          <FiPlus />
+          <span>New Category</span>
+        </button>
+      </div>
+
       <Tree
         ref={treeRef}
         data={treeData}
@@ -916,6 +977,14 @@ const CategoryTreeEditor = ({
         newCategoryId={vendorRuleUpdateModal.newCategoryId}
         onRuleUpdated={handleVendorRuleUpdated}
       />
+      
+      <CategoryCreationModal
+        isOpen={categoryCreationModal.isOpen}
+        onClose={handleCategoryCreationModalClose}
+        onCategoryCreated={handleCategoryCreated}
+        preSelectedParent={categoryCreationModal.preSelectedParent}
+        availableCategories={data}
+      />
     </div>
   );
 };
@@ -927,7 +996,9 @@ CategoryTreeEditor.propTypes = {
   onSelect: PropTypes.func,
   onDelete: PropTypes.func,
   onCreateChild: PropTypes.func,
+  onCreateRoot: PropTypes.func,
   onDuplicate: PropTypes.func,
+  onCategoryCreated: PropTypes.func,
   transactions: PropTypes.array,
   categorySpendingTotals: PropTypes.object,
   selectedNodeId: PropTypes.string,
@@ -945,7 +1016,9 @@ CategoryTreeEditor.defaultProps = {
   onSelect: () => {},
   onDelete: () => {},
   onCreateChild: () => {},
-  onDuplicate: () => {}
+  onCreateRoot: () => {},
+  onDuplicate: () => {},
+  onCategoryCreated: () => {}
 };
 
 export default CategoryTreeEditor; 

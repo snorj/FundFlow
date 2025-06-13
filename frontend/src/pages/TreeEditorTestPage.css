@@ -41,6 +41,59 @@
   background: #2c5aa0;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.undo-redo-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.undo-button, .redo-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.undo-button:hover:not(:disabled), .redo-button:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+  color: #1f2937;
+}
+
+.undo-button:disabled, .redo-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: #f9fafb;
+}
+
+.undo-button:active:not(:disabled), .redo-button:active:not(:disabled) {
+  background: #e5e7eb;
+  transform: translateY(1px);
+}
+
+.history-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #6b7280;
+  margin-left: 8px;
+}
+
 .test-info-panel {
   display: flex;
   align-items: flex-start;
