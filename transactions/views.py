@@ -13,6 +13,7 @@ from django.db.models import Q
 from .models import Category, Transaction, Vendor, VendorRule, DescriptionMapping, CustomView, CustomCategory, ViewTransaction, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
 from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, TransactionCreateSerializer, TransactionSearchSerializer, TransactionSearchResultSerializer, VendorRuleSerializer, VendorRuleCreateSerializer, VendorRuleUpdateSerializer, CustomViewSerializer, CustomViewCreateSerializer, CustomCategorySerializer, CustomCategoryCreateSerializer, ViewTransactionSerializer, ViewTransactionCreateSerializer # Add TransactionCreateSerializer
 from .permissions import IsOwnerOrSystemReadOnly, IsOwner # Import IsOwner
+from .mixins import OptimizedAPIViewMixin, QueryMonitor # Import performance mixins
 import logging
 from django.db.models import Count, Min, Sum, Case, When, Value, DecimalField
 from django.shortcuts import get_object_or_404 # Useful for getting the Category
@@ -29,11 +30,36 @@ from django.utils import timezone as django_timezone
 
 logger = logging.getLogger(__name__)
 
-# --- Standard Pagination ---
+# --- Enhanced Pagination with Performance Optimizations ---
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 25
     page_size_query_param = 'page_size'
     max_page_size = 100
+    
+    def get_paginated_response(self, data):
+        """Enhanced paginated response with performance metadata."""
+        return Response({
+            'links': {
+                'next': self.get_next_link(),
+                'previous': self.get_previous_link()
+            },
+            'count': self.page.paginator.count,
+            'page_size': self.page_size,
+            'current_page': self.page.number,
+            'total_pages': self.page.paginator.num_pages,
+            'results': data
+        })
+    
+    def paginate_queryset(self, queryset, request, view=None):
+        """Override to add query optimization hints."""
+        # Add query optimization for large datasets
+        if hasattr(queryset, 'count'):
+            # Use iterator() for very large querysets to reduce memory usage
+            if queryset.count() > 10000:
+                # For very large datasets, we might want to use different strategies
+                pass
+        
+        return super().paginate_queryset(queryset, request, view)
 
 # --- Transaction Filters ---
 class TransactionFilter(filters.FilterSet):
@@ -52,10 +78,10 @@ class TransactionFilter(filters.FilterSet):
         fields = ['start_date', 'end_date', 'category', 'is_categorized', 'original_currency']
 
 # --- Transaction List View ---
-class TransactionListView(generics.ListAPIView):
+class TransactionListView(OptimizedAPIViewMixin, generics.ListAPIView):
     """
     API endpoint to list transactions for the authenticated user.
-    Supports filtering, sorting, and pagination.
+    Supports filtering, sorting, and pagination with performance optimizations.
     """
     serializer_class = TransactionSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -64,16 +90,38 @@ class TransactionListView(generics.ListAPIView):
     filterset_class = TransactionFilter 
     ordering_fields = ['transaction_date', 'description', 'original_amount', 'aud_amount', 'last_modified']
     ordering = ['-transaction_date', '-created_at'] # Default sort order
+    
+    # Performance optimization settings
+    cache_timeout = 180  # 3 minutes cache for transaction lists
+    cache_count = True  # Enable count caching for pagination
+    select_related_fields = ['category', 'vendor', 'parent_transaction']
+    prefetch_related_fields = [
+        'split_transactions__category',
+        'view_assignments__custom_view',
+        'view_assignments__custom_category'
+    ]
 
     def get_queryset(self):
         """
         This view should return a list of all transactions
         owned by the currently authenticated user.
+        Optimized with select_related for foreign keys to reduce database queries.
         """
-        return Transaction.objects.filter(user=self.request.user)
+        with QueryMonitor("TransactionListView.get_queryset"):
+            return Transaction.objects.filter(
+                user=self.request.user
+            ).select_related(
+                'category', 
+                'vendor', 
+                'parent_transaction'
+            ).prefetch_related(
+                'split_transactions__category',
+                'view_assignments__custom_view',
+                'view_assignments__custom_category'
+            )
 
 # --- Transaction Update View ---
-class TransactionUpdateView(generics.RetrieveUpdateAPIView):
+class TransactionUpdateView(OptimizedAPIViewMixin, generics.RetrieveUpdateAPIView):
     """
     API endpoint to retrieve and update a specific transaction.
     Only the owner can update.
@@ -82,6 +130,11 @@ class TransactionUpdateView(generics.RetrieveUpdateAPIView):
     serializer_class = TransactionUpdateSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwner]
     lookup_field = 'pk'
+    
+    # Performance optimization settings
+    cache_timeout = 300  # 5 minutes cache for individual transactions
+    select_related_fields = ['category', 'vendor', 'parent_transaction']
+    prefetch_related_fields = ['split_transactions__category']
 
     def get_queryset(self):
         """
@@ -391,9 +444,17 @@ class UncategorizedTransactionGroupView(APIView):
 
         logger.info(f"Fetching uncategorized transaction groups for user: {user.username} ({user.id})")
 
+        # Optimized query with select_related to avoid N+1 queries
         uncategorized_txs = Transaction.objects.filter(
             user=user,
             category__isnull=True
+        ).select_related(
+            'vendor'
+        ).only(
+            'id', 'transaction_date', 'description', 'original_amount', 
+            'original_currency', 'direction', 'source_account_identifier',
+            'counterparty_identifier', 'source_code', 'source_type', 
+            'source_notifications'
         ).order_by('description', '-transaction_date') # Order needed for grouping and getting max_date easily
 
         grouped_transactions = {}
@@ -474,7 +535,7 @@ class UncategorizedTransactionGroupView(APIView):
         logger.info(f"Found {len(sorted_groups)} groups of uncategorized transactions for user {user.id}, sorted by most recent.")
         return Response(response_data, status=status.HTTP_200_OK)
     
-class CategoryListCreateView(generics.ListCreateAPIView):
+class CategoryListCreateView(OptimizedAPIViewMixin, generics.ListCreateAPIView):
     """
     API endpoint to list accessible categories (System + User's Own)
     and create new custom categories for the authenticated user.
@@ -483,19 +544,29 @@ class CategoryListCreateView(generics.ListCreateAPIView):
     serializer_class = CategorySerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination # Added pagination
+    
+    # Performance optimization settings
+    cache_timeout = 600  # 10 minutes cache for categories (relatively static)
+    cache_count = True
 
     def get_queryset(self):
         """
         This view should return a list of all system categories
         plus categories owned by the currently authenticated user.
-        Prefetch related description mappings for efficiency when constructing vendor nodes.
+        Optimized with prefetch_related for better performance.
         """
         user = self.request.user
         # Use Q objects for OR condition: user is None OR user is the current user
-        # Prefetch description mappings assigned to these categories
+        # Prefetch related description mappings for efficiency when constructing vendor nodes
         return Category.objects.filter(
             Q(user__isnull=True) | Q(user=user)
-        ).distinct().prefetch_related('mapped_descriptions')
+        ).select_related(
+            'parent', 'user'
+        ).prefetch_related(
+            'mapped_descriptions',
+            'children',
+            'transactions'
+        ).distinct()
 
     def list(self, request, *args, **kwargs):
         # ... (existing list logic for adding vendor nodes) ...

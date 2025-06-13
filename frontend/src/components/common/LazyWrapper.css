@@ -1,0 +1,406 @@
+/* Lazy Wrapper Base Styles */
+.lazy-wrapper {
+  position: relative;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.lazy-wrapper-hidden {
+  opacity: 0;
+}
+
+.lazy-wrapper-visible {
+  opacity: 1;
+}
+
+.lazy-placeholder {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+  min-height: 100px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Loading Indicator Styles */
+.lazy-loading-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  gap: 12px;
+}
+
+.lazy-loading-small {
+  padding: 10px;
+  gap: 8px;
+}
+
+.lazy-loading-small .lazy-loading-message {
+  font-size: 0.875rem;
+}
+
+.lazy-loading-large {
+  padding: 40px;
+  gap: 16px;
+}
+
+.lazy-loading-large .lazy-loading-message {
+  font-size: 1.125rem;
+}
+
+.lazy-loading-spinner {
+  position: relative;
+  width: 32px;
+  height: 32px;
+}
+
+.lazy-loading-small .lazy-loading-spinner {
+  width: 20px;
+  height: 20px;
+}
+
+.lazy-loading-large .lazy-loading-spinner {
+  width: 48px;
+  height: 48px;
+}
+
+.lazy-loading-spinner-inner {
+  width: 100%;
+  height: 100%;
+  border: 3px solid #e5e7eb;
+  border-top: 3px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.lazy-loading-small .lazy-loading-spinner-inner {
+  border-width: 2px;
+}
+
+.lazy-loading-large .lazy-loading-spinner-inner {
+  border-width: 4px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.lazy-loading-message {
+  color: #6b7280;
+  font-size: 1rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* Error Boundary Styles */
+.lazy-error-boundary,
+.lazy-error-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+
+.lazy-error-content {
+  text-align: center;
+  max-width: 400px;
+}
+
+.lazy-error-icon {
+  font-size: 2rem;
+  margin-bottom: 12px;
+}
+
+.lazy-error-content h3 {
+  margin: 0 0 8px 0;
+  color: #dc2626;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.lazy-error-content p {
+  margin: 0 0 16px 0;
+  color: #7f1d1d;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.lazy-error-retry {
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.lazy-error-retry:hover {
+  background: #b91c1c;
+}
+
+.lazy-error-retry:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+}
+
+/* Lazy Image Styles */
+.lazy-image-wrapper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.lazy-image-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.lazy-image-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+}
+
+.lazy-image-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 100px;
+  background: #f9fafb;
+  border: 2px dashed #d1d5db;
+  border-radius: 4px;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.lazy-image-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 0.3s ease;
+}
+
+/* Lazy List Styles */
+.lazy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lazy-list-item {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.lazy-list-item:hover {
+  transform: translateY(-1px);
+}
+
+.lazy-list-sentinel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  min-height: 60px;
+}
+
+.lazy-list-end {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: #6b7280;
+  font-size: 0.875rem;
+  border-top: 1px solid #e5e7eb;
+  margin-top: 16px;
+}
+
+.lazy-list-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #6b7280;
+  font-size: 1rem;
+  text-align: center;
+}
+
+/* Progressive Loading Animations */
+.lazy-wrapper-visible {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Skeleton Loading Styles */
+.lazy-skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+.lazy-skeleton-text {
+  height: 1em;
+  margin-bottom: 0.5em;
+}
+
+.lazy-skeleton-text:last-child {
+  margin-bottom: 0;
+  width: 60%;
+}
+
+.lazy-skeleton-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.lazy-skeleton-button {
+  height: 36px;
+  width: 100px;
+  border-radius: 6px;
+}
+
+.lazy-skeleton-card {
+  height: 200px;
+  border-radius: 8px;
+}
+
+/* Responsive Design */
+@media (max-width: 640px) {
+  .lazy-loading-indicator {
+    padding: 16px;
+  }
+  
+  .lazy-loading-large {
+    padding: 24px;
+  }
+  
+  .lazy-error-boundary,
+  .lazy-error-fallback {
+    padding: 24px 16px;
+  }
+  
+  .lazy-list-sentinel {
+    padding: 16px;
+  }
+  
+  .lazy-list-empty {
+    padding: 40px 16px;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .lazy-placeholder,
+  .lazy-skeleton {
+    background: #000;
+    opacity: 0.1;
+  }
+  
+  .lazy-loading-spinner-inner {
+    border-color: #000;
+    border-top-color: #0066cc;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .lazy-wrapper,
+  .lazy-list-item,
+  .lazy-image-container img {
+    transition: none;
+  }
+  
+  .lazy-loading-spinner-inner {
+    animation: none;
+    border: 3px solid #6b7280;
+  }
+  
+  .lazy-placeholder,
+  .lazy-skeleton {
+    animation: none;
+    background: #e5e7eb;
+  }
+  
+  .lazy-wrapper-visible {
+    animation: none;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .lazy-placeholder,
+  .lazy-skeleton {
+    background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%);
+  }
+  
+  .lazy-loading-message {
+    color: #d1d5db;
+  }
+  
+  .lazy-loading-spinner-inner {
+    border-color: #4b5563;
+    border-top-color: #60a5fa;
+  }
+  
+  .lazy-error-boundary,
+  .lazy-error-fallback {
+    background: #7f1d1d;
+    border-color: #dc2626;
+  }
+  
+  .lazy-error-content h3 {
+    color: #fca5a5;
+  }
+  
+  .lazy-error-content p {
+    color: #fecaca;
+  }
+  
+  .lazy-image-error {
+    background: #374151;
+    border-color: #4b5563;
+    color: #d1d5db;
+  }
+  
+  .lazy-list-end {
+    color: #d1d5db;
+    border-color: #4b5563;
+  }
+  
+  .lazy-list-empty {
+    color: #d1d5db;
+  }
+} 

@@ -10,13 +10,36 @@ const VendorRuleUpdateModal = ({
     newCategoryName,
     existingRule,
     newCategoryId,
-    onRuleUpdated 
+    onRuleUpdated,
+    isChecking = false
 }) => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(false);
 
-    if (!isOpen || !existingRule) return null;
+    if (!isOpen) return null;
+
+    // Show loading state while checking for rules
+    if (isChecking) {
+        return (
+            <div className="vendor-rule-update-modal-overlay">
+                <div className="vendor-rule-update-modal" onClick={(e) => e.stopPropagation()}>
+                    <div className="vendor-rule-update-modal-header">
+                        <h3>Checking Vendor Rules</h3>
+                    </div>
+                    <div className="vendor-rule-update-modal-content">
+                        <div className="checking-state">
+                            <div className="loading-spinner"></div>
+                            <p>Checking for existing vendor rules...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // Don't render the main modal if no existing rule
+    if (!existingRule) return null;
 
     const handleUpdateRule = async () => {
         setIsProcessing(true);

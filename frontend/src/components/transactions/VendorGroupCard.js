@@ -16,7 +16,7 @@ import {
 import { formatCurrency, formatDate } from '../../utils/formatting';
 import './VendorGroupCard.css';
 
-const VendorGroupCard = forwardRef(({ 
+const VendorGroupCard = React.memo(forwardRef(({ 
   vendorGroup, 
   isSelected = false,
   availableCategories = [],
@@ -36,7 +36,7 @@ const VendorGroupCard = forwardRef(({
     vendorGroup?.suggested_category_id || ''
   );
 
-  // Calculate summary statistics
+  // Calculate summary statistics - memoized for performance
   const summary = useMemo(() => {
     if (!vendorGroup?.transactions) return {};
     
@@ -54,9 +54,9 @@ const VendorGroupCard = forwardRef(({
       totalAmount,
       dateRange
     };
-  }, [vendorGroup]);
+  }, [vendorGroup?.transactions]);
 
-  // Get selected category name
+  // Get selected category name - memoized for performance
   const selectedCategoryName = useMemo(() => {
     if (!selectedCategoryId) return "Uncategorized";
     const selectedIdNum = parseInt(selectedCategoryId, 10);
@@ -64,7 +64,13 @@ const VendorGroupCard = forwardRef(({
     return foundCategory ? foundCategory.name : `Unknown (ID: ${selectedIdNum})`;
   }, [selectedCategoryId, availableCategories]);
 
-  // Handle category selection
+  // Get sample transactions (first 3) - memoized for performance
+  const sampleTransactions = useMemo(() => {
+    if (!vendorGroup?.transactions) return [];
+    return vendorGroup.transactions.slice(0, 3);
+  }, [vendorGroup?.transactions]);
+
+  // Optimized event handlers with useCallback
   const handleCategoryChange = useCallback((event) => {
     const newCategoryId = event.target.value;
     setSelectedCategoryId(newCategoryId);
@@ -74,14 +80,17 @@ const VendorGroupCard = forwardRef(({
     }
   }, [vendorGroup?.vendor_id, onCategoryChange]);
 
-  // Handle selection toggle
   const handleSelectionToggle = useCallback(() => {
     if (onSelectionChange) {
       onSelectionChange(vendorGroup.vendor_id, !isSelected);
     }
   }, [vendorGroup?.vendor_id, isSelected, onSelectionChange]);
 
-  // Handle action buttons
+  const handleExpansionToggle = useCallback(() => {
+    setIsExpanded(prev => !prev);
+  }, []);
+
+  // Action handlers - memoized to prevent unnecessary re-renders
   const handleApprove = useCallback(() => {
     if (onApprove && !isLoading) {
       onApprove(vendorGroup);
@@ -100,7 +109,6 @@ const VendorGroupCard = forwardRef(({
     }
   }, [vendorGroup, onModify, isLoading]);
 
-  // Handle rule management
   const handleCreateRule = useCallback(() => {
     if (onCreateRule && !isLoading) {
       onCreateRule(vendorGroup);
@@ -118,12 +126,6 @@ const VendorGroupCard = forwardRef(({
       onDeleteRule(vendorGroup);
     }
   }, [vendorGroup, onDeleteRule, isLoading]);
-
-  // Get sample transactions (first 3)
-  const sampleTransactions = useMemo(() => {
-    if (!vendorGroup?.transactions) return [];
-    return vendorGroup.transactions.slice(0, 3);
-  }, [vendorGroup?.transactions]);
 
   if (!vendorGroup) {
     return <div ref={ref} className="vendor-group-card loading">Loading vendor group...</div>;
@@ -183,7 +185,7 @@ const VendorGroupCard = forwardRef(({
         <div className="vendor-actions">
           <button
             className="expand-button"
-            onClick={() => setIsExpanded(!isExpanded)}
+            onClick={handleExpansionToggle}
             disabled={isLoading}
             title={isExpanded ? "Collapse transactions" : "Expand transactions"}
           >
@@ -318,7 +320,7 @@ const VendorGroupCard = forwardRef(({
       </div>
     </div>
   );
-});
+}));
 
 VendorGroupCard.displayName = 'VendorGroupCard';
 

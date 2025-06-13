@@ -78,12 +78,15 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'FundFlow.middleware.APIPerformanceMonitoringMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'FundFlow.middleware.ResponseOptimizationMiddleware',
+    'FundFlow.middleware.PartialResponseMiddleware',
 ]
 
 # Custom User model
@@ -158,6 +161,8 @@ DATABASES = {
         'PASSWORD': os.getenv('DB_PASSWORD'),
         'HOST': os.getenv('DB_HOST'),
         'PORT': os.getenv('DB_PORT'),
+        'CONN_MAX_AGE': 600,  # Connection pooling - keep connections alive for 10 minutes
+        'CONN_HEALTH_CHECKS': True,  # Enable connection health checks
     }
 }
 
@@ -294,3 +299,28 @@ LOGGING = {
 }
 
 # Base currency for conversion (ensure it's defined if not already)
+
+# Performance Optimization Settings
+COMPRESSION_THRESHOLD = 1024  # Compress responses larger than 1KB
+ETAG_ENABLED = True  # Enable ETag headers for caching
+API_CACHE_TIMEOUT = 300  # Cache API responses for 5 minutes
+
+# Cache configuration
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        },
+        'KEY_PREFIX': 'fundflow',
+        'TIMEOUT': 300,  # Default timeout of 5 minutes
+    }
+}
+
+# Session configuration for performance
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'default'
+
+# Database query optimization
+DATABASE_QUERY_TIMEOUT = 30  # 30 seconds timeout for queries

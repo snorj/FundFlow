@@ -878,6 +878,16 @@ class Transaction(models.Model):
             models.Index(fields=['bank_transaction_id']),
             models.Index(fields=['original_currency', 'transaction_date']),
             models.Index(fields=['user', 'created_at']),
+            # Additional performance indexes for common query patterns
+            models.Index(fields=['user', 'category', 'transaction_date']),  # Category filtering with date sorting
+            models.Index(fields=['user', 'vendor', 'transaction_date']),    # Vendor filtering with date sorting
+            models.Index(fields=['user', 'original_amount', 'transaction_date']),  # Amount range queries
+            models.Index(fields=['user', 'direction', 'transaction_date']),  # Direction filtering
+            models.Index(fields=['user', 'source', 'transaction_date']),    # Source filtering
+            models.Index(fields=['description'], name='tx_desc_text_idx'),  # Text search optimization
+            models.Index(fields=['user', 'category'], condition=models.Q(category__isnull=True), name='tx_uncategorized_idx'),  # Uncategorized transactions
+            models.Index(fields=['user', 'is_parent_split', 'transaction_date']),  # Split transaction queries
+            models.Index(fields=['user', 'aud_amount', 'transaction_date']),  # AUD amount filtering
         ]
         constraints = [
             models.CheckConstraint(

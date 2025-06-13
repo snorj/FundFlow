@@ -8,6 +8,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  contain: layout style;
 }
 
 /* Tree Editor Toolbar */
@@ -75,6 +76,9 @@
   line-height: 1.5;
   flex: 1;
   overflow: hidden;
+  contain: layout style paint;
+  will-change: scroll-position;
+  transform: translateZ(0); /* Force hardware acceleration */
 }
 
 /* Tree Node Base Styles */
@@ -88,6 +92,11 @@
   transition: all 0.2s ease;
   border: 1px solid transparent;
   position: relative;
+  contain: layout;
+  will-change: auto;
+  backface-visibility: hidden;
+  /* Use hardware acceleration for smooth animations */
+  transform: translateZ(0);
 }
 
 /* Connection lines for visual hierarchy */
@@ -481,6 +490,7 @@
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3), inset 0 0 0 1px rgba(59, 130, 246, 0.2) !important;
   transform: scale(1.02);
   transition: all 0.2s ease;
+  will-change: background-color, border-color;
 }
 
 .tree-node[data-drop-target="invalid"] {
@@ -497,6 +507,7 @@
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15), 0 4px 10px rgba(0, 0, 0, 0.1) !important;
   z-index: 1000;
   transition: all 0.2s ease;
+  will-change: transform;
 }
 
 /* Enhanced drop zone indicators */
@@ -781,4 +792,209 @@
     background: #000000;
     color: #ffffff;
   }
-} 
+}
+
+/* Vendor Rule Indicators */
+.vendor-node {
+  position: relative;
+}
+
+.vendor-rule-indicator {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  border: 1px solid white;
+  z-index: 2;
+  contain: layout;
+  transform: translateZ(0);
+}
+
+.vendor-rule-indicator.rule-active {
+  background: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+
+.vendor-rule-indicator.rule-conflict {
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+}
+
+/* Move Highlighting Animation */
+.vendor-node.recently-moved {
+  animation: moveHighlight 2s ease-out;
+  will-change: transform, background-color, box-shadow;
+}
+
+@keyframes moveHighlight {
+  0% {
+    background-color: #dbeafe;
+    transform: scale(1.02);
+    box-shadow: 0 0 0 2px #3b82f6;
+  }
+  50% {
+    background-color: #bfdbfe;
+  }
+  100% {
+    background-color: transparent;
+    transform: scale(1);
+    box-shadow: none;
+  }
+}
+
+.category-node.recently-moved {
+  animation: moveHighlight 2s ease-out;
+}
+
+/* Success feedback for successful moves */
+.vendor-node.move-success {
+  animation: moveSuccess 1.5s ease-out;
+}
+
+@keyframes moveSuccess {
+  0% {
+    background-color: #dcfce7;
+    transform: scale(1.02);
+    box-shadow: 0 0 0 2px #22c55e;
+  }
+  50% {
+    background-color: #bbf7d0;
+  }
+  100% {
+    background-color: transparent;
+    transform: scale(1);
+    box-shadow: none;
+  }
+}
+
+/* Error feedback for failed moves */
+.vendor-node.move-error {
+  animation: moveError 1.5s ease-out;
+}
+
+@keyframes moveError {
+  0% {
+    background-color: #fef2f2;
+    transform: scale(1.02);
+    box-shadow: 0 0 0 2px #ef4444;
+  }
+  50% {
+    background-color: #fecaca;
+  }
+  100% {
+    background-color: transparent;
+    transform: scale(1);
+    box-shadow: none;
+  }
+}
+
+/* Loading state for nodes being processed */
+.vendor-node.processing {
+  opacity: 0.7;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.vendor-node.processing::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 2px solid #e5e7eb;
+  border-top: 2px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  z-index: 3;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Rule status tooltip */
+.vendor-rule-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f2937;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.vendor-rule-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: #1f2937;
+}
+
+.vendor-rule-indicator:hover + .vendor-rule-tooltip {
+  opacity: 1;
+}
+
+/* Performance Optimizations */
+.arborist-tree {
+  contain: layout style paint;
+  will-change: scroll-position;
+  transform: translateZ(0); /* Force hardware acceleration */
+}
+
+.tree-node {
+  contain: layout;
+  will-change: auto;
+  backface-visibility: hidden;
+  /* Use hardware acceleration for smooth animations */
+  transform: translateZ(0);
+}
+
+.tree-node.processing {
+  will-change: transform, opacity;
+}
+
+.tree-node.recently-moved {
+  will-change: transform, background-color, box-shadow;
+}
+
+/* Optimize drag operations */
+.tree-node[data-dragging="true"] {
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* Optimize drop targets */
+.tree-node[data-drop-target] {
+  will-change: background-color, border-color;
+}
+
+/* Enhanced virtualization container */
+.virtualized-container {
+  contain: strict;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* Reduce layout thrashing during animations */
+.vendor-rule-indicator {
+  contain: layout;
+  transform: translateZ(0);
+}
+
+/* ... existing code ... */ 

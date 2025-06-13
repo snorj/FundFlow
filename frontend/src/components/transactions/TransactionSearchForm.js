@@ -14,9 +14,14 @@ import {
 import categoryService from '../../services/categories';
 import transactionService from '../../services/transactions';
 import { formatCurrency } from '../../utils/formatting';
+import { useDebounce, useDebouncedCallback } from '../../hooks/useDebounce';
+import { usePerformanceMonitor } from '../../hooks/usePerformanceMonitor';
 import './TransactionSearchForm.css';
 
-const TransactionSearchForm = ({ onSearch, onReset, isLoading = false, className = '' }) => {
+const TransactionSearchForm = React.memo(({ onSearch, onReset, isLoading = false, className = '' }) => {
+  // Performance monitoring
+  const { performanceData } = usePerformanceMonitor('TransactionSearchForm');
+
   // Form state
   const [filters, setFilters] = useState({
     vendors: [],
@@ -41,7 +46,19 @@ const TransactionSearchForm = ({ onSearch, onReset, isLoading = false, className
   const [isVendorDropdownOpen, setIsVendorDropdownOpen] = useState(false);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
 
-  // Date presets
+  // Debounced search terms for performance
+  const debouncedVendorSearch = useDebounce(vendorSearchTerm, 300);
+  const debouncedCategorySearch = useDebounce(categorySearchTerm, 300);
+  const debouncedKeywords = useDebounce(filters.keywords, 500);
+
+  // Debounced search callback
+  const debouncedSearch = useDebouncedCallback((searchFilters) => {
+    if (onSearch) {
+      onSearch(searchFilters);
+    }
+  }, 400, [onSearch]);
+
+  // Date presets - memoized for performance
   const datePresets = useMemo(() => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -74,37 +91,41 @@ const TransactionSearchForm = ({ onSearch, onReset, isLoading = false, className
       { label: 'This Month', start: formatDate(thisMonthStart), end: formatDate(today) },
       { label: 'Last Month', start: formatDate(lastMonthStart), end: formatDate(lastMonthEnd) },
       { label: 'This Year', start: formatDate(thisYearStart), end: formatDate(today) },
-      { label: 'Last Year', start: formatDate(lastYearStart), end: formatDate(lastYearEnd) },
-      { label: 'Last 30 Days', start: formatDate(new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)), end: formatDate(today) },
-      { label: 'Last 90 Days', start: formatDate(new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000)), end: formatDate(today) }
+      { label: 'Last Year', start: formatDate(lastYearStart), end: formatDate(lastYearEnd) }
     ];
   }, []);
+
+  // Filtered vendors and categories - memoized for performance
+  const filteredVendors = useMemo(() => {
+    if (!debouncedVendorSearch) return vendors;
+    return vendors.filter(vendor => 
+      vendor.name.toLowerCase().includes(debouncedVendorSearch.toLowerCase())
+    );
+  }, [vendors, debouncedVendorSearch]);
+
+  const filteredCategories = useMemo(() => {
+    if (!debouncedCategorySearch) return categories;
+    return categories.filter(category => 
+      category.name.toLowerCase().includes(debouncedCategorySearch.toLowerCase())
+    );
+  }, [categories, debouncedCategorySearch]);
 
   // Load initial data
   useEffect(() => {
     const loadData = async () => {
       setLoadingData(true);
       setError(null);
+      
       try {
-        const [categoriesData, transactionsData] = await Promise.all([
-          categoryService.getCategories(),
-          transactionService.getTransactions({ page_size: 1000 })
+        const [vendorData, categoryData] = await Promise.all([
+          transactionService.getVendors(),
+          categoryService.getCategories()
         ]);
-
-        setCategories(categoriesData || []);
         
-        // Extract unique vendors from transactions
-        const uniqueVendors = Array.from(
-          new Map(
-            transactionsData
-              .filter(t => t.vendor_name)
-              .map(t => [t.vendor_name, { name: t.vendor_name, id: t.vendor_id || t.vendor_name }])
-          ).values()
-        ).sort((a, b) => a.name.localeCompare(b.name));
-        
-        setVendors(uniqueVendors);
+        setVendors(vendorData || []);
+        setCategories(categoryData || []);
       } catch (err) {
-        console.error('Error loading search data:', err);
+        console.error('Failed to load search data:', err);
         setError('Failed to load search options. Please try again.');
       } finally {
         setLoadingData(false);
@@ -114,78 +135,61 @@ const TransactionSearchForm = ({ onSearch, onReset, isLoading = false, className
     loadData();
   }, []);
 
-  // Filter vendors based on search term
-  const filteredVendors = useMemo(() => {
-    if (!vendorSearchTerm.trim()) return vendors;
-    return vendors.filter(vendor => 
-      vendor.name.toLowerCase().includes(vendorSearchTerm.toLowerCase())
-    );
-  }, [vendors, vendorSearchTerm]);
+  // Trigger search when debounced keywords change
+  useEffect(() => {
+    if (debouncedKeywords !== filters.keywords) {
+      const updatedFilters = { ...filters, keywords: debouncedKeywords };
+      setFilters(updatedFilters);
+      debouncedSearch(updatedFilters);
+    }
+  }, [debouncedKeywords, filters, debouncedSearch]);
 
-  // Filter categories based on search term
-  const filteredCategories = useMemo(() => {
-    if (!categorySearchTerm.trim()) return categories;
-    return categories.filter(category => 
-      category.name.toLowerCase().includes(categorySearchTerm.toLowerCase())
-    );
-  }, [categories, categorySearchTerm]);
+  // Optimized filter update function
+  const updateFilters = useCallback((updates) => {
+    setFilters(prevFilters => {
+      const newFilters = { ...prevFilters, ...updates };
+      
+      // Trigger search for non-keyword changes immediately
+      if (!updates.hasOwnProperty('keywords')) {
+        debouncedSearch(newFilters);
+      }
+      
+      return newFilters;
+    });
+  }, [debouncedSearch]);
 
-  // Handle form changes
-  const handleFilterChange = useCallback((key, value) => {
-    setFilters(prev => ({
-      ...prev,
-      [key]: value
-    }));
-  }, []);
+  // Optimized event handlers
+  const handleVendorToggle = useCallback((vendorId) => {
+    updateFilters({
+      vendors: filters.vendors.includes(vendorId)
+        ? filters.vendors.filter(id => id !== vendorId)
+        : [...filters.vendors, vendorId]
+    });
+  }, [filters.vendors, updateFilters]);
 
-  // Handle vendor selection
-  const handleVendorToggle = useCallback((vendor) => {
-    setFilters(prev => ({
-      ...prev,
-      vendors: prev.vendors.some(v => v.id === vendor.id)
-        ? prev.vendors.filter(v => v.id !== vendor.id)
-        : [...prev.vendors, vendor]
-    }));
-  }, []);
+  const handleCategoryToggle = useCallback((categoryId) => {
+    updateFilters({
+      categories: filters.categories.includes(categoryId)
+        ? filters.categories.filter(id => id !== categoryId)
+        : [...filters.categories, categoryId]
+    });
+  }, [filters.categories, updateFilters]);
 
-  // Handle category selection
-  const handleCategoryToggle = useCallback((category) => {
-    setFilters(prev => ({
-      ...prev,
-      categories: prev.categories.some(c => c.id === category.id)
-        ? prev.categories.filter(c => c.id !== category.id)
-        : [...prev.categories, category]
-    }));
-  }, []);
-
-  // Handle date preset selection
   const handleDatePreset = useCallback((preset) => {
-    setFilters(prev => ({
-      ...prev,
+    updateFilters({
       dateRange: { start: preset.start, end: preset.end }
-    }));
-  }, []);
+    });
+  }, [updateFilters]);
 
-  // Handle amount range changes
-  const handleAmountRangeChange = useCallback((field, value) => {
-    const numValue = value === '' ? '' : parseFloat(value);
-    if (value !== '' && (isNaN(numValue) || numValue < 0)) return;
-    
-    setFilters(prev => ({
-      ...prev,
-      amountRange: { ...prev.amountRange, [field]: value }
-    }));
-  }, []);
+  const handleFilterChange = useCallback((key, value) => {
+    updateFilters({ [key]: value });
+  }, [updateFilters]);
 
-  // Handle form submission
   const handleSubmit = useCallback((e) => {
     e.preventDefault();
-    if (onSearch) {
-      onSearch(filters);
-    }
-  }, [filters, onSearch]);
+    debouncedSearch(filters);
+  }, [filters, debouncedSearch]);
 
-  // Handle form reset
   const handleReset = useCallback(() => {
     const resetFilters = {
       vendors: [],
@@ -196,17 +200,17 @@ const TransactionSearchForm = ({ onSearch, onReset, isLoading = false, className
       direction: 'all',
       logic: 'AND'
     };
+    
     setFilters(resetFilters);
     setVendorSearchTerm('');
     setCategorySearchTerm('');
-    setIsVendorDropdownOpen(false);
-    setIsCategoryDropdownOpen(false);
+    
     if (onReset) {
       onReset();
     }
   }, [onReset]);
 
-  // Check if form has active filters
+  // Check if form has active filters - memoized for performance
   const hasActiveFilters = useMemo(() => {
     return filters.vendors.length > 0 ||
            filters.categories.length > 0 ||
@@ -361,7 +365,7 @@ const TransactionSearchForm = ({ onSearch, onReset, isLoading = false, className
                         <div
                           key={vendor.id}
                           className={`dropdown-option ${filters.vendors.some(v => v.id === vendor.id) ? 'selected' : ''}`}
-                          onClick={() => handleVendorToggle(vendor)}
+                          onClick={() => handleVendorToggle(vendor.id)}
                           role="option"
                           aria-selected={filters.vendors.some(v => v.id === vendor.id)}
                         >
@@ -429,7 +433,7 @@ const TransactionSearchForm = ({ onSearch, onReset, isLoading = false, className
                         <div
                           key={category.id}
                           className={`dropdown-option ${filters.categories.some(c => c.id === category.id) ? 'selected' : ''}`}
-                          onClick={() => handleCategoryToggle(category)}
+                          onClick={() => handleCategoryToggle(category.id)}
                           role="option"
                           aria-selected={filters.categories.some(c => c.id === category.id)}
                         >
@@ -494,7 +498,7 @@ const TransactionSearchForm = ({ onSearch, onReset, isLoading = false, className
                 type="number"
                 placeholder="Min amount"
                 value={filters.amountRange.min}
-                onChange={(e) => handleAmountRangeChange('min', e.target.value)}
+                onChange={(e) => handleFilterChange('amountRange', { ...filters.amountRange, min: e.target.value })}
                 className="amount-input"
                 min="0"
                 step="0.01"
@@ -505,7 +509,7 @@ const TransactionSearchForm = ({ onSearch, onReset, isLoading = false, className
                 type="number"
                 placeholder="Max amount"
                 value={filters.amountRange.max}
-                onChange={(e) => handleAmountRangeChange('max', e.target.value)}
+                onChange={(e) => handleFilterChange('amountRange', { ...filters.amountRange, max: e.target.value })}
                 className="amount-input"
                 min="0"
                 step="0.01"
@@ -580,7 +584,7 @@ const TransactionSearchForm = ({ onSearch, onReset, isLoading = false, className
       )}
     </form>
   );
-};
+});
 
 TransactionSearchForm.propTypes = {
   onSearch: PropTypes.func.isRequired,
