@@ -183,9 +183,17 @@ class ResponseCompressionMixin:
         """
         response = super().finalize_response(request, response, *args, **kwargs)
         
-        # Add compression hints for large responses
-        if hasattr(response, 'content') and len(response.content) > 1024:
-            response['X-Compress-Hint'] = 'true'
+        # Only add compression hints if response is already rendered
+        try:
+            if hasattr(response, 'render') and not getattr(response, '_is_rendered', False):
+                response.render()
+            
+            # Add compression hints for large responses
+            if hasattr(response, 'content') and len(response.content) > 1024:
+                response['X-Compress-Hint'] = 'true'
+        except Exception as e:
+            # Log error but don't break the response
+            logger.warning(f"Error adding compression hints: {e}")
         
         return response
 

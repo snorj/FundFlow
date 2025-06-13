@@ -29,6 +29,13 @@ from .views import (
     CustomViewTransactionsView
 )
 
+from .analytics_views import (
+    CustomViewAnalyticsSummaryView,
+    CustomViewAnalyticsCategoriesView,
+    CustomViewAnalyticsTimelineView,
+    CustomViewTransactionsView as AnalyticsTransactionsView
+)
+
 urlpatterns = [
     # Category URLs
     path('categories/', CategoryListCreateView.as_view(), name='category-list-create'),
@@ -68,4 +75,10 @@ urlpatterns = [
     path('custom-views/<str:view_id>/transactions/', ViewTransactionListCreateView.as_view(), name='view-transaction-list-create'),
     path('view-transactions/<str:pk>/', ViewTransactionDetailView.as_view(), name='view-transaction-detail'),
     path('custom-views/<str:view_id>/all-transactions/', CustomViewTransactionsView.as_view(), name='custom-view-all-transactions'),
+    
+    # Analytics URLs
+    path('custom-views/<str:view_id>/analytics/summary/', CustomViewAnalyticsSummaryView.as_view(), name='custom-view-analytics-summary'),
+    path('custom-views/<str:view_id>/analytics/categories/', CustomViewAnalyticsCategoriesView.as_view(), name='custom-view-analytics-categories'),
+    path('custom-views/<str:view_id>/analytics/timeline/', CustomViewAnalyticsTimelineView.as_view(), name='custom-view-analytics-timeline'),
+    path('custom-views/<str:view_id>/analytics/transactions/', AnalyticsTransactionsView.as_view(), name='custom-view-analytics-transactions'),
 ]

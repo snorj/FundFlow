@@ -448,8 +448,6 @@ class UncategorizedTransactionGroupView(APIView):
         uncategorized_txs = Transaction.objects.filter(
             user=user,
             category__isnull=True
-        ).select_related(
-            'vendor'
         ).only(
             'id', 'transaction_date', 'description', 'original_amount', 
             'original_currency', 'direction', 'source_account_identifier',
@@ -520,17 +518,24 @@ class UncategorizedTransactionGroupView(APIView):
                     # Fallback to original amount (this is approximate)
                     total_amount += float(preview['amount']) if preview.get('currency') == 'AUD' else 0
 
-        # Return structure expected by frontend
-        response_data = {
-            'vendor_groups': sorted_groups,
-            'metadata': {
-                'total_groups': len(sorted_groups),
-                'processing_date': django_timezone.now().isoformat(),
-                'user_id': user.id
-            },
-            'total_transactions': total_transactions,
-            'total_amount': total_amount
-        }
+        # Check if client wants enhanced format with metadata
+        include_metadata = request.query_params.get('include_metadata', 'false').lower() == 'true'
+        
+        if include_metadata:
+            # Return enhanced structure with metadata
+            response_data = {
+                'vendor_groups': sorted_groups,
+                'metadata': {
+                    'total_groups': len(sorted_groups),
+                    'processing_date': django_timezone.now().isoformat(),
+                    'user_id': user.id
+                },
+                'total_transactions': total_transactions,
+                'total_amount': total_amount
+            }
+        else:
+            # Return simple list for backward compatibility
+            response_data = sorted_groups
 
         logger.info(f"Found {len(sorted_groups)} groups of uncategorized transactions for user {user.id}, sorted by most recent.")
         return Response(response_data, status=status.HTTP_200_OK)
