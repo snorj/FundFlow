@@ -8,7 +8,7 @@ import {
   FiLoader, 
   FiInfo,
   FiActivity,
-  FiBarChart3,
+  FiBarChart,
   FiClock,
   FiSave,
   FiHome
@@ -347,7 +347,7 @@ const ReviewInterface = ({
         
         <div className="summary-stats">
           <div className="stat-card">
-            <FiBarChart3 className="stat-icon" />
+                                            <FiBarChart className="stat-icon" />
             <div className="stat-content">
               <span className="stat-value">{summary.totalGroups}</span>
               <span className="stat-label">Vendor Groups</span>

@@ -404,6 +404,138 @@ class CustomView(models.Model):
         
         return queryset.select_related('vendor', 'category').order_by('-transaction_date')
 
+    def get_assigned_transactions(self):
+        """
+        Get transactions explicitly assigned to this view via ViewTransaction.
+        Returns a QuerySet of transactions that have been manually assigned to this view.
+        """
+        return Transaction.objects.filter(
+            view_assignments__custom_view=self,
+            user=self.user
+        ).select_related('vendor', 'category').order_by('-transaction_date')
+
+    def get_all_transactions(self):
+        """
+        Get all transactions for this view - both matching search criteria and explicitly assigned.
+        Returns a combined QuerySet with duplicates removed.
+        """
+        matching_transactions = self.get_matching_transactions()
+        assigned_transactions = self.get_assigned_transactions()
+        
+        # Combine and remove duplicates
+        combined_ids = set(matching_transactions.values_list('id', flat=True)) | \
+                      set(assigned_transactions.values_list('id', flat=True))
+        
+        return Transaction.objects.filter(
+            id__in=combined_ids,
+            user=self.user
+        ).select_related('vendor', 'category').order_by('-transaction_date')
+
+    def assign_transaction(self, transaction, custom_category=None, notes=None):
+        """
+        Assign a transaction to this view with optional custom categorization.
+        Returns the ViewTransaction instance.
+        """
+        import uuid
+        from django.core.exceptions import ValidationError
+        
+        # Validate that the transaction belongs to the same user
+        if transaction.user != self.user:
+            raise ValidationError("Transaction must belong to the same user as the view.")
+        
+        # Validate that the custom category belongs to this view
+        if custom_category and custom_category.custom_view != self:
+            raise ValidationError("Custom category must belong to this view.")
+        
+        # Create or update the assignment
+        view_transaction, created = ViewTransaction.objects.get_or_create(
+            custom_view=self,
+            transaction=transaction,
+            defaults={
+                'id': str(uuid.uuid4()),
+                'custom_category': custom_category,
+                'notes': notes,
+            }
+        )
+        
+        if not created:
+            # Update existing assignment
+            view_transaction.custom_category = custom_category
+            view_transaction.notes = notes
+            view_transaction.save()
+        
+        return view_transaction
+
+    def remove_transaction(self, transaction):
+        """
+        Remove a transaction assignment from this view.
+        Returns True if the assignment was removed, False if it didn't exist.
+        """
+        try:
+            view_transaction = ViewTransaction.objects.get(
+                custom_view=self,
+                transaction=transaction
+            )
+            view_transaction.delete()
+            return True
+        except ViewTransaction.DoesNotExist:
+            return False
+
+    def get_transaction_assignment(self, transaction):
+        """
+        Get the ViewTransaction assignment for a specific transaction in this view.
+        Returns the ViewTransaction instance or None if not assigned.
+        """
+        try:
+            return ViewTransaction.objects.get(
+                custom_view=self,
+                transaction=transaction
+            )
+        except ViewTransaction.DoesNotExist:
+            return None
+
+    def get_categorization_summary(self):
+        """
+        Get a summary of how transactions are categorized within this view.
+        Returns a dictionary with category statistics.
+        """
+        from django.db.models import Count, Sum
+        
+        # Get all assigned transactions with their custom categories
+        assignments = self.view_transactions.select_related(
+            'custom_category', 'transaction'
+        ).annotate(
+            transaction_amount=models.F('transaction__original_amount')
+        )
+        
+        summary = {
+            'total_assigned': assignments.count(),
+            'categorized': assignments.filter(custom_category__isnull=False).count(),
+            'uncategorized': assignments.filter(custom_category__isnull=True).count(),
+            'categories': {}
+        }
+        
+        # Group by custom category
+        category_stats = assignments.values(
+            'custom_category__id',
+            'custom_category__name'
+        ).annotate(
+            transaction_count=Count('id'),
+            total_amount=Sum('transaction__original_amount')
+        ).order_by('-transaction_count')
+        
+        for stat in category_stats:
+            category_id = stat['custom_category__id']
+            category_name = stat['custom_category__name'] or 'Uncategorized'
+            
+            summary['categories'][category_name] = {
+                'id': category_id,
+                'count': stat['transaction_count'],
+                'total_amount': stat['total_amount'] or 0
+            }
+        
+        return summary
+
 class CustomCategory(models.Model):
     """
     Represents a custom category within a specific CustomView, allowing users
@@ -485,6 +617,158 @@ class CustomCategory(models.Model):
             level += 1
             current = current.parent
         return level
+
+    def get_transaction_count(self):
+        """Get the number of transactions assigned to this custom category."""
+        return self.view_transactions.count()
+
+    def get_total_amount(self):
+        """Get the total amount of transactions assigned to this custom category."""
+        from django.db.models import Sum
+        result = self.view_transactions.aggregate(
+            total=Sum('transaction__original_amount')
+        )
+        return result['total'] or 0
+
+    def get_transactions(self):
+        """Get all transactions assigned to this custom category."""
+        return Transaction.objects.filter(
+            view_assignments__custom_category=self
+        ).select_related('vendor', 'category').order_by('-transaction_date')
+
+    def move_to_parent(self, new_parent):
+        """Move this category to a new parent within the same view."""
+        from django.core.exceptions import ValidationError
+        
+        if new_parent and new_parent.custom_view != self.custom_view:
+            raise ValidationError("New parent must belong to the same custom view.")
+        
+        # Check for circular reference
+        if new_parent:
+            current = new_parent.parent
+            while current:
+                if current == self:
+                    raise ValidationError("Cannot move category to create a circular reference.")
+                current = current.parent
+        
+        self.parent = new_parent
+        self.save()
+
+    def can_be_deleted(self):
+        """Check if this category can be safely deleted."""
+        # Check if it has transactions assigned
+        if self.view_transactions.exists():
+            return False, "Category has transactions assigned to it."
+        
+        # Check if it has child categories
+        if self.children.exists():
+            return False, "Category has child categories."
+        
+        return True, "Category can be deleted."
+
+    def delete_with_reassignment(self, reassign_to_category=None):
+        """
+        Delete this category and reassign its transactions and children.
+        
+        Args:
+            reassign_to_category: CustomCategory to reassign transactions to.
+                                If None, transactions become uncategorized.
+        """
+        from django.core.exceptions import ValidationError
+        
+        if reassign_to_category and reassign_to_category.custom_view != self.custom_view:
+            raise ValidationError("Reassignment category must belong to the same custom view.")
+        
+        # Reassign transactions
+        self.view_transactions.update(custom_category=reassign_to_category)
+        
+        # Reassign child categories to this category's parent
+        self.children.update(parent=self.parent)
+        
+        # Now delete this category
+        self.delete()
+
+class ViewTransaction(models.Model):
+    """
+    Represents the assignment of a transaction to a custom view with optional
+    custom categorization within that view's category structure.
+    """
+    id = models.CharField(
+        max_length=36,
+        primary_key=True,
+        help_text="UUID for the view transaction assignment."
+    )
+    custom_view = models.ForeignKey(
+        CustomView,
+        on_delete=models.CASCADE,
+        related_name='view_transactions',
+        db_index=True,
+        help_text="The custom view this transaction assignment belongs to."
+    )
+    transaction = models.ForeignKey(
+        'Transaction',  # Forward reference since Transaction is defined later
+        on_delete=models.CASCADE,
+        related_name='view_assignments',
+        db_index=True,
+        help_text="The transaction assigned to this custom view."
+    )
+    custom_category = models.ForeignKey(
+        CustomCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='view_transactions',
+        db_index=True,
+        help_text="The custom category assigned to this transaction within the view. Null if uncategorized in this view."
+    )
+    notes = models.TextField(
+        null=True,
+        blank=True,
+        help_text="Optional notes specific to this transaction within this view context."
+    )
+    assigned_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this transaction was assigned to the custom view."
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        help_text="When this assignment was last updated."
+    )
+
+    class Meta:
+        verbose_name = "View Transaction"
+        verbose_name_plural = "View Transactions"
+        unique_together = ('custom_view', 'transaction')
+        ordering = ['custom_view', '-assigned_at']
+        indexes = [
+            models.Index(fields=['custom_view', 'custom_category']),
+            models.Index(fields=['transaction', 'custom_view']),
+            models.Index(fields=['custom_category']),
+            models.Index(fields=['assigned_at']),
+        ]
+        constraints = [
+            # Note: Database-level constraint for category-view relationship
+            # is enforced in the clean() method instead due to Django limitations
+            # with cross-table constraints
+        ]
+
+    def __str__(self):
+        category_text = f" -> {self.custom_category.name}" if self.custom_category else " (uncategorized)"
+        return f"{self.transaction} in {self.custom_view.name}{category_text}"
+
+    def clean(self):
+        """Validate that the custom category belongs to the same view."""
+        from django.core.exceptions import ValidationError
+        
+        if self.custom_category and self.custom_category.custom_view != self.custom_view:
+            raise ValidationError({
+                'custom_category': 'Custom category must belong to the same custom view.'
+            })
+
+    def save(self, *args, **kwargs):
+        """Override save to ensure validation is run."""
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 class Transaction(models.Model):
     SOURCE_CHOICES = [

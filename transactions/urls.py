@@ -16,7 +16,14 @@ from .views import (
     UncategorizedTransactionGroupView,
     BatchCategorizeTransactionView,
     DashboardBalanceView,
-    TransactionSearchView
+    TransactionSearchView,
+    CustomViewListCreateView,
+    CustomViewDetailView,
+    CustomCategoryListCreateView,
+    CustomCategoryDetailView,
+    ViewTransactionListCreateView,
+    ViewTransactionDetailView,
+    CustomViewTransactionsView
 )
 
 urlpatterns = [
@@ -44,4 +51,13 @@ urlpatterns = [
     
     # Dashboard URLs
     path('dashboard/balance/', DashboardBalanceView.as_view(), name='dashboard-balance'),
+    
+    # Custom Views URLs
+    path('custom-views/', CustomViewListCreateView.as_view(), name='custom-view-list-create'),
+    path('custom-views/<str:pk>/', CustomViewDetailView.as_view(), name='custom-view-detail'),
+    path('custom-views/<str:view_id>/categories/', CustomCategoryListCreateView.as_view(), name='custom-category-list-create'),
+    path('custom-categories/<str:pk>/', CustomCategoryDetailView.as_view(), name='custom-category-detail'),
+    path('custom-views/<str:view_id>/transactions/', ViewTransactionListCreateView.as_view(), name='view-transaction-list-create'),
+    path('view-transactions/<str:pk>/', ViewTransactionDetailView.as_view(), name='view-transaction-detail'),
+    path('custom-views/<str:view_id>/all-transactions/', CustomViewTransactionsView.as_view(), name='custom-view-all-transactions'),
 ]

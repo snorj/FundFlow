@@ -9,8 +9,8 @@ from rest_framework.views import APIView # Use APIView for custom logic
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser # For file uploads
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import Category, Transaction, Vendor, VendorRule, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
-from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, TransactionCreateSerializer, TransactionSearchSerializer, TransactionSearchResultSerializer, VendorRuleSerializer, VendorRuleCreateSerializer, VendorRuleUpdateSerializer # Add TransactionCreateSerializer
+from .models import Category, Transaction, Vendor, VendorRule, DescriptionMapping, CustomView, CustomCategory, ViewTransaction, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
+from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, TransactionCreateSerializer, TransactionSearchSerializer, TransactionSearchResultSerializer, VendorRuleSerializer, VendorRuleCreateSerializer, VendorRuleUpdateSerializer, CustomViewSerializer, CustomViewCreateSerializer, CustomCategorySerializer, CustomCategoryCreateSerializer, ViewTransactionSerializer, ViewTransactionCreateSerializer # Add TransactionCreateSerializer
 from .permissions import IsOwnerOrSystemReadOnly, IsOwner # Import IsOwner
 import logging
 from django.db.models import Count, Min, Sum, Case, When, Value, DecimalField
@@ -1704,5 +1704,588 @@ class VendorRuleConflictResolveView(APIView):
             logger.error(f"User {user.id}: Failed to resolve vendor rule conflict: {e}", exc_info=True)
             return Response(
                 {'error': 'Failed to resolve conflict. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# --- Custom Views API Endpoints ---
+
+class CustomViewListCreateView(generics.ListCreateAPIView):
+    """
+    API endpoint to list and create custom views for the authenticated user.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
+    ordering_fields = ['name', 'created_at', 'updated_at']
+    ordering = ['-updated_at', 'name']  # Default: most recently updated first
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method == 'POST':
+            return CustomViewCreateSerializer
+        return CustomViewSerializer
+    
+    def get_queryset(self):
+        """Return custom views for the authenticated user."""
+        return CustomView.objects.filter(user=self.request.user)
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def create(self, request, *args, **kwargs):
+        """Create a new custom view with enhanced response."""
+        serializer = self.get_serializer(data=request.data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            custom_view = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = CustomViewSerializer(custom_view, context={'request': request})
+            
+            response_data = {
+                'custom_view': response_serializer.data,
+                'message': f'Custom view "{custom_view.name}" created successfully.',
+            }
+            
+            logger.info(f"User {request.user.id}: Created custom view '{custom_view.name}' (ID: {custom_view.id})")
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to create custom view: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to create custom view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CustomViewDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint to retrieve, update, or delete a specific custom view.
+    Only the owner can access their custom views.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsOwner]
+    lookup_field = 'pk'
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method in ['PUT', 'PATCH']:
+            return CustomViewCreateSerializer
+        return CustomViewSerializer
+    
+    def get_queryset(self):
+        """Return custom views for the authenticated user."""
+        return CustomView.objects.filter(user=self.request.user)
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def update(self, request, *args, **kwargs):
+        """Update a custom view with enhanced response."""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            custom_view = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = CustomViewSerializer(custom_view, context={'request': request})
+            
+            response_data = {
+                'custom_view': response_serializer.data,
+                'message': f'Custom view "{custom_view.name}" updated successfully.',
+            }
+            
+            logger.info(f"User {request.user.id}: Updated custom view '{custom_view.name}' (ID: {custom_view.id})")
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to update custom view {instance.id}: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to update custom view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """Delete a custom view with enhanced response."""
+        instance = self.get_object()
+        view_name = instance.name
+        view_id = instance.id
+        
+        try:
+            self.perform_destroy(instance)
+            
+            logger.info(f"User {request.user.id}: Deleted custom view '{view_name}' (ID: {view_id})")
+            
+            return Response(
+                {
+                    'message': f'Custom view "{view_name}" deleted successfully.',
+                    'deleted_view_id': view_id
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to delete custom view {view_id}: {e}", exc_info=True)
+            
+            return Response(
+                {'error': 'Failed to delete custom view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CustomCategoryListCreateView(generics.ListCreateAPIView):
+    """
+    API endpoint to list and create custom categories for a specific custom view.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
+    ordering_fields = ['name', 'order', 'created_at']
+    ordering = ['order', 'name']  # Default: by order, then name
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method == 'POST':
+            return CustomCategoryCreateSerializer
+        return CustomCategorySerializer
+    
+    def get_queryset(self):
+        """Return custom categories for the specified view if user owns it."""
+        view_id = self.kwargs.get('view_id')
+        if not view_id:
+            return CustomCategory.objects.none()
+        
+        # Ensure the view belongs to the user
+        try:
+            custom_view = CustomView.objects.get(id=view_id, user=self.request.user)
+            return CustomCategory.objects.filter(custom_view=custom_view)
+        except CustomView.DoesNotExist:
+            return CustomCategory.objects.none()
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def create(self, request, *args, **kwargs):
+        """Create a new custom category with enhanced response."""
+        view_id = self.kwargs.get('view_id')
+        
+        # Verify the view exists and belongs to the user
+        try:
+            custom_view = CustomView.objects.get(id=view_id, user=request.user)
+        except CustomView.DoesNotExist:
+            return Response(
+                {'error': 'Custom view not found or access denied.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Add the custom_view to the request data
+        data = request.data.copy()
+        data['custom_view'] = custom_view.id
+        
+        serializer = self.get_serializer(data=data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            custom_category = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = CustomCategorySerializer(custom_category, context={'request': request})
+            
+            response_data = {
+                'custom_category': response_serializer.data,
+                'message': f'Custom category "{custom_category.name}" created successfully.',
+            }
+            
+            logger.info(f"User {request.user.id}: Created custom category '{custom_category.name}' "
+                       f"in view '{custom_view.name}' (ID: {custom_category.id})")
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to create custom category: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to create custom category. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CustomCategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint to retrieve, update, or delete a specific custom category.
+    Only the owner of the parent view can access the categories.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'pk'
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method in ['PUT', 'PATCH']:
+            return CustomCategoryCreateSerializer
+        return CustomCategorySerializer
+    
+    def get_queryset(self):
+        """Return custom categories for views owned by the authenticated user."""
+        return CustomCategory.objects.filter(custom_view__user=self.request.user)
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def update(self, request, *args, **kwargs):
+        """Update a custom category with enhanced response."""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            custom_category = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = CustomCategorySerializer(custom_category, context={'request': request})
+            
+            response_data = {
+                'custom_category': response_serializer.data,
+                'message': f'Custom category "{custom_category.name}" updated successfully.',
+            }
+            
+            logger.info(f"User {request.user.id}: Updated custom category '{custom_category.name}' (ID: {custom_category.id})")
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to update custom category {instance.id}: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to update custom category. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """Delete a custom category with enhanced response."""
+        instance = self.get_object()
+        category_name = instance.name
+        category_id = instance.id
+        
+        # Check if category can be safely deleted
+        can_delete, reason = instance.can_be_deleted()
+        if not can_delete:
+            return Response(
+                {'error': f'Cannot delete category: {reason}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            self.perform_destroy(instance)
+            
+            logger.info(f"User {request.user.id}: Deleted custom category '{category_name}' (ID: {category_id})")
+            
+            return Response(
+                {
+                    'message': f'Custom category "{category_name}" deleted successfully.',
+                    'deleted_category_id': category_id
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to delete custom category {category_id}: {e}", exc_info=True)
+            
+            return Response(
+                {'error': 'Failed to delete custom category. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ViewTransactionListCreateView(generics.ListCreateAPIView):
+    """
+    API endpoint to list and create view transaction assignments for a specific custom view.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
+    ordering_fields = ['assigned_at', 'transaction__transaction_date']
+    ordering = ['-assigned_at']  # Default: most recently assigned first
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method == 'POST':
+            return ViewTransactionCreateSerializer
+        return ViewTransactionSerializer
+    
+    def get_queryset(self):
+        """Return view transactions for the specified view if user owns it."""
+        view_id = self.kwargs.get('view_id')
+        if not view_id:
+            return ViewTransaction.objects.none()
+        
+        # Ensure the view belongs to the user
+        try:
+            custom_view = CustomView.objects.get(id=view_id, user=self.request.user)
+            return ViewTransaction.objects.filter(custom_view=custom_view).select_related(
+                'transaction', 'custom_category', 'custom_view'
+            )
+        except CustomView.DoesNotExist:
+            return ViewTransaction.objects.none()
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def create(self, request, *args, **kwargs):
+        """Create a new view transaction assignment with enhanced response."""
+        view_id = self.kwargs.get('view_id')
+        
+        # Verify the view exists and belongs to the user
+        try:
+            custom_view = CustomView.objects.get(id=view_id, user=request.user)
+        except CustomView.DoesNotExist:
+            return Response(
+                {'error': 'Custom view not found or access denied.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Add the custom_view to the request data
+        data = request.data.copy()
+        data['custom_view'] = custom_view.id
+        
+        serializer = self.get_serializer(data=data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            view_transaction = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = ViewTransactionSerializer(view_transaction, context={'request': request})
+            
+            response_data = {
+                'view_transaction': response_serializer.data,
+                'message': 'Transaction assigned to view successfully.',
+            }
+            
+            logger.info(f"User {request.user.id}: Assigned transaction {view_transaction.transaction.id} "
+                       f"to view '{custom_view.name}' (Assignment ID: {view_transaction.id})")
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to assign transaction to view: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to assign transaction to view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ViewTransactionDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint to retrieve, update, or delete a specific view transaction assignment.
+    Only the owner of the parent view can access the assignments.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'pk'
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method in ['PUT', 'PATCH']:
+            return ViewTransactionCreateSerializer
+        return ViewTransactionSerializer
+    
+    def get_queryset(self):
+        """Return view transactions for views owned by the authenticated user."""
+        return ViewTransaction.objects.filter(custom_view__user=self.request.user).select_related(
+            'transaction', 'custom_category', 'custom_view'
+        )
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def update(self, request, *args, **kwargs):
+        """Update a view transaction assignment with enhanced response."""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            view_transaction = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = ViewTransactionSerializer(view_transaction, context={'request': request})
+            
+            response_data = {
+                'view_transaction': response_serializer.data,
+                'message': 'Transaction assignment updated successfully.',
+            }
+            
+            logger.info(f"User {request.user.id}: Updated view transaction assignment {view_transaction.id}")
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to update view transaction {instance.id}: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to update transaction assignment. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """Delete a view transaction assignment with enhanced response."""
+        instance = self.get_object()
+        assignment_id = instance.id
+        transaction_description = instance.transaction.description
+        
+        try:
+            self.perform_destroy(instance)
+            
+            logger.info(f"User {request.user.id}: Removed transaction assignment {assignment_id} "
+                       f"(Transaction: {transaction_description})")
+            
+            return Response(
+                {
+                    'message': 'Transaction removed from view successfully.',
+                    'deleted_assignment_id': assignment_id
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to delete view transaction {assignment_id}: {e}", exc_info=True)
+            
+            return Response(
+                {'error': 'Failed to remove transaction from view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CustomViewTransactionsView(APIView):
+    """
+    API endpoint to get all transactions for a custom view (both matching criteria and assigned).
+    Supports filtering and pagination.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+    
+    def get(self, request, view_id, *args, **kwargs):
+        """Get all transactions for a custom view with optional filtering."""
+        try:
+            # Verify the view exists and belongs to the user
+            custom_view = CustomView.objects.get(id=view_id, user=request.user)
+        except CustomView.DoesNotExist:
+            return Response(
+                {'error': 'Custom view not found or access denied.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        try:
+            # Get query parameters
+            include_assigned = request.GET.get('include_assigned', 'true').lower() == 'true'
+            include_matching = request.GET.get('include_matching', 'true').lower() == 'true'
+            page = int(request.GET.get('page', 1))
+            page_size = min(int(request.GET.get('page_size', 50)), 100)
+            
+            # Get transactions based on parameters
+            if include_assigned and include_matching:
+                transactions = custom_view.get_all_transactions()
+            elif include_assigned:
+                transactions = custom_view.get_assigned_transactions()
+            elif include_matching:
+                transactions = custom_view.get_matching_transactions()
+            else:
+                transactions = Transaction.objects.none()
+            
+            # Apply pagination
+            paginator = PageNumberPagination()
+            paginator.page_size = page_size
+            paginated_transactions = paginator.paginate_queryset(transactions, request)
+            
+            # Serialize the transactions
+            serializer = TransactionSearchResultSerializer(
+                paginated_transactions, 
+                many=True, 
+                context={'request': request}
+            )
+            
+            # Get view assignment information for assigned transactions
+            assigned_transaction_ids = set(
+                custom_view.view_transactions.values_list('transaction_id', flat=True)
+            )
+            
+            # Add assignment information to each transaction
+            for transaction_data in serializer.data:
+                transaction_id = transaction_data['id']
+                transaction_data['is_assigned'] = transaction_id in assigned_transaction_ids
+                
+                # Get custom category if assigned
+                if transaction_id in assigned_transaction_ids:
+                    try:
+                        assignment = custom_view.view_transactions.get(transaction_id=transaction_id)
+                        transaction_data['custom_category_id'] = assignment.custom_category.id if assignment.custom_category else None
+                        transaction_data['custom_category_name'] = assignment.custom_category.name if assignment.custom_category else None
+                        transaction_data['assignment_notes'] = assignment.notes
+                    except ViewTransaction.DoesNotExist:
+                        pass
+            
+            # Prepare response
+            response_data = {
+                'transactions': serializer.data,
+                'view_info': {
+                    'id': custom_view.id,
+                    'name': custom_view.name,
+                    'description': custom_view.description,
+                    'search_criteria': custom_view.search_criteria,
+                },
+                'summary': {
+                    'total_transactions': transactions.count(),
+                    'assigned_count': custom_view.view_transactions.count(),
+                    'categorized_count': custom_view.view_transactions.filter(custom_category__isnull=False).count(),
+                    'uncategorized_count': custom_view.view_transactions.filter(custom_category__isnull=True).count(),
+                },
+                'pagination': {
+                    'page': page,
+                    'page_size': page_size,
+                    'total_pages': paginator.page.paginator.num_pages if paginated_transactions else 0,
+                    'total_count': paginator.page.paginator.count if paginated_transactions else 0,
+                }
+            }
+            
+            return paginator.get_paginated_response(response_data)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to get transactions for view {view_id}: {e}", exc_info=True)
+            return Response(
+                {'error': 'Failed to retrieve transactions. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

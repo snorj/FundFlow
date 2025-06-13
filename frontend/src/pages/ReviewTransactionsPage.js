@@ -10,7 +10,7 @@ import {
   saveReviewProgress,
   loadReviewProgress
 } from '../services/transactionReview';
-import { categoryService } from '../services/categoryService';
+import categoryService from '../services/categories';
 import { groupTransactionsByVendor } from '../utils/reviewWorkflow';
 import './ReviewTransactionsPage.css';
 
@@ -78,7 +78,7 @@ const ReviewTransactionsContent = () => {
   useEffect(() => {
     const loadCategoriesData = async () => {
       try {
-        const categoriesData = await categoryService.getAllCategories();
+        const categoriesData = await categoryService.getCategories();
         const availableCategories = categoriesData.filter(cat => !cat.parentId); // Only root categories for simplicity
         setCategories_local(availableCategories);
         loadCategories(availableCategories);

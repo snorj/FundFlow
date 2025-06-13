@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Category, Transaction, Vendor, VendorRule, BASE_CURRENCY_FOR_CONVERSION
+from .models import Category, Transaction, Vendor, VendorRule, CustomView, CustomCategory, ViewTransaction, BASE_CURRENCY_FOR_CONVERSION
 from django.db.models import Q
 import uuid
 
@@ -840,3 +840,391 @@ class VendorRuleUpdateSerializer(VendorRuleCreateSerializer):
     class Meta(VendorRuleCreateSerializer.Meta):
         # All fields are optional for updates
         pass
+
+
+# --- Custom Views Serializers ---
+
+class CustomViewSerializer(serializers.ModelSerializer):
+    """
+    Serializer for CustomView model for reading operations.
+    Includes computed fields for transaction counts and statistics.
+    """
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    transaction_count = serializers.SerializerMethodField(read_only=True)
+    categorized_count = serializers.SerializerMethodField(read_only=True)
+    uncategorized_count = serializers.SerializerMethodField(read_only=True)
+    total_amount = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta:
+        model = CustomView
+        fields = [
+            'id',
+            'user',
+            'name',
+            'description',
+            'search_criteria',
+            'is_archived',
+            'transaction_count',
+            'categorized_count',
+            'uncategorized_count',
+            'total_amount',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+
+    def get_transaction_count(self, obj):
+        """Get total number of transactions in this view."""
+        return obj.view_transactions.count()
+
+    def get_categorized_count(self, obj):
+        """Get number of categorized transactions in this view."""
+        return obj.view_transactions.filter(custom_category__isnull=False).count()
+
+    def get_uncategorized_count(self, obj):
+        """Get number of uncategorized transactions in this view."""
+        return obj.view_transactions.filter(custom_category__isnull=True).count()
+
+    def get_total_amount(self, obj):
+        """Get total amount of all transactions in this view."""
+        from django.db.models import Sum
+        result = obj.view_transactions.aggregate(
+            total=Sum('transaction__original_amount')
+        )
+        return float(result['total']) if result['total'] else 0.0
+
+
+class CustomViewCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating CustomView instances.
+    Handles validation and ensures proper user assignment.
+    """
+    # User field should not be directly set by API client
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    
+    class Meta:
+        model = CustomView
+        fields = [
+            'name',
+            'description',
+            'search_criteria',
+            'is_archived'
+        ]
+
+    def validate_name(self, value):
+        """Ensure name uniqueness for the user."""
+        if not value or not value.strip():
+            raise serializers.ValidationError("View name cannot be empty.")
+        
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+        
+        # Check for uniqueness within user's views
+        queryset = CustomView.objects.filter(
+            name__iexact=value.strip(),
+            user=request.user
+        )
+        
+        # Exclude current instance during updates
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        
+        if queryset.exists():
+            raise serializers.ValidationError(f"A view named '{value}' already exists.")
+        
+        return value.strip()
+
+    def validate_search_criteria(self, value):
+        """Validate search criteria structure."""
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Search criteria must be a valid JSON object.")
+        
+        # Validate known fields if present
+        valid_fields = {
+            'date_from', 'date_to', 'amount_min', 'amount_max',
+            'vendor_ids', 'category_ids', 'direction', 'description_contains'
+        }
+        
+        for key in value.keys():
+            if key not in valid_fields:
+                raise serializers.ValidationError(f"Unknown search criteria field: {key}")
+        
+        # Validate date format if present
+        if 'date_from' in value and value['date_from']:
+            try:
+                from datetime import datetime
+                datetime.strptime(value['date_from'], '%Y-%m-%d')
+            except ValueError:
+                raise serializers.ValidationError("date_from must be in YYYY-MM-DD format.")
+        
+        if 'date_to' in value and value['date_to']:
+            try:
+                from datetime import datetime
+                datetime.strptime(value['date_to'], '%Y-%m-%d')
+            except ValueError:
+                raise serializers.ValidationError("date_to must be in YYYY-MM-DD format.")
+        
+        return value
+
+    def create(self, validated_data):
+        """Create a new custom view with proper user assignment."""
+        request = self.context.get('request')
+        validated_data['id'] = str(uuid.uuid4())
+        validated_data['user'] = request.user
+        return super().create(validated_data)
+
+
+class CustomCategorySerializer(serializers.ModelSerializer):
+    """
+    Serializer for CustomCategory model for reading operations.
+    Includes computed fields for transaction counts and hierarchy information.
+    """
+    custom_view_name = serializers.CharField(source='custom_view.name', read_only=True)
+    parent_name = serializers.CharField(source='parent.name', read_only=True, allow_null=True)
+    transaction_count = serializers.SerializerMethodField(read_only=True)
+    total_amount = serializers.SerializerMethodField(read_only=True)
+    full_path = serializers.SerializerMethodField(read_only=True)
+    level = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta:
+        model = CustomCategory
+        fields = [
+            'id',
+            'custom_view',
+            'custom_view_name',
+            'name',
+            'parent',
+            'parent_name',
+            'order',
+            'transaction_count',
+            'total_amount',
+            'full_path',
+            'level',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_transaction_count(self, obj):
+        """Get number of transactions assigned to this category."""
+        return obj.get_transaction_count()
+
+    def get_total_amount(self, obj):
+        """Get total amount of transactions assigned to this category."""
+        return float(obj.get_total_amount())
+
+    def get_full_path(self, obj):
+        """Get the full hierarchical path of this category."""
+        return obj.get_full_path()
+
+    def get_level(self, obj):
+        """Get the hierarchical level of this category."""
+        return obj.get_level()
+
+
+class CustomCategoryCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating and updating CustomCategory instances.
+    Handles validation and ensures proper view assignment.
+    """
+    # Custom view is required and must be accessible to the user
+    custom_view = serializers.PrimaryKeyRelatedField(
+        queryset=CustomView.objects.all(),
+        help_text="The custom view this category belongs to"
+    )
+    
+    # Parent category must belong to the same view
+    parent = serializers.PrimaryKeyRelatedField(
+        queryset=CustomCategory.objects.all(),
+        allow_null=True,
+        required=False,
+        help_text="Parent category for hierarchy"
+    )
+    
+    class Meta:
+        model = CustomCategory
+        fields = [
+            'custom_view',
+            'name',
+            'parent',
+            'order'
+        ]
+
+    def validate_custom_view(self, value):
+        """Ensure user has access to the custom view."""
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+        
+        if value.user != request.user:
+            raise serializers.ValidationError("You can only create categories in your own views.")
+        
+        return value
+
+    def validate_parent(self, value):
+        """Ensure parent belongs to the same view."""
+        if value is not None:
+            custom_view = self.initial_data.get('custom_view')
+            if custom_view and str(value.custom_view.id) != str(custom_view):
+                raise serializers.ValidationError("Parent category must belong to the same view.")
+        
+        return value
+
+    def validate_name(self, value):
+        """Ensure name uniqueness within the view and parent."""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Category name cannot be empty.")
+        
+        return value.strip()
+
+    def validate(self, data):
+        """Object-level validation."""
+        # Check for circular reference
+        if data.get('parent'):
+            parent = data['parent']
+            current = parent.parent
+            while current:
+                if current == self.instance:
+                    raise serializers.ValidationError("Cannot create circular reference in category hierarchy.")
+                current = current.parent
+        
+        # Check name uniqueness within view and parent
+        custom_view = data.get('custom_view')
+        parent = data.get('parent')
+        name = data.get('name')
+        
+        if custom_view and name:
+            queryset = CustomCategory.objects.filter(
+                custom_view=custom_view,
+                parent=parent,
+                name__iexact=name
+            )
+            
+            if self.instance:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            
+            if queryset.exists():
+                raise serializers.ValidationError("A category with this name already exists under this parent.")
+        
+        return data
+
+    def create(self, validated_data):
+        """Create a new custom category with UUID."""
+        validated_data['id'] = str(uuid.uuid4())
+        return super().create(validated_data)
+
+
+class ViewTransactionSerializer(serializers.ModelSerializer):
+    """
+    Serializer for ViewTransaction model for reading operations.
+    Includes transaction and category details for display.
+    """
+    transaction_description = serializers.CharField(source='transaction.description', read_only=True)
+    transaction_amount = serializers.DecimalField(source='transaction.original_amount', max_digits=12, decimal_places=2, read_only=True)
+    transaction_currency = serializers.CharField(source='transaction.original_currency', read_only=True)
+    transaction_date = serializers.DateField(source='transaction.transaction_date', read_only=True)
+    custom_category_name = serializers.CharField(source='custom_category.name', read_only=True, allow_null=True)
+    custom_view_name = serializers.CharField(source='custom_view.name', read_only=True)
+    
+    class Meta:
+        model = ViewTransaction
+        fields = [
+            'id',
+            'custom_view',
+            'custom_view_name',
+            'transaction',
+            'transaction_description',
+            'transaction_amount',
+            'transaction_currency',
+            'transaction_date',
+            'custom_category',
+            'custom_category_name',
+            'notes',
+            'assigned_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'assigned_at', 'updated_at']
+
+
+class ViewTransactionCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating and updating ViewTransaction assignments.
+    Handles validation and ensures proper relationships.
+    """
+    # Custom view must be accessible to the user
+    custom_view = serializers.PrimaryKeyRelatedField(
+        queryset=CustomView.objects.all(),
+        help_text="The custom view to assign the transaction to"
+    )
+    
+    # Transaction must belong to the user
+    transaction = serializers.PrimaryKeyRelatedField(
+        queryset=Transaction.objects.all(),
+        help_text="The transaction to assign to the view"
+    )
+    
+    # Custom category must belong to the same view
+    custom_category = serializers.PrimaryKeyRelatedField(
+        queryset=CustomCategory.objects.all(),
+        allow_null=True,
+        required=False,
+        help_text="The custom category to assign within the view"
+    )
+    
+    class Meta:
+        model = ViewTransaction
+        fields = [
+            'custom_view',
+            'transaction',
+            'custom_category',
+            'notes'
+        ]
+
+    def validate_custom_view(self, value):
+        """Ensure user has access to the custom view."""
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+        
+        if value.user != request.user:
+            raise serializers.ValidationError("You can only assign transactions to your own views.")
+        
+        return value
+
+    def validate_transaction(self, value):
+        """Ensure user owns the transaction."""
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+        
+        if value.user != request.user:
+            raise serializers.ValidationError("You can only assign your own transactions.")
+        
+        return value
+
+    def validate_custom_category(self, value):
+        """Ensure custom category belongs to the same view."""
+        if value is not None:
+            custom_view = self.initial_data.get('custom_view')
+            if custom_view and str(value.custom_view.id) != str(custom_view):
+                raise serializers.ValidationError("Custom category must belong to the same view.")
+        
+        return value
+
+    def validate(self, data):
+        """Object-level validation."""
+        custom_view = data.get('custom_view')
+        transaction = data.get('transaction')
+        
+        # Check if assignment already exists (for create operations)
+        if not self.instance and custom_view and transaction:
+            if ViewTransaction.objects.filter(custom_view=custom_view, transaction=transaction).exists():
+                raise serializers.ValidationError("Transaction is already assigned to this view.")
+        
+        return data
+
+    def create(self, validated_data):
+        """Create a new view transaction assignment with UUID."""
+        validated_data['id'] = str(uuid.uuid4())
+        return super().create(validated_data)
