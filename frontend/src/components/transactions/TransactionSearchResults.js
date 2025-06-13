@@ -15,7 +15,9 @@ import {
   FiInfo,
   FiDollarSign,
   FiCalendar,
-  FiTag
+  FiTag,
+  FiPlus,
+  FiBookmark
 } from 'react-icons/fi';
 import { formatCurrency } from '../../utils/formatting';
 import './TransactionSearchResults.css';
@@ -33,6 +35,7 @@ const TransactionSearchResults = ({
   onViewTransaction,
   onEditTransaction,
   onDeleteTransaction,
+  onAddToView,
   className = ''
 }) => {
   // Selection state
@@ -229,6 +232,17 @@ const TransactionSearchResults = ({
           )}
           
           <div className="action-buttons">
+            {selectedTransactions.size > 0 && onAddToView && (
+              <button
+                className="add-to-view-btn"
+                onClick={() => onAddToView(Array.from(selectedTransactions))}
+                title="Add selected transactions to custom view"
+              >
+                <FiPlus />
+                Add to View ({selectedTransactions.size})
+              </button>
+            )}
+            
             <button
               className="export-btn"
               onClick={() => handleExport('csv')}
@@ -484,6 +498,7 @@ TransactionSearchResults.propTypes = {
   onViewTransaction: PropTypes.func,
   onEditTransaction: PropTypes.func,
   onDeleteTransaction: PropTypes.func,
+  onAddToView: PropTypes.func,
   className: PropTypes.string
 };
 

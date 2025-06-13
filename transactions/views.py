@@ -1,6 +1,7 @@
 # transactions/views.py
 import csv
 import io # To handle in-memory text stream
+import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timezone
 from django.db import transaction as db_transaction # Renamed to avoid confusion
@@ -2124,6 +2125,188 @@ class ViewTransactionListCreateView(generics.ListCreateAPIView):
             
             return Response(
                 {'error': 'Failed to assign transaction to view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def post(self, request, *args, **kwargs):
+        """Handle bulk transaction assignment to custom view."""
+        view_id = self.kwargs.get('view_id')
+        
+        # Verify the view exists and belongs to the user
+        try:
+            custom_view = CustomView.objects.get(id=view_id, user=request.user)
+        except CustomView.DoesNotExist:
+            return Response(
+                {'error': 'Custom view not found or access denied.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if this is a bulk assignment request
+        transaction_ids = request.data.get('transaction_ids')
+        if transaction_ids and isinstance(transaction_ids, list):
+            return self._handle_bulk_assignment(request, custom_view, transaction_ids)
+        
+        # Fall back to single assignment (existing behavior)
+        return self.create(request, *args, **kwargs)
+
+    def _handle_bulk_assignment(self, request, custom_view, transaction_ids):
+        """Handle bulk assignment of multiple transactions to a custom view."""
+        if not transaction_ids:
+            return Response(
+                {'error': 'A non-empty list of transaction_ids is required for bulk assignment.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Validate all transaction IDs belong to the user
+            user_transactions = Transaction.objects.filter(
+                id__in=transaction_ids, 
+                user=request.user
+            )
+            
+            if user_transactions.count() != len(transaction_ids):
+                return Response(
+                    {'error': 'Some transaction IDs were not found or do not belong to you.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Create assignments, handling duplicates gracefully
+            assignments_created = []
+            assignments_skipped = []
+            
+            for transaction in user_transactions:
+                # Check if assignment already exists
+                existing_assignment = ViewTransaction.objects.filter(
+                    custom_view=custom_view,
+                    transaction=transaction
+                ).first()
+                
+                if existing_assignment:
+                    assignments_skipped.append({
+                        'transaction_id': transaction.id,
+                        'reason': 'Already assigned to this view'
+                    })
+                    continue
+                
+                # Create new assignment
+                assignment = ViewTransaction.objects.create(
+                    id=str(uuid.uuid4()),
+                    custom_view=custom_view,
+                    transaction=transaction,
+                    custom_category=None,  # Can be set later
+                    notes=request.data.get('notes', '')
+                )
+                
+                assignments_created.append({
+                    'assignment_id': assignment.id,
+                    'transaction_id': transaction.id,
+                    'transaction_description': transaction.description
+                })
+
+            response_data = {
+                'message': f'Bulk assignment completed. {len(assignments_created)} transactions assigned.',
+                'assignments_created': assignments_created,
+                'assignments_skipped': assignments_skipped,
+                'summary': {
+                    'total_requested': len(transaction_ids),
+                    'created': len(assignments_created),
+                    'skipped': len(assignments_skipped)
+                }
+            }
+
+            logger.info(f"User {request.user.id}: Bulk assigned {len(assignments_created)} transactions "
+                       f"to view '{custom_view.name}' (View ID: {custom_view.id})")
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to bulk assign transactions to view: {e}", exc_info=True)
+            return Response(
+                {'error': 'Failed to assign transactions to view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def delete(self, request, *args, **kwargs):
+        """Handle bulk transaction removal from custom view."""
+        view_id = self.kwargs.get('view_id')
+        
+        # Verify the view exists and belongs to the user
+        try:
+            custom_view = CustomView.objects.get(id=view_id, user=request.user)
+        except CustomView.DoesNotExist:
+            return Response(
+                {'error': 'Custom view not found or access denied.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if this is a bulk deletion request
+        transaction_ids = request.data.get('transaction_ids')
+        if transaction_ids and isinstance(transaction_ids, list):
+            return self._handle_bulk_deletion(request, custom_view, transaction_ids)
+        
+        # Single transaction ID can also be handled
+        transaction_id = request.data.get('transaction_id')
+        if transaction_id:
+            return self._handle_bulk_deletion(request, custom_view, [transaction_id])
+            
+        return Response(
+            {'error': 'Either transaction_ids (array) or transaction_id (single) is required for deletion.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    def _handle_bulk_deletion(self, request, custom_view, transaction_ids):
+        """Handle bulk deletion of multiple transaction assignments from a custom view."""
+        if not transaction_ids:
+            return Response(
+                {'error': 'A non-empty list of transaction_ids is required for bulk deletion.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Find existing assignments for the specified transactions in this view
+            existing_assignments = ViewTransaction.objects.filter(
+                custom_view=custom_view,
+                transaction_id__in=transaction_ids
+            ).select_related('transaction', 'custom_view')
+            
+            if not existing_assignments.exists():
+                return Response(
+                    {'error': 'No transaction assignments found for the specified transaction IDs in this view.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Collect information about assignments being deleted
+            deleted_assignments = []
+            for assignment in existing_assignments:
+                deleted_assignments.append({
+                    'assignment_id': assignment.id,
+                    'transaction_id': assignment.transaction.id,
+                    'transaction_description': assignment.transaction.description
+                })
+
+            # Perform bulk deletion
+            deleted_count = existing_assignments.count()
+            existing_assignments.delete()
+
+            response_data = {
+                'message': f'Bulk deletion completed. {deleted_count} transactions removed from view.',
+                'deleted_assignments': deleted_assignments,
+                'summary': {
+                    'total_requested': len(transaction_ids),
+                    'deleted': deleted_count,
+                    'not_found': len(transaction_ids) - deleted_count
+                }
+            }
+
+            logger.info(f"User {request.user.id}: Bulk removed {deleted_count} transaction assignments "
+                       f"from view '{custom_view.name}' (View ID: {custom_view.id})")
+
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to bulk delete transactions from view: {e}", exc_info=True)
+            return Response(
+                {'error': 'Failed to remove transactions from view. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

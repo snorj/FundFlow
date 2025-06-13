@@ -244,6 +244,60 @@ const customViewService = {
             console.error(`Error removing transaction assignment ${assignmentId}:`, error.response?.data || error.message);
             throw error;
         }
+    },
+
+    /**
+     * Remove multiple transactions from a custom view (bulk removal)
+     * @param {string} viewId - The custom view ID
+     * @param {Object} removalData - The removal data
+     * @param {Array} removalData.transaction_ids - Array of transaction IDs to remove
+     * @returns {Promise<Object>} Promise resolving to removal results
+     */
+    removeTransactions: async (viewId, removalData) => {
+        try {
+            const response = await api.delete(`/custom-views/${viewId}/transactions/`, { 
+                data: removalData 
+            });
+            return response.data;
+        } catch (error) {
+            console.error(`Error removing transactions from view ${viewId}:`, error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    /**
+     * Update transaction assignment's custom category
+     * @param {string} assignmentId - The view transaction assignment ID
+     * @param {string|null} categoryId - The custom category ID (null for uncategorized)
+     * @returns {Promise<Object>} Updated assignment object
+     */
+    updateTransactionCategory: async (assignmentId, categoryId) => {
+        try {
+            const response = await api.patch(`/view-transactions/${assignmentId}/`, {
+                custom_category: categoryId
+            });
+            return response.data;
+        } catch (error) {
+            console.error(`Error updating transaction category for assignment ${assignmentId}:`, error.response?.data || error.message);
+            throw error;
+        }
+    },
+
+    /**
+     * Batch update multiple transaction assignments' categories
+     * @param {Array<{assignmentId: string, categoryId: string|null}>} updates - Array of updates
+     * @returns {Promise<Object>} Batch update results
+     */
+    batchUpdateCategories: async (updates) => {
+        try {
+            const response = await api.post('/view-transactions/batch-update-categories/', {
+                updates: updates
+            });
+            return response.data;
+        } catch (error) {
+            console.error('Error in batch category update:', error.response?.data || error.message);
+            throw error;
+        }
     }
 };
 

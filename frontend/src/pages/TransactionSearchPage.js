@@ -6,10 +6,12 @@ import {
   FiSave, 
   FiBookmark,
   FiAlertCircle,
-  FiX
+  FiX,
+  FiCheckCircle
 } from 'react-icons/fi';
 import TransactionSearchForm from '../components/transactions/TransactionSearchForm';
 import TransactionSearchResults from '../components/transactions/TransactionSearchResults';
+import CustomViewSelector from '../components/modals/CustomViewSelector';
 import transactionService from '../services/transactions';
 import { exportTransactions } from '../utils/exportUtils';
 import './TransactionSearchPage.css';
@@ -64,6 +66,11 @@ const TransactionSearchPage = () => {
   const [, setSelectedTransactions] = useState([]);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [savedSearchName, setSavedSearchName] = useState('');
+  
+  // Custom View state
+  const [showCustomViewSelector, setShowCustomViewSelector] = useState(false);
+  const [transactionsToAdd, setTransactionsToAdd] = useState([]);
+  const [successMessage, setSuccessMessage] = useState('');
   
   // Refs for managing search
   const searchTimeoutRef = useRef(null);
@@ -305,6 +312,33 @@ const TransactionSearchPage = () => {
     }
   }, [savedSearchName, searchCriteria]);
   
+  // Handle add to custom view
+  const handleAddToView = useCallback((selectedTransactionIds) => {
+    // Get the actual transaction objects from the search results
+    const transactionsToAddToView = searchResults.results.filter(
+      transaction => selectedTransactionIds.includes(transaction.id)
+    );
+    
+    setTransactionsToAdd(transactionsToAddToView);
+    setShowCustomViewSelector(true);
+  }, [searchResults.results]);
+  
+  // Handle custom view selection success
+  const handleCustomViewSuccess = useCallback((result) => {
+    setSuccessMessage(`Successfully added ${result.transactionCount} transaction${result.transactionCount !== 1 ? 's' : ''} to "${result.viewName}"`);
+    
+    // Clear success message after 5 seconds
+    setTimeout(() => {
+      setSuccessMessage('');
+    }, 5000);
+  }, []);
+  
+  // Handle custom view selector close
+  const handleCloseCustomViewSelector = useCallback(() => {
+    setShowCustomViewSelector(false);
+    setTransactionsToAdd([]);
+  }, []);
+  
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -369,6 +403,21 @@ const TransactionSearchPage = () => {
         </div>
       )}
 
+      {/* Success Message */}
+      {successMessage && (
+        <div className="success-banner">
+          <FiCheckCircle className="success-icon" />
+          <span>{successMessage}</span>
+          <button
+            className="success-close"
+            onClick={() => setSuccessMessage('')}
+            aria-label="Dismiss success message"
+          >
+            <FiX />
+          </button>
+        </div>
+      )}
+
       {/* Search Form */}
       <TransactionSearchForm
         onSearch={handleSearch}
@@ -389,6 +438,7 @@ const TransactionSearchPage = () => {
           onPageChange={handlePageChange}
           onSelectionChange={handleSelectionChange}
           onExport={handleExport}
+          onAddToView={handleAddToView}
           onViewTransaction={(transaction) => {
             // Navigate to transaction detail view
             navigate(`/transactions/${transaction.id}`);
@@ -452,6 +502,14 @@ const TransactionSearchPage = () => {
           </div>
         </div>
       )}
+
+      {/* Custom View Selector Modal */}
+      <CustomViewSelector
+        isOpen={showCustomViewSelector}
+        onClose={handleCloseCustomViewSelector}
+        transactions={transactionsToAdd}
+        onSuccess={handleCustomViewSuccess}
+      />
     </div>
   );
 };

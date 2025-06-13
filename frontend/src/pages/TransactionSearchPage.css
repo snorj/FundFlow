@@ -147,6 +147,21 @@
   flex-shrink: 0;
 }
 
+.success-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #22543d;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+
+.success-close:hover {
+  background: rgba(34, 84, 61, 0.1);
+}
+
 /* Modal Overlay */
 .modal-overlay {
   position: fixed;
