@@ -73,7 +73,9 @@ const transactionService = {
 
     getUncategorizedGroups: async () => {
         const response = await api.get('/transactions/uncategorized-groups/');
-        return response.data;
+        // Backend returns {vendor_groups: [...], metadata: {...}, total_transactions: ..., total_amount: ...}
+        // Return the vendor_groups array, not the whole response
+        return response.data.vendor_groups || [];
     },
 
     createTransaction: async (transactionData) => {

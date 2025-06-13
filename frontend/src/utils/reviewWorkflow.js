@@ -387,10 +387,14 @@ export const generateReviewSummary = (
 export const cloneVendorGroups = (vendorGroups = []) => {
   return vendorGroups.map(group => ({
     ...group,
-    transactions: [...group.transactions],
-    sample_transactions: [...group.sample_transactions],
-    date_range: { ...group.date_range },
-    currencies: [...group.currencies]
+    // Clone the actual fields from the API response
+    transaction_ids: Array.isArray(group.transaction_ids) ? [...group.transaction_ids] : [],
+    previews: Array.isArray(group.previews) ? [...group.previews.map(preview => ({ ...preview }))] : [],
+    // Keep the fields that exist, add defaults for those that don't
+    transactions: Array.isArray(group.transactions) ? [...group.transactions] : [],
+    sample_transactions: Array.isArray(group.sample_transactions) ? [...group.sample_transactions] : [],
+    date_range: group.date_range ? { ...group.date_range } : {},
+    currencies: Array.isArray(group.currencies) ? [...group.currencies] : []
   }));
 };
 
