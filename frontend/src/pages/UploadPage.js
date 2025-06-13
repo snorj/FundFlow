@@ -307,7 +307,26 @@ const UploadPage = () => { // Changed component name
            </button>
          </div>
          {uploadError && (<div className="upload-feedback error-message"><FiAlertCircle /> {uploadError}</div>)}
-         {uploadSuccess && (<div className="upload-feedback success-message"><FiCheckCircle /> {uploadSuccess.message}</div>)}
+         {uploadSuccess && (
+           <div className="upload-feedback success-message">
+             <FiCheckCircle /> {uploadSuccess.message}
+             <div style={{ marginTop: '15px', padding: '15px', backgroundColor: '#e6fffa', border: '1px solid #81e6d9', borderRadius: '6px' }}>
+               <p style={{ margin: '0 0 10px 0', fontWeight: 'bold', color: '#234e52' }}>
+                 Review Auto-Assigned Categories
+               </p>
+               <p style={{ margin: '0 0 15px 0', color: '#285e61', fontSize: '0.9em' }}>
+                 Your transactions have been automatically categorized. Review and confirm the assignments before proceeding.
+               </p>
+               <button 
+                 onClick={() => navigate('/review')} 
+                 className="action-button teal-button"
+                 style={{ fontSize: '0.9em', padding: '8px 16px' }}
+               >
+                 Review Assignments
+               </button>
+             </div>
+           </div>
+         )}
          
          {/* Manual Transaction Section */}
          <div className="manual-transaction-section" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #eee' }}>

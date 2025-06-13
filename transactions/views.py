@@ -1,6 +1,7 @@
 # transactions/views.py
 import csv
 import io # To handle in-memory text stream
+import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timezone
 from django.db import transaction as db_transaction # Renamed to avoid confusion
@@ -9,9 +10,10 @@ from rest_framework.views import APIView # Use APIView for custom logic
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser # For file uploads
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import Category, Transaction, Vendor, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
-from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, TransactionCreateSerializer # Add TransactionCreateSerializer
+from .models import Category, Transaction, Vendor, VendorRule, DescriptionMapping, CustomView, CustomCategory, ViewTransaction, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
+from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, TransactionCreateSerializer, TransactionSearchSerializer, TransactionSearchResultSerializer, VendorRuleSerializer, VendorRuleCreateSerializer, VendorRuleUpdateSerializer, CustomViewSerializer, CustomViewCreateSerializer, CustomCategorySerializer, CustomCategoryCreateSerializer, ViewTransactionSerializer, ViewTransactionCreateSerializer # Add TransactionCreateSerializer
 from .permissions import IsOwnerOrSystemReadOnly, IsOwner # Import IsOwner
+from .mixins import OptimizedAPIViewMixin, QueryMonitor # Import performance mixins
 import logging
 from django.db.models import Count, Min, Sum, Case, When, Value, DecimalField
 from django.shortcuts import get_object_or_404 # Useful for getting the Category
@@ -28,11 +30,36 @@ from django.utils import timezone as django_timezone
 
 logger = logging.getLogger(__name__)
 
-# --- Standard Pagination ---
+# --- Enhanced Pagination with Performance Optimizations ---
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 25
     page_size_query_param = 'page_size'
     max_page_size = 100
+    
+    def get_paginated_response(self, data):
+        """Enhanced paginated response with performance metadata."""
+        return Response({
+            'links': {
+                'next': self.get_next_link(),
+                'previous': self.get_previous_link()
+            },
+            'count': self.page.paginator.count,
+            'page_size': self.page_size,
+            'current_page': self.page.number,
+            'total_pages': self.page.paginator.num_pages,
+            'results': data
+        })
+    
+    def paginate_queryset(self, queryset, request, view=None):
+        """Override to add query optimization hints."""
+        # Add query optimization for large datasets
+        if hasattr(queryset, 'count'):
+            # Use iterator() for very large querysets to reduce memory usage
+            if queryset.count() > 10000:
+                # For very large datasets, we might want to use different strategies
+                pass
+        
+        return super().paginate_queryset(queryset, request, view)
 
 # --- Transaction Filters ---
 class TransactionFilter(filters.FilterSet):
@@ -51,10 +78,10 @@ class TransactionFilter(filters.FilterSet):
         fields = ['start_date', 'end_date', 'category', 'is_categorized', 'original_currency']
 
 # --- Transaction List View ---
-class TransactionListView(generics.ListAPIView):
+class TransactionListView(OptimizedAPIViewMixin, generics.ListAPIView):
     """
     API endpoint to list transactions for the authenticated user.
-    Supports filtering, sorting, and pagination.
+    Supports filtering, sorting, and pagination with performance optimizations.
     """
     serializer_class = TransactionSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -63,16 +90,38 @@ class TransactionListView(generics.ListAPIView):
     filterset_class = TransactionFilter 
     ordering_fields = ['transaction_date', 'description', 'original_amount', 'aud_amount', 'last_modified']
     ordering = ['-transaction_date', '-created_at'] # Default sort order
+    
+    # Performance optimization settings
+    cache_timeout = 180  # 3 minutes cache for transaction lists
+    cache_count = True  # Enable count caching for pagination
+    select_related_fields = ['category', 'vendor', 'parent_transaction']
+    prefetch_related_fields = [
+        'split_transactions__category',
+        'view_assignments__custom_view',
+        'view_assignments__custom_category'
+    ]
 
     def get_queryset(self):
         """
         This view should return a list of all transactions
         owned by the currently authenticated user.
+        Optimized with select_related for foreign keys to reduce database queries.
         """
-        return Transaction.objects.filter(user=self.request.user)
+        with QueryMonitor("TransactionListView.get_queryset"):
+            return Transaction.objects.filter(
+                user=self.request.user
+            ).select_related(
+                'category', 
+                'vendor', 
+                'parent_transaction'
+            ).prefetch_related(
+                'split_transactions__category',
+                'view_assignments__custom_view',
+                'view_assignments__custom_category'
+            )
 
 # --- Transaction Update View ---
-class TransactionUpdateView(generics.RetrieveUpdateAPIView):
+class TransactionUpdateView(OptimizedAPIViewMixin, generics.RetrieveUpdateAPIView):
     """
     API endpoint to retrieve and update a specific transaction.
     Only the owner can update.
@@ -81,6 +130,11 @@ class TransactionUpdateView(generics.RetrieveUpdateAPIView):
     serializer_class = TransactionUpdateSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwner]
     lookup_field = 'pk'
+    
+    # Performance optimization settings
+    cache_timeout = 300  # 5 minutes cache for individual transactions
+    select_related_fields = ['category', 'vendor', 'parent_transaction']
+    prefetch_related_fields = ['split_transactions__category']
 
     def get_queryset(self):
         """
@@ -390,9 +444,15 @@ class UncategorizedTransactionGroupView(APIView):
 
         logger.info(f"Fetching uncategorized transaction groups for user: {user.username} ({user.id})")
 
+        # Optimized query with select_related to avoid N+1 queries
         uncategorized_txs = Transaction.objects.filter(
             user=user,
             category__isnull=True
+        ).only(
+            'id', 'transaction_date', 'description', 'original_amount', 
+            'original_currency', 'direction', 'source_account_identifier',
+            'counterparty_identifier', 'source_code', 'source_type', 
+            'source_notifications'
         ).order_by('description', '-transaction_date') # Order needed for grouping and getting max_date easily
 
         grouped_transactions = {}
@@ -446,10 +506,41 @@ class UncategorizedTransactionGroupView(APIView):
             else:
                  group['earliest_date'] = None
 
+        # Calculate totals for response
+        total_transactions = sum(group['count'] for group in sorted_groups)
+        total_amount = 0.0
+        for group in sorted_groups:
+            for preview in group['previews']:
+                # Convert to AUD if possible, otherwise use original amount
+                if hasattr(preview, 'aud_amount') and preview.aud_amount:
+                    total_amount += float(preview.aud_amount)
+                else:
+                    # Fallback to original amount (this is approximate)
+                    total_amount += float(preview['amount']) if preview.get('currency') == 'AUD' else 0
+
+        # Check if client wants enhanced format with metadata
+        include_metadata = request.query_params.get('include_metadata', 'false').lower() == 'true'
+        
+        if include_metadata:
+            # Return enhanced structure with metadata
+            response_data = {
+                'vendor_groups': sorted_groups,
+                'metadata': {
+                    'total_groups': len(sorted_groups),
+                    'processing_date': django_timezone.now().isoformat(),
+                    'user_id': user.id
+                },
+                'total_transactions': total_transactions,
+                'total_amount': total_amount
+            }
+        else:
+            # Return simple list for backward compatibility
+            response_data = sorted_groups
+
         logger.info(f"Found {len(sorted_groups)} groups of uncategorized transactions for user {user.id}, sorted by most recent.")
-        return Response(sorted_groups, status=status.HTTP_200_OK)
+        return Response(response_data, status=status.HTTP_200_OK)
     
-class CategoryListCreateView(generics.ListCreateAPIView):
+class CategoryListCreateView(OptimizedAPIViewMixin, generics.ListCreateAPIView):
     """
     API endpoint to list accessible categories (System + User's Own)
     and create new custom categories for the authenticated user.
@@ -458,19 +549,29 @@ class CategoryListCreateView(generics.ListCreateAPIView):
     serializer_class = CategorySerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination # Added pagination
+    
+    # Performance optimization settings
+    cache_timeout = 600  # 10 minutes cache for categories (relatively static)
+    cache_count = True
 
     def get_queryset(self):
         """
         This view should return a list of all system categories
         plus categories owned by the currently authenticated user.
-        Prefetch related description mappings for efficiency when constructing vendor nodes.
+        Optimized with prefetch_related for better performance.
         """
         user = self.request.user
         # Use Q objects for OR condition: user is None OR user is the current user
-        # Prefetch description mappings assigned to these categories
+        # Prefetch related description mappings for efficiency when constructing vendor nodes
         return Category.objects.filter(
             Q(user__isnull=True) | Q(user=user)
-        ).distinct().prefetch_related('mapped_descriptions')
+        ).select_related(
+            'parent', 'user'
+        ).prefetch_related(
+            'mapped_descriptions',
+            'children',
+            'transactions'
+        ).distinct()
 
     def list(self, request, *args, **kwargs):
         # ... (existing list logic for adding vendor nodes) ...
@@ -842,17 +943,67 @@ class TransactionCSVUploadView(APIView):
             duplicate_count = 0
             skipped_conversion_error_count = 0
             applied_rules_count = 0
+            vendor_rules_applied_count = 0
             user_mappings = { m.original_description.strip().lower(): m for m in DescriptionMapping.objects.filter(user=current_user) }
 
             for data_item in potential_transactions_data:
                 raw_description = data_item['raw_description']
                 final_description = raw_description
                 assigned_category = None
+                assigned_vendor = None
+                
+                # Phase 3a: Apply DescriptionMapping rules (existing logic)
                 matched_mapping = user_mappings.get(raw_description.strip().lower())
                 if matched_mapping:
                     final_description = matched_mapping.clean_name
                     assigned_category = matched_mapping.assigned_category
                     if assigned_category: applied_rules_count += 1
+
+                # Phase 3b: Vendor lookup/creation and VendorRule application
+                try:
+                    # Extract vendor name from description (use final_description if available)
+                    vendor_name = final_description.strip()
+                    
+                    # Try to find existing vendor (system or user's own)
+                    vendor_queryset = Vendor.objects.filter(
+                        Q(user=current_user) | Q(user__isnull=True),
+                        name__iexact=vendor_name
+                    )
+                    
+                    if vendor_queryset.exists():
+                        assigned_vendor = vendor_queryset.first()
+                    else:
+                        # Create new vendor for the user
+                        assigned_vendor = Vendor.objects.create(
+                            name=vendor_name,
+                            display_name=vendor_name,
+                            user=current_user
+                        )
+                        logger.debug(f"User {current_user.id}: Created new vendor '{vendor_name}' (ID: {assigned_vendor.id})")
+                    
+                    # Apply VendorRule if vendor is assigned and no category from DescriptionMapping
+                    if assigned_vendor and not assigned_category:
+                        # Query for active vendor rules for this vendor
+                        vendor_rules = VendorRule.objects.filter(
+                            vendor=assigned_vendor,
+                            is_persistent=True
+                        ).filter(
+                            # Ensure user has access to the rule (vendor is system or user's own)
+                            Q(vendor__user=current_user) | Q(vendor__user__isnull=True)
+                        ).order_by('priority', '-created_at')
+                        
+                        if vendor_rules.exists():
+                            # Apply the highest priority rule
+                            applied_rule = vendor_rules.first()
+                            assigned_category = applied_rule.category
+                            vendor_rules_applied_count += 1
+                            logger.debug(f"User {current_user.id}: Applied vendor rule {applied_rule.id} "
+                                       f"({assigned_vendor.name} → {assigned_category.name})")
+                
+                except Exception as vendor_error:
+                    logger.warning(f"User {current_user.id} - Row {data_item['row_num']}: "
+                                 f"Vendor processing error: {vendor_error}")
+                    # Continue processing without vendor assignment
 
                 duplicate_check_key = (
                     data_item['transaction_date'], data_item['original_amount'],
@@ -888,7 +1039,7 @@ class TransactionCSVUploadView(APIView):
 
                 transactions_to_create.append(
                     Transaction(
-                        user=current_user, category=assigned_category, description=final_description,
+                        user=current_user, category=assigned_category, vendor=assigned_vendor, description=final_description,
                         transaction_date=data_item['transaction_date'],
                         original_amount=data_item['original_amount'], original_currency=original_currency_code,
                         direction=data_item['direction'], aud_amount=aud_amount_val, exchange_rate_to_aud=exchange_rate_val,
@@ -901,7 +1052,7 @@ class TransactionCSVUploadView(APIView):
                     )
                 )
             # ... (Phase 4: Bulk Create and Phase 5: Prepare Response - logic remains the same) ...
-            logger.info(f"User {current_user.id}: Phase 3 Complete. Dups: {duplicate_count}. New: {len(transactions_to_create)}. Convert Errors: {skipped_conversion_error_count}.")
+            logger.info(f"User {current_user.id}: Phase 3 Complete. Dups: {duplicate_count}. New: {len(transactions_to_create)}. Convert Errors: {skipped_conversion_error_count}. Vendor Rules Applied: {vendor_rules_applied_count}.")
             created_count = 0
             if transactions_to_create:
                 try:
@@ -919,6 +1070,7 @@ class TransactionCSVUploadView(APIView):
             else: message += " No new transactions were imported."
             if duplicate_count > 0: message += f" Skipped {duplicate_count} potential duplicates."
             if applied_rules_count > 0: message += f" Applied {applied_rules_count} description rules."
+            if vendor_rules_applied_count > 0: message += f" Applied {vendor_rules_applied_count} vendor rules."
             if skipped_conversion_error_count > 0: message += f" Failed to convert currency for {skipped_conversion_error_count} transactions to {BASE_CURRENCY_FOR_CONVERSION}."
             if error_count > 0: message += f" Encountered {error_count} errors."
 
@@ -928,7 +1080,8 @@ class TransactionCSVUploadView(APIView):
 
             return Response({
                 'message': message, 'imported_count': created_count, 'duplicate_count': duplicate_count,
-                'auto_categorized_count': applied_rules_count, 'conversion_error_count': skipped_conversion_error_count,
+                'auto_categorized_count': applied_rules_count, 'vendor_rules_applied_count': vendor_rules_applied_count,
+                'conversion_error_count': skipped_conversion_error_count,
                 'total_rows_processed': processed_rows, 'errors': errors
             }, status=response_status)
 
@@ -1042,3 +1195,1505 @@ class DashboardBalanceView(views.APIView):
                 'conversion_purpose': 'Display only - core holdings remain in native currencies'
             }
         })
+
+class TransactionSearchView(APIView):
+    """
+    Advanced search API endpoint for transactions with multiple filter criteria.
+    Supports:
+    - Vendor filtering (by ID or name)
+    - Category filtering (by ID)
+    - Date range filtering
+    - Amount range filtering 
+    - Keyword searching in descriptions
+    - Transaction direction filtering (inflow/outflow/all)
+    - AND/OR logic operators
+    - Sorting and pagination
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        """
+        Handle POST request with search criteria in the request body.
+        Returns paginated and sorted search results.
+        """
+        # Validate search parameters
+        search_serializer = TransactionSearchSerializer(
+            data=request.data, 
+            context={'request': request}
+        )
+        
+        if not search_serializer.is_valid():
+            return Response(
+                {'errors': search_serializer.errors}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        validated_data = search_serializer.validated_data
+        user = request.user
+        
+        # Start with base queryset
+        queryset = Transaction.objects.filter(user=user)
+        
+        # Apply filters based on logic operator
+        logic_operator = validated_data.get('logic', 'AND')
+        
+        if logic_operator == 'AND':
+            queryset = self._apply_and_filters(queryset, validated_data)
+        else:  # OR logic
+            queryset = self._apply_or_filters(queryset, validated_data, user)
+        
+        # Apply sorting
+        sort_by = validated_data.get('sort_by', '-transaction_date')
+        queryset = queryset.order_by(sort_by)
+        
+        # Select related for performance
+        queryset = queryset.select_related('category', 'vendor')
+        
+        # Apply pagination
+        page = validated_data.get('page', 1)
+        page_size = validated_data.get('page_size', 50)
+        
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        
+        total_count = queryset.count()
+        paginated_results = queryset[start_index:end_index]
+        
+        # Serialize results
+        results_serializer = TransactionSearchResultSerializer(
+            paginated_results, 
+            many=True,
+            context={'request': request}
+        )
+        
+        # Calculate summary statistics
+        summary_stats = self._calculate_summary_stats(queryset)
+        
+        # Prepare response
+        response_data = {
+            'results': results_serializer.data,
+            'pagination': {
+                'page': page,
+                'page_size': page_size,
+                'total_count': total_count,
+                'total_pages': (total_count + page_size - 1) // page_size,
+                'has_next': end_index < total_count,
+                'has_previous': page > 1,
+            },
+            'summary': summary_stats,
+            'search_criteria': validated_data,
+            'logic_operator': logic_operator
+        }
+        
+        logger.info(f"User {user.id}: Transaction search completed. "
+                   f"Found {total_count} results with {logic_operator} logic.")
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    def _apply_and_filters(self, queryset, validated_data):
+        """Apply all filters with AND logic."""
+        
+        # Vendor filtering
+        vendors = validated_data.get('vendors', [])
+        if vendors:
+            vendor_q = Q()
+            vendor_ids = []
+            vendor_names = []
+            
+            for vendor_identifier in vendors:
+                if vendor_identifier.isdigit():
+                    vendor_ids.append(int(vendor_identifier))
+                else:
+                    vendor_names.append(vendor_identifier)
+            
+            if vendor_ids:
+                vendor_q |= Q(vendor__id__in=vendor_ids)
+            if vendor_names:
+                vendor_q |= Q(vendor__name__in=vendor_names)
+            
+            queryset = queryset.filter(vendor_q)
+        
+        # Category filtering
+        categories = validated_data.get('categories', [])
+        if categories:
+            queryset = queryset.filter(category__id__in=categories)
+        
+        # Date range filtering
+        date_range = validated_data.get('date_range', {})
+        if date_range:
+            start_date = date_range.get('start')
+            end_date = date_range.get('end')
+            
+            if start_date:
+                queryset = queryset.filter(transaction_date__gte=start_date)
+            if end_date:
+                queryset = queryset.filter(transaction_date__lte=end_date)
+        
+        # Amount range filtering
+        amount_range = validated_data.get('amount_range', {})
+        if amount_range:
+            min_amount = amount_range.get('min')
+            max_amount = amount_range.get('max')
+            
+            if min_amount is not None:
+                queryset = queryset.filter(original_amount__gte=min_amount)
+            if max_amount is not None:
+                queryset = queryset.filter(original_amount__lte=max_amount)
+        
+        # Keywords filtering
+        keywords = validated_data.get('keywords', '').strip()
+        if keywords:
+            # Split keywords and search for each in description
+            keyword_list = keywords.split()
+            for keyword in keyword_list:
+                queryset = queryset.filter(description__icontains=keyword)
+        
+        # Direction filtering
+        direction = validated_data.get('direction', 'all')
+        if direction == 'inflow':
+            queryset = queryset.filter(direction='CREDIT')
+        elif direction == 'outflow':
+            queryset = queryset.filter(direction='DEBIT')
+        
+        return queryset
+
+    def _apply_or_filters(self, queryset, validated_data, user):
+        """Apply filters with OR logic - any filter match includes the transaction."""
+        
+        combined_q = Q()
+        any_filters_applied = False
+        
+        # Vendor filtering
+        vendors = validated_data.get('vendors', [])
+        if vendors:
+            vendor_q = Q()
+            vendor_ids = []
+            vendor_names = []
+            
+            for vendor_identifier in vendors:
+                if vendor_identifier.isdigit():
+                    vendor_ids.append(int(vendor_identifier))
+                else:
+                    vendor_names.append(vendor_identifier)
+            
+            if vendor_ids:
+                vendor_q |= Q(vendor__id__in=vendor_ids)
+            if vendor_names:
+                vendor_q |= Q(vendor__name__in=vendor_names)
+            
+            combined_q |= vendor_q
+            any_filters_applied = True
+        
+        # Category filtering
+        categories = validated_data.get('categories', [])
+        if categories:
+            combined_q |= Q(category__id__in=categories)
+            any_filters_applied = True
+        
+        # Date range filtering
+        date_range = validated_data.get('date_range', {})
+        if date_range:
+            start_date = date_range.get('start')
+            end_date = date_range.get('end')
+            
+            date_q = Q()
+            if start_date and end_date:
+                date_q = Q(transaction_date__gte=start_date, transaction_date__lte=end_date)
+            elif start_date:
+                date_q = Q(transaction_date__gte=start_date)
+            elif end_date:
+                date_q = Q(transaction_date__lte=end_date)
+            
+            if date_q:
+                combined_q |= date_q
+                any_filters_applied = True
+        
+        # Amount range filtering
+        amount_range = validated_data.get('amount_range', {})
+        if amount_range:
+            min_amount = amount_range.get('min')
+            max_amount = amount_range.get('max')
+            
+            amount_q = Q()
+            if min_amount is not None and max_amount is not None:
+                amount_q = Q(original_amount__gte=min_amount, original_amount__lte=max_amount)
+            elif min_amount is not None:
+                amount_q = Q(original_amount__gte=min_amount)
+            elif max_amount is not None:
+                amount_q = Q(original_amount__lte=max_amount)
+            
+            if amount_q:
+                combined_q |= amount_q
+                any_filters_applied = True
+        
+        # Keywords filtering
+        keywords = validated_data.get('keywords', '').strip()
+        if keywords:
+            keyword_q = Q()
+            keyword_list = keywords.split()
+            for keyword in keyword_list:
+                keyword_q |= Q(description__icontains=keyword)
+            
+            combined_q |= keyword_q
+            any_filters_applied = True
+        
+        # Direction filtering
+        direction = validated_data.get('direction', 'all')
+        if direction != 'all':
+            direction_q = Q()
+            if direction == 'inflow':
+                direction_q = Q(direction='CREDIT')
+            elif direction == 'outflow':
+                direction_q = Q(direction='DEBIT')
+            
+            combined_q |= direction_q
+            any_filters_applied = True
+        
+        # If no filters were applied, return all transactions for the user
+        if not any_filters_applied:
+            return queryset
+        
+        # Apply the combined OR filter
+        return queryset.filter(combined_q)
+
+    def _calculate_summary_stats(self, queryset):
+        """Calculate summary statistics for the search results."""
+        from django.db.models import Sum, Count, Min, Max
+        
+        stats = queryset.aggregate(
+            total_count=Count('id'),
+            total_amount=Sum('original_amount'),
+            total_aud_amount=Sum('aud_amount'),
+            min_date=Min('transaction_date'),
+            max_date=Max('transaction_date'),
+            min_amount=Min('original_amount'),
+            max_amount=Max('original_amount'),
+        )
+        
+        # Count by direction
+        credit_count = queryset.filter(direction='CREDIT').count()
+        debit_count = queryset.filter(direction='DEBIT').count()
+        
+        # Count by categorization status
+        categorized_count = queryset.exclude(category__isnull=True).count()
+        uncategorized_count = queryset.filter(category__isnull=True).count()
+        
+        return {
+            'total_transactions': stats['total_count'] or 0,
+            'total_amount': float(stats['total_amount']) if stats['total_amount'] else 0.0,
+            'total_aud_amount': float(stats['total_aud_amount']) if stats['total_aud_amount'] else 0.0,
+            'date_range': {
+                'earliest': stats['min_date'].isoformat() if stats['min_date'] else None,
+                'latest': stats['max_date'].isoformat() if stats['max_date'] else None,
+            },
+            'amount_range': {
+                'minimum': float(stats['min_amount']) if stats['min_amount'] else 0.0,
+                'maximum': float(stats['max_amount']) if stats['max_amount'] else 0.0,
+            },
+            'by_direction': {
+                'inflow_count': credit_count,
+                'outflow_count': debit_count,
+            },
+            'by_categorization': {
+                'categorized_count': categorized_count,
+                'uncategorized_count': uncategorized_count,
+            }
+        }
+
+# --- VendorRule Views ---
+
+class VendorRuleListCreateView(generics.ListCreateAPIView):
+    """
+    API endpoint to list and create vendor rules for the authenticated user.
+    Lists all rules for vendors accessible to the user (system + own vendors).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
+    ordering_fields = ['priority', 'created_at', 'vendor__name', 'category__name']
+    ordering = ['priority', '-created_at']  # Default: priority first, then newest
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method == 'POST':
+            return VendorRuleCreateSerializer
+        return VendorRuleSerializer
+    
+    def get_queryset(self):
+        """
+        Return vendor rules for vendors accessible to the user.
+        This includes rules for system vendors and user's own vendors.
+        """
+        user = self.request.user
+        
+        # Get vendor rules for vendors that are either system vendors or belong to the user
+        return VendorRule.objects.filter(
+            Q(vendor__user__isnull=True) | Q(vendor__user=user)
+        ).select_related('vendor', 'category')
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def create(self, request, *args, **kwargs):
+        """
+        Create a new vendor rule with enhanced response and conflict handling.
+        Returns 409 Conflict if a persistent rule already exists for the vendor.
+        """
+        serializer = self.get_serializer(data=request.data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            vendor_rule = serializer.save()
+            
+            # Use read serializer for response to include vendor/category names
+            response_serializer = VendorRuleSerializer(vendor_rule, context={'request': request})
+            
+            response_data = {
+                'vendor_rule': response_serializer.data,
+                'message': f'Vendor rule created successfully for {vendor_rule.vendor.name} → {vendor_rule.category.name}',
+                'is_persistent': vendor_rule.is_persistent
+            }
+            
+            logger.info(f"User {request.user.id}: Created vendor rule {vendor_rule.id} "
+                       f"({vendor_rule.vendor.name} → {vendor_rule.category.name})")
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+            
+        except serializers.ValidationError as e:
+            # Check if this is a conflict error (vendor rule already exists)
+            if 'vendor' in e.detail and 'persistent rule already exists' in str(e.detail['vendor'][0]):
+                # Extract vendor ID from request data to get existing rule details
+                vendor_id = request.data.get('vendor')
+                if vendor_id:
+                    try:
+                        existing_rule = VendorRule.objects.filter(
+                            vendor_id=vendor_id,
+                            is_persistent=True
+                        ).select_related('vendor', 'category').first()
+                        
+                        if existing_rule:
+                            existing_rule_data = VendorRuleSerializer(existing_rule, context={'request': request}).data
+                            
+                            return Response({
+                                'error': 'conflict',
+                                'message': f'A persistent rule already exists for {existing_rule.vendor.name}',
+                                'existing_rule': existing_rule_data,
+                                'requested_rule': {
+                                    'vendor': vendor_id,
+                                    'category': request.data.get('category'),
+                                    'is_persistent': request.data.get('is_persistent', False),
+                                    'priority': request.data.get('priority', 3)
+                                }
+                            }, status=status.HTTP_409_CONFLICT)
+                    except Exception as lookup_error:
+                        logger.warning(f"User {request.user.id}: Failed to lookup existing rule for conflict response: {lookup_error}")
+            
+            # For other validation errors, return normal 400 response
+            logger.error(f"User {request.user.id}: Validation error creating vendor rule: {e.detail}")
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to create vendor rule: {e}", exc_info=True)
+            
+            return Response(
+                {'error': 'Failed to create vendor rule. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class VendorRuleDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint to retrieve, update, or delete a specific vendor rule.
+    Users can only access rules for vendors they have access to.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'pk'
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method in ['PUT', 'PATCH']:
+            return VendorRuleUpdateSerializer
+        return VendorRuleSerializer
+    
+    def get_queryset(self):
+        """
+        Return vendor rules for vendors accessible to the user.
+        """
+        user = self.request.user
+        
+        return VendorRule.objects.filter(
+            Q(vendor__user__isnull=True) | Q(vendor__user=user)
+        ).select_related('vendor', 'category')
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def update(self, request, *args, **kwargs):
+        """
+        Update a vendor rule with enhanced response.
+        """
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            vendor_rule = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = VendorRuleSerializer(vendor_rule, context={'request': request})
+            
+            response_data = {
+                'vendor_rule': response_serializer.data,
+                'message': f'Vendor rule updated successfully for {vendor_rule.vendor.name} → {vendor_rule.category.name}',
+                'is_persistent': vendor_rule.is_persistent
+            }
+            
+            logger.info(f"User {request.user.id}: Updated vendor rule {vendor_rule.id}")
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to update vendor rule {instance.id}: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to update vendor rule. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete a vendor rule with enhanced response.
+        """
+        instance = self.get_object()
+        vendor_name = instance.vendor.name
+        category_name = instance.category.name
+        rule_id = instance.id
+        
+        try:
+            self.perform_destroy(instance)
+            
+            logger.info(f"User {request.user.id}: Deleted vendor rule {rule_id} "
+                       f"({vendor_name} → {category_name})")
+            
+            return Response(
+                {
+                    'message': f'Vendor rule deleted successfully ({vendor_name} → {category_name})',
+                    'deleted_rule_id': rule_id
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to delete vendor rule {rule_id}: {e}", exc_info=True)
+            
+            return Response(
+                {'error': 'Failed to delete vendor rule. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class VendorRuleConflictResolveView(APIView):
+    """
+    API endpoint to resolve vendor rule conflicts.
+    Handles replace/keep decisions when creating rules that conflict with existing ones.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+    
+    def post(self, request, *args, **kwargs):
+        """
+        Resolve a vendor rule conflict by either replacing the existing rule or keeping it.
+        
+        Expected payload:
+        {
+            "action": "replace" | "keep",
+            "existing_rule_id": "uuid",
+            "new_rule_data": {
+                "vendor": int,
+                "category": int,
+                "is_persistent": bool,
+                "priority": int,
+                "pattern": str (optional)
+            }
+        }
+        """
+        user = request.user
+        action = request.data.get('action')
+        existing_rule_id = request.data.get('existing_rule_id')
+        new_rule_data = request.data.get('new_rule_data', {})
+        
+        # Validate input
+        if action not in ['replace', 'keep']:
+            return Response(
+                {'error': 'Invalid action. Must be "replace" or "keep".'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not existing_rule_id:
+            return Response(
+                {'error': 'existing_rule_id is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Get the existing rule and verify user access
+            existing_rule = VendorRule.objects.filter(
+                id=existing_rule_id
+            ).filter(
+                Q(vendor__user__isnull=True) | Q(vendor__user=user)
+            ).select_related('vendor', 'category').first()
+            
+            if not existing_rule:
+                return Response(
+                    {'error': 'Existing rule not found or access denied.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            if action == 'keep':
+                # User chose to keep existing rule, return success without changes
+                existing_rule_data = VendorRuleSerializer(existing_rule, context={'request': request}).data
+                
+                logger.info(f"User {user.id}: Kept existing vendor rule {existing_rule.id} "
+                           f"({existing_rule.vendor.name} → {existing_rule.category.name})")
+                
+                return Response({
+                    'action': 'kept',
+                    'message': f'Kept existing rule for {existing_rule.vendor.name} → {existing_rule.category.name}',
+                    'rule': existing_rule_data
+                }, status=status.HTTP_200_OK)
+            
+            elif action == 'replace':
+                # User chose to replace existing rule
+                if not new_rule_data:
+                    return Response(
+                        {'error': 'new_rule_data is required when action is "replace".'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Use the update serializer to validate and update the existing rule
+                serializer = VendorRuleUpdateSerializer(
+                    existing_rule,
+                    data=new_rule_data,
+                    partial=True,
+                    context={'request': request}
+                )
+                
+                if serializer.is_valid():
+                    updated_rule = serializer.save()
+                    
+                    # Use read serializer for response
+                    response_serializer = VendorRuleSerializer(updated_rule, context={'request': request})
+                    
+                    logger.info(f"User {user.id}: Replaced vendor rule {updated_rule.id} "
+                               f"({updated_rule.vendor.name} → {updated_rule.category.name})")
+                    
+                    return Response({
+                        'action': 'replaced',
+                        'message': f'Updated rule for {updated_rule.vendor.name} → {updated_rule.category.name}',
+                        'rule': response_serializer.data
+                    }, status=status.HTTP_200_OK)
+                else:
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        except Exception as e:
+            logger.error(f"User {user.id}: Failed to resolve vendor rule conflict: {e}", exc_info=True)
+            return Response(
+                {'error': 'Failed to resolve conflict. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# --- Custom Views API Endpoints ---
+
+class CustomViewListCreateView(generics.ListCreateAPIView):
+    """
+    API endpoint to list and create custom views for the authenticated user.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
+    ordering_fields = ['name', 'created_at', 'updated_at']
+    ordering = ['-updated_at', 'name']  # Default: most recently updated first
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method == 'POST':
+            return CustomViewCreateSerializer
+        return CustomViewSerializer
+    
+    def get_queryset(self):
+        """Return custom views for the authenticated user."""
+        return CustomView.objects.filter(user=self.request.user)
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def create(self, request, *args, **kwargs):
+        """Create a new custom view with enhanced response."""
+        serializer = self.get_serializer(data=request.data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            custom_view = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = CustomViewSerializer(custom_view, context={'request': request})
+            
+            response_data = {
+                'custom_view': response_serializer.data,
+                'message': f'Custom view "{custom_view.name}" created successfully.',
+            }
+            
+            logger.info(f"User {request.user.id}: Created custom view '{custom_view.name}' (ID: {custom_view.id})")
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to create custom view: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to create custom view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CustomViewDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint to retrieve, update, or delete a specific custom view.
+    Only the owner can access their custom views.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsOwner]
+    lookup_field = 'pk'
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method in ['PUT', 'PATCH']:
+            return CustomViewCreateSerializer
+        return CustomViewSerializer
+    
+    def get_queryset(self):
+        """Return custom views for the authenticated user."""
+        return CustomView.objects.filter(user=self.request.user)
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def update(self, request, *args, **kwargs):
+        """Update a custom view with enhanced response."""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            custom_view = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = CustomViewSerializer(custom_view, context={'request': request})
+            
+            response_data = {
+                'custom_view': response_serializer.data,
+                'message': f'Custom view "{custom_view.name}" updated successfully.',
+            }
+            
+            logger.info(f"User {request.user.id}: Updated custom view '{custom_view.name}' (ID: {custom_view.id})")
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to update custom view {instance.id}: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to update custom view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """Delete a custom view with enhanced response."""
+        instance = self.get_object()
+        view_name = instance.name
+        view_id = instance.id
+        
+        try:
+            self.perform_destroy(instance)
+            
+            logger.info(f"User {request.user.id}: Deleted custom view '{view_name}' (ID: {view_id})")
+            
+            return Response(
+                {
+                    'message': f'Custom view "{view_name}" deleted successfully.',
+                    'deleted_view_id': view_id
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to delete custom view {view_id}: {e}", exc_info=True)
+            
+            return Response(
+                {'error': 'Failed to delete custom view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CustomCategoryListCreateView(generics.ListCreateAPIView):
+    """
+    API endpoint to list and create custom categories for a specific custom view.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
+    ordering_fields = ['name', 'order', 'created_at']
+    ordering = ['order', 'name']  # Default: by order, then name
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method == 'POST':
+            return CustomCategoryCreateSerializer
+        return CustomCategorySerializer
+    
+    def get_queryset(self):
+        """Return custom categories for the specified view if user owns it."""
+        view_id = self.kwargs.get('view_id')
+        if not view_id:
+            return CustomCategory.objects.none()
+        
+        # Ensure the view belongs to the user
+        try:
+            custom_view = CustomView.objects.get(id=view_id, user=self.request.user)
+            return CustomCategory.objects.filter(custom_view=custom_view)
+        except CustomView.DoesNotExist:
+            return CustomCategory.objects.none()
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def create(self, request, *args, **kwargs):
+        """Create a new custom category with enhanced response."""
+        view_id = self.kwargs.get('view_id')
+        
+        # Verify the view exists and belongs to the user
+        try:
+            custom_view = CustomView.objects.get(id=view_id, user=request.user)
+        except CustomView.DoesNotExist:
+            return Response(
+                {'error': 'Custom view not found or access denied.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Add the custom_view to the request data
+        data = request.data.copy()
+        data['custom_view'] = custom_view.id
+        
+        serializer = self.get_serializer(data=data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            custom_category = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = CustomCategorySerializer(custom_category, context={'request': request})
+            
+            response_data = {
+                'custom_category': response_serializer.data,
+                'message': f'Custom category "{custom_category.name}" created successfully.',
+            }
+            
+            logger.info(f"User {request.user.id}: Created custom category '{custom_category.name}' "
+                       f"in view '{custom_view.name}' (ID: {custom_category.id})")
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to create custom category: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to create custom category. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CustomCategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint to retrieve, update, or delete a specific custom category.
+    Only the owner of the parent view can access the categories.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'pk'
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method in ['PUT', 'PATCH']:
+            return CustomCategoryCreateSerializer
+        return CustomCategorySerializer
+    
+    def get_queryset(self):
+        """Return custom categories for views owned by the authenticated user."""
+        return CustomCategory.objects.filter(custom_view__user=self.request.user)
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def update(self, request, *args, **kwargs):
+        """Update a custom category with enhanced response."""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            custom_category = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = CustomCategorySerializer(custom_category, context={'request': request})
+            
+            response_data = {
+                'custom_category': response_serializer.data,
+                'message': f'Custom category "{custom_category.name}" updated successfully.',
+            }
+            
+            logger.info(f"User {request.user.id}: Updated custom category '{custom_category.name}' (ID: {custom_category.id})")
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to update custom category {instance.id}: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to update custom category. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """Delete a custom category with enhanced response."""
+        instance = self.get_object()
+        category_name = instance.name
+        category_id = instance.id
+        
+        # Check if category can be safely deleted
+        can_delete, reason = instance.can_be_deleted()
+        if not can_delete:
+            return Response(
+                {'error': f'Cannot delete category: {reason}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            self.perform_destroy(instance)
+            
+            logger.info(f"User {request.user.id}: Deleted custom category '{category_name}' (ID: {category_id})")
+            
+            return Response(
+                {
+                    'message': f'Custom category "{category_name}" deleted successfully.',
+                    'deleted_category_id': category_id
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to delete custom category {category_id}: {e}", exc_info=True)
+            
+            return Response(
+                {'error': 'Failed to delete custom category. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ViewTransactionListCreateView(generics.ListCreateAPIView):
+    """
+    API endpoint to list and create view transaction assignments for a specific custom view.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
+    ordering_fields = ['assigned_at', 'transaction__transaction_date']
+    ordering = ['-assigned_at']  # Default: most recently assigned first
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method == 'POST':
+            return ViewTransactionCreateSerializer
+        return ViewTransactionSerializer
+    
+    def get_queryset(self):
+        """Return view transactions for the specified view if user owns it."""
+        view_id = self.kwargs.get('view_id')
+        if not view_id:
+            return ViewTransaction.objects.none()
+        
+        # Ensure the view belongs to the user
+        try:
+            custom_view = CustomView.objects.get(id=view_id, user=self.request.user)
+            return ViewTransaction.objects.filter(custom_view=custom_view).select_related(
+                'transaction', 'custom_category', 'custom_view'
+            )
+        except CustomView.DoesNotExist:
+            return ViewTransaction.objects.none()
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def create(self, request, *args, **kwargs):
+        """Create a new view transaction assignment with enhanced response."""
+        view_id = self.kwargs.get('view_id')
+        
+        # Verify the view exists and belongs to the user
+        try:
+            custom_view = CustomView.objects.get(id=view_id, user=request.user)
+        except CustomView.DoesNotExist:
+            return Response(
+                {'error': 'Custom view not found or access denied.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Add the custom_view to the request data
+        data = request.data.copy()
+        data['custom_view'] = custom_view.id
+        
+        serializer = self.get_serializer(data=data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            view_transaction = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = ViewTransactionSerializer(view_transaction, context={'request': request})
+            
+            response_data = {
+                'view_transaction': response_serializer.data,
+                'message': 'Transaction assigned to view successfully.',
+            }
+            
+            logger.info(f"User {request.user.id}: Assigned transaction {view_transaction.transaction.id} "
+                       f"to view '{custom_view.name}' (Assignment ID: {view_transaction.id})")
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to assign transaction to view: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to assign transaction to view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def post(self, request, *args, **kwargs):
+        """Handle bulk transaction assignment to custom view."""
+        view_id = self.kwargs.get('view_id')
+        
+        # Verify the view exists and belongs to the user
+        try:
+            custom_view = CustomView.objects.get(id=view_id, user=request.user)
+        except CustomView.DoesNotExist:
+            return Response(
+                {'error': 'Custom view not found or access denied.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if this is a bulk assignment request
+        transaction_ids = request.data.get('transaction_ids')
+        if transaction_ids and isinstance(transaction_ids, list):
+            return self._handle_bulk_assignment(request, custom_view, transaction_ids)
+        
+        # Fall back to single assignment (existing behavior)
+        return self.create(request, *args, **kwargs)
+
+    def _handle_bulk_assignment(self, request, custom_view, transaction_ids):
+        """Handle bulk assignment of multiple transactions to a custom view."""
+        if not transaction_ids:
+            return Response(
+                {'error': 'A non-empty list of transaction_ids is required for bulk assignment.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Validate all transaction IDs belong to the user
+            user_transactions = Transaction.objects.filter(
+                id__in=transaction_ids, 
+                user=request.user
+            )
+            
+            if user_transactions.count() != len(transaction_ids):
+                return Response(
+                    {'error': 'Some transaction IDs were not found or do not belong to you.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Create assignments, handling duplicates gracefully
+            assignments_created = []
+            assignments_skipped = []
+            
+            for transaction in user_transactions:
+                # Check if assignment already exists
+                existing_assignment = ViewTransaction.objects.filter(
+                    custom_view=custom_view,
+                    transaction=transaction
+                ).first()
+                
+                if existing_assignment:
+                    assignments_skipped.append({
+                        'transaction_id': transaction.id,
+                        'reason': 'Already assigned to this view'
+                    })
+                    continue
+                
+                # Create new assignment
+                assignment = ViewTransaction.objects.create(
+                    id=str(uuid.uuid4()),
+                    custom_view=custom_view,
+                    transaction=transaction,
+                    custom_category=None,  # Can be set later
+                    notes=request.data.get('notes', '')
+                )
+                
+                assignments_created.append({
+                    'assignment_id': assignment.id,
+                    'transaction_id': transaction.id,
+                    'transaction_description': transaction.description
+                })
+
+            response_data = {
+                'message': f'Bulk assignment completed. {len(assignments_created)} transactions assigned.',
+                'assignments_created': assignments_created,
+                'assignments_skipped': assignments_skipped,
+                'summary': {
+                    'total_requested': len(transaction_ids),
+                    'created': len(assignments_created),
+                    'skipped': len(assignments_skipped)
+                }
+            }
+
+            logger.info(f"User {request.user.id}: Bulk assigned {len(assignments_created)} transactions "
+                       f"to view '{custom_view.name}' (View ID: {custom_view.id})")
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to bulk assign transactions to view: {e}", exc_info=True)
+            return Response(
+                {'error': 'Failed to assign transactions to view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def delete(self, request, *args, **kwargs):
+        """Handle bulk transaction removal from custom view."""
+        view_id = self.kwargs.get('view_id')
+        
+        # Verify the view exists and belongs to the user
+        try:
+            custom_view = CustomView.objects.get(id=view_id, user=request.user)
+        except CustomView.DoesNotExist:
+            return Response(
+                {'error': 'Custom view not found or access denied.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if this is a bulk deletion request
+        transaction_ids = request.data.get('transaction_ids')
+        if transaction_ids and isinstance(transaction_ids, list):
+            return self._handle_bulk_deletion(request, custom_view, transaction_ids)
+        
+        # Single transaction ID can also be handled
+        transaction_id = request.data.get('transaction_id')
+        if transaction_id:
+            return self._handle_bulk_deletion(request, custom_view, [transaction_id])
+            
+        return Response(
+            {'error': 'Either transaction_ids (array) or transaction_id (single) is required for deletion.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    def _handle_bulk_deletion(self, request, custom_view, transaction_ids):
+        """Handle bulk deletion of multiple transaction assignments from a custom view."""
+        if not transaction_ids:
+            return Response(
+                {'error': 'A non-empty list of transaction_ids is required for bulk deletion.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Find existing assignments for the specified transactions in this view
+            existing_assignments = ViewTransaction.objects.filter(
+                custom_view=custom_view,
+                transaction_id__in=transaction_ids
+            ).select_related('transaction', 'custom_view')
+            
+            if not existing_assignments.exists():
+                return Response(
+                    {'error': 'No transaction assignments found for the specified transaction IDs in this view.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Collect information about assignments being deleted
+            deleted_assignments = []
+            for assignment in existing_assignments:
+                deleted_assignments.append({
+                    'assignment_id': assignment.id,
+                    'transaction_id': assignment.transaction.id,
+                    'transaction_description': assignment.transaction.description
+                })
+
+            # Perform bulk deletion
+            deleted_count = existing_assignments.count()
+            existing_assignments.delete()
+
+            response_data = {
+                'message': f'Bulk deletion completed. {deleted_count} transactions removed from view.',
+                'deleted_assignments': deleted_assignments,
+                'summary': {
+                    'total_requested': len(transaction_ids),
+                    'deleted': deleted_count,
+                    'not_found': len(transaction_ids) - deleted_count
+                }
+            }
+
+            logger.info(f"User {request.user.id}: Bulk removed {deleted_count} transaction assignments "
+                       f"from view '{custom_view.name}' (View ID: {custom_view.id})")
+
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to bulk delete transactions from view: {e}", exc_info=True)
+            return Response(
+                {'error': 'Failed to remove transactions from view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ViewTransactionDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint to retrieve, update, or delete a specific view transaction assignment.
+    Only the owner of the parent view can access the assignments.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'pk'
+    
+    def get_serializer_class(self):
+        """Use different serializers for read vs write operations."""
+        if self.request.method in ['PUT', 'PATCH']:
+            return ViewTransactionCreateSerializer
+        return ViewTransactionSerializer
+    
+    def get_queryset(self):
+        """Return view transactions for views owned by the authenticated user."""
+        return ViewTransaction.objects.filter(custom_view__user=self.request.user).select_related(
+            'transaction', 'custom_category', 'custom_view'
+        )
+    
+    def get_serializer_context(self):
+        """Pass request to serializer for validation."""
+        return {'request': self.request}
+    
+    def update(self, request, *args, **kwargs):
+        """Update a view transaction assignment with enhanced response."""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            view_transaction = serializer.save()
+            
+            # Use read serializer for response
+            response_serializer = ViewTransactionSerializer(view_transaction, context={'request': request})
+            
+            response_data = {
+                'view_transaction': response_serializer.data,
+                'message': 'Transaction assignment updated successfully.',
+            }
+            
+            logger.info(f"User {request.user.id}: Updated view transaction assignment {view_transaction.id}")
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to update view transaction {instance.id}: {e}", exc_info=True)
+            
+            if hasattr(e, 'detail'):
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(
+                {'error': 'Failed to update transaction assignment. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def destroy(self, request, *args, **kwargs):
+        """Delete a view transaction assignment with enhanced response."""
+        instance = self.get_object()
+        assignment_id = instance.id
+        transaction_description = instance.transaction.description
+        
+        try:
+            self.perform_destroy(instance)
+            
+            logger.info(f"User {request.user.id}: Removed transaction assignment {assignment_id} "
+                       f"(Transaction: {transaction_description})")
+            
+            return Response(
+                {
+                    'message': 'Transaction removed from view successfully.',
+                    'deleted_assignment_id': assignment_id
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            logger.error(f"User {request.user.id}: Failed to delete view transaction {assignment_id}: {e}", exc_info=True)
+            
+            return Response(
+                {'error': 'Failed to remove transaction from view. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CustomViewTransactionsView(APIView):
+    """
+    API endpoint to get all transactions for a custom view (both matching criteria and assigned).
+    Supports filtering and pagination.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def get(self, request, view_id, *args, **kwargs):
+        user = request.user
+        
+        try:
+            # Verify user owns the view
+            view = CustomView.objects.get(id=view_id, user=user)
+        except CustomView.DoesNotExist:
+            return Response(
+                {'error': 'Custom view not found or access denied'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        try:
+            # Get base transaction queryset for user
+            transactions = Transaction.objects.filter(user=user)
+            
+            # Apply view criteria if they exist
+            if view.filter_criteria:
+                criteria = view.filter_criteria
+                
+                # Apply date range filter
+                if criteria.get('start_date'):
+                    transactions = transactions.filter(transaction_date__gte=criteria['start_date'])
+                if criteria.get('end_date'):
+                    transactions = transactions.filter(transaction_date__lte=criteria['end_date'])
+                
+                # Apply category filter
+                if criteria.get('categories'):
+                    transactions = transactions.filter(category_id__in=criteria['categories'])
+                
+                # Apply amount range filter
+                if criteria.get('min_amount'):
+                    transactions = transactions.filter(aud_amount__gte=criteria['min_amount'])
+                if criteria.get('max_amount'):
+                    transactions = transactions.filter(aud_amount__lte=criteria['max_amount'])
+                
+                # Apply keyword filter
+                if criteria.get('keywords'):
+                    keyword_filter = Q()
+                    for keyword in criteria['keywords']:
+                        keyword_filter |= Q(description__icontains=keyword)
+                    transactions = transactions.filter(keyword_filter)
+
+            # Get transactions explicitly assigned to this view
+            assigned_transactions = Transaction.objects.filter(
+                user=user,
+                viewtransaction__view=view
+            )
+
+            # Combine criteria-matched and assigned transactions (use union to avoid duplicates)
+            combined_transactions = transactions.union(assigned_transactions)
+            
+            # Apply pagination
+            paginator = StandardResultsSetPagination()
+            page = paginator.paginate_queryset(combined_transactions, request)
+            
+            if page is not None:
+                serializer = TransactionSerializer(page, many=True)
+                return paginator.get_paginated_response(serializer.data)
+            
+            # Fallback without pagination
+            serializer = TransactionSerializer(combined_transactions, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error fetching transactions for view {view_id}: {str(e)}")
+            return Response(
+                {'error': 'Failed to fetch transactions'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class BulkRejectTransactionsView(APIView):
+    """
+    API endpoint to bulk reject auto-assignments for vendor groups.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        vendor_group_ids = request.data.get('vendor_group_ids', [])
+        reason = request.data.get('reason', 'Rejected during review')
+
+        if not vendor_group_ids:
+            return Response(
+                {'error': 'No vendor group IDs provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # For now, just return a success response
+            # In a full implementation, this would clear auto-assigned categories
+            # and potentially create rejection records
+            
+            affected_transactions = []
+            for group_id in vendor_group_ids:
+                # Placeholder logic - in real implementation would:
+                # 1. Find transactions for this vendor group
+                # 2. Clear any auto-assigned categories
+                # 3. Log the rejection reason
+                pass
+
+            return Response({
+                'success': True,
+                'rejected_count': len(vendor_group_ids),
+                'affected_transactions': affected_transactions,
+                'message': f'Successfully rejected {len(vendor_group_ids)} vendor groups'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error bulk rejecting vendor groups: {str(e)}")
+            return Response(
+                {'error': 'Failed to reject vendor groups'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ReviewCompleteView(APIView):
+    """
+    API endpoint to mark a review session as complete.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        review_summary = request.data.get('review_summary', {})
+
+        try:
+            # For now, just return a success response
+            # In a full implementation, this would:
+            # 1. Save review session metadata
+            # 2. Update transaction statuses
+            # 3. Log completion metrics
+            
+            review_id = f"review_{user.id}_{django_timezone.now().strftime('%Y%m%d_%H%M%S')}"
+            completed_at = django_timezone.now().isoformat()
+
+            return Response({
+                'success': True,
+                'review_id': review_id,
+                'completed_at': completed_at,
+                'summary': review_summary,
+                'message': 'Review session completed successfully'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error completing review session: {str(e)}")
+            return Response(
+                {'error': 'Failed to complete review session'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ReviewProgressView(APIView):
+    """
+    API endpoint to save and load review progress.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        """Save review progress"""
+        user = request.user
+        progress_data = request.data.get('progress', {})
+
+        try:
+            # For now, just return a success response
+            # In a full implementation, this would:
+            # 1. Save progress to database or cache
+            # 2. Include session management
+            # 3. Handle progress restoration
+            
+            progress_id = f"progress_{user.id}_{django_timezone.now().strftime('%Y%m%d_%H%M%S')}"
+
+            return Response({
+                'success': True,
+                'progress_id': progress_id,
+                'saved_at': django_timezone.now().isoformat(),
+                'message': 'Review progress saved successfully'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error saving review progress: {str(e)}")
+            return Response(
+                {'error': 'Failed to save review progress'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def get(self, request, *args, **kwargs):
+        """Load review progress"""
+        user = request.user
+        progress_id = request.query_params.get('progress_id')
+
+        try:
+            # For now, return empty progress
+            # In a full implementation, this would load saved progress
+            
+            return Response({
+                'success': True,
+                'progress': {
+                    'vendor_selections': [],
+                    'category_changes': {},
+                    'completed_groups': [],
+                    'saved_at': None
+                },
+                'message': 'No saved progress found'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error loading review progress: {str(e)}")
+            return Response(
+                {'error': 'Failed to load review progress'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

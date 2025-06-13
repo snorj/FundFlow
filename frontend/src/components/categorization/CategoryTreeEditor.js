@@ -1,9 +1,8 @@
-import React, { useMemo, useState, useRef, useCallback } from 'react';
+import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { Tree } from 'react-arborist';
 import { 
   FiFolder, 
-  FiFolderOpen,
   FiTag,
   FiDollarSign,
   FiMoreVertical,
@@ -16,16 +15,21 @@ import {
   FiX
 } from 'react-icons/fi';
 import { formatCurrency } from '../../utils/formatting';
+import vendorRuleService from '../../services/vendorRules';
+import VendorRuleUpdateModal from '../modals/VendorRuleUpdateModal';
+import CategoryCreationModal from '../modals/CategoryCreationModal';
 import './CategoryTreeEditor.css';
 
-const CategoryTreeEditor = ({ 
+const CategoryTreeEditor = React.memo(({ 
   data, 
   onMove, 
   onRename, 
   onSelect,
   onDelete,
   onCreateChild,
+  onCreateRoot,
   onDuplicate,
+  onCategoryCreated,
   transactions = [],
   categorySpendingTotals = {},
   selectedNodeId = null,
@@ -38,8 +42,71 @@ const CategoryTreeEditor = ({
   const [validationError, setValidationError] = useState('');
   const [focusedNodeId, setFocusedNodeId] = useState(null);
   const [announceText, setAnnounceText] = useState('');
+  
+  // State for vendor rule update modal
+  const [vendorRuleUpdateModal, setVendorRuleUpdateModal] = useState({
+    isOpen: false,
+    vendorName: '',
+    oldCategoryName: '',
+    newCategoryName: '',
+    existingRule: null,
+    newCategoryId: null,
+    pendingMoveArgs: null,
+    isChecking: false
+  });
+  
+  // State for category creation modal
+  const [categoryCreationModal, setCategoryCreationModal] = useState({
+    isOpen: false,
+    preSelectedParent: null
+  });
+
+  // State for vendor rules and visual feedback
+  const [vendorRules, setVendorRules] = useState(new Map());
+  const [recentlyMovedNodes, setRecentlyMovedNodes] = useState(new Set());
+  const [processingNodes, setProcessingNodes] = useState(new Set());
+  const [moveResults, setMoveResults] = useState(new Map()); // success/error tracking
+  
   const editInputRef = useRef(null);
   const treeRef = useRef(null);
+
+  // Load vendor rules on component mount
+  useEffect(() => {
+    const loadVendorRules = async () => {
+      try {
+        const response = await vendorRuleService.getVendorRules();
+        const rulesMap = new Map();
+        
+        if (response.results) {
+          response.results.forEach(rule => {
+            // Map vendor names to rule data for quick lookup
+            const vendorKey = rule.vendor_name || rule.vendor?.name;
+            if (vendorKey) {
+              rulesMap.set(vendorKey, rule);
+            }
+          });
+        }
+        
+        setVendorRules(rulesMap);
+      } catch (error) {
+        console.error('Failed to load vendor rules:', error);
+      }
+    };
+
+    loadVendorRules();
+  }, []);
+
+  // Clear move highlighting after animation
+  useEffect(() => {
+    if (recentlyMovedNodes.size > 0) {
+      const timer = setTimeout(() => {
+        setRecentlyMovedNodes(new Set());
+        setMoveResults(new Map());
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [recentlyMovedNodes]);
 
   // Screen reader announcement function
   const announceToScreenReader = useCallback((message) => {
@@ -48,79 +115,94 @@ const CategoryTreeEditor = ({
     setTimeout(() => setAnnounceText(''), 1000);
   }, []);
 
-  // Enhanced focus management
-  const focusNode = useCallback((nodeId) => {
-    setFocusedNodeId(nodeId);
-    const nodeElement = document.querySelector(`[data-node-id="${nodeId}"]`);
-    if (nodeElement) {
-      nodeElement.focus();
-    }
+  // Function to add visual feedback for move operations
+  const addMoveHighlight = useCallback((nodeId, result = 'moved') => {
+    setRecentlyMovedNodes(prev => new Set([...prev, nodeId]));
+    setMoveResults(prev => new Map([...prev, [nodeId, result]]));
+    setProcessingNodes(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(nodeId);
+      return newSet;
+    });
   }, []);
 
-  // Transform data for react-arborist format
-  const treeData = useMemo(() => {
-    if (!Array.isArray(data)) return [];
-    
-    const transformItem = (item) => {
-      // Base node structure
-      const node = {
-        id: item.id,
-        name: item.name,
-        type: item.type,
-        parent: item.parent,
-        children: [],
-        isCategory: item.type === 'category',
-        isVendor: item.type === 'vendor', 
-        isTransaction: item.type === 'transaction',
-        originalData: item
-      };
-
-      // Add type-specific data
-      if (item.type === 'category') {
-        node.amount = categorySpendingTotals[item.id] || 0;
-        node.transactionCount = 0; // Will be calculated from children
-      } else if (item.type === 'vendor') {
-        node.amount = item.totalAmount || 0;
-        node.transactionCount = item.transactionCount || 0;
-      } else if (item.type === 'transaction') {
-        node.amount = Math.abs(parseFloat(item.originalTransaction?.aud_amount || item.amount || 0));
-        node.date = item.originalTransaction?.transaction_date || item.date;
-        node.direction = item.originalTransaction?.direction || item.direction;
-      }
-
-      return node;
-    };
-
-    // Build hierarchy
-    const nodeMap = new Map();
-    const rootNodes = [];
-
-    // First pass: create all nodes
-    data.forEach(item => {
-      const node = transformItem(item);
-      nodeMap.set(item.id, node);
-    });
-
-    // Second pass: build parent-child relationships
-    data.forEach(item => {
-      const node = nodeMap.get(item.id);
-      if (item.parent && nodeMap.has(item.parent)) {
-        const parent = nodeMap.get(item.parent);
-        parent.children.push(node);
+  // Function to show processing state
+  const setNodeProcessing = useCallback((nodeId, processing = true) => {
+    setProcessingNodes(prev => {
+      const newSet = new Set(prev);
+      if (processing) {
+        newSet.add(nodeId);
       } else {
-        rootNodes.push(node);
+        newSet.delete(nodeId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  // Enhanced focus management
+  // Note: focusNode function removed as it was unused
+
+  // Memoized tree data transformation
+  const treeData = useMemo(() => {
+    if (!data || data.length === 0) return [];
+    
+    // Transform flat data into tree structure with performance optimization
+    const itemMap = new Map();
+    const rootItems = [];
+    
+    // First pass: create map for O(1) lookups
+    data.forEach(item => {
+      itemMap.set(item.id, { ...item, children: [] });
+    });
+    
+    // Second pass: build tree structure
+    data.forEach(item => {
+      const treeItem = itemMap.get(item.id);
+      if (item.parent) {
+        const parent = itemMap.get(item.parent);
+        if (parent) {
+          parent.children.push(treeItem);
+        } else {
+          rootItems.push(treeItem);
+        }
+      } else {
+        rootItems.push(treeItem);
       }
     });
+    
+    return rootItems;
+  }, [data]);
 
-    return rootNodes;
-  }, [data, categorySpendingTotals]);
+  // Memoized validation function
+  const validateMove = useCallback((dragId, parentId, treeData) => {
+    if (!dragId || dragId === parentId) return false;
+    
+    const dragNode = findNodeById(dragId, treeData);
+    if (!dragNode) return false;
+    
+    // Prevent dropping a node onto its own descendant
+    const isDescendant = (nodeId, potentialAncestorId) => {
+      const node = findNodeById(nodeId, treeData);
+      if (!node || !node.children) return false;
+      
+      return node.children.some(child => 
+        child.id === potentialAncestorId || isDescendant(child.id, potentialAncestorId)
+      );
+    };
+    
+    return !isDescendant(dragId, parentId);
+  }, []);
 
-  // Node renderer function
-  const renderNode = ({ node, style, dragHandle, tree }) => {
+  // Memoized node renderer function for performance
+  const renderNode = useCallback(({ node, style, dragHandle, tree }) => {
     const { isCategory, isVendor, isTransaction, name, amount, transactionCount, date } = node.data;
     const isSelected = selectedNodeId === node.id;
     const hasChildren = node.children && node.children.length > 0;
     const isOpen = node.isOpen;
+    const vendorRule = vendorRules.get(name);
+    const isHighlighted = recentlyMovedNodes.has(node.id);
+    const isProcessing = processingNodes.has(node.id);
+    const moveResult = moveResults.get(node.id);
 
     const handleClick = () => {
       if (editingNodeId === node.id) return; // Don't change selection while editing
@@ -130,7 +212,8 @@ const CategoryTreeEditor = ({
       }
       // Announce node selection to screen readers
       const nodeTypeLabel = isCategory ? 'category' : isVendor ? 'vendor' : 'transaction';
-      announceToScreenReader(`Selected ${nodeTypeLabel}: ${name}`);
+      const ruleStatus = vendorRule ? ' with auto-assignment rule' : '';
+      announceToScreenReader(`Selected ${nodeTypeLabel}: ${name}${ruleStatus}`);
     };
 
     const handleDoubleClick = () => {
@@ -264,9 +347,24 @@ const CategoryTreeEditor = ({
 
     const isEditing = editingNodeId === node.id;
 
+    // Build dynamic class list for visual feedback
+    const nodeClasses = [
+      'tree-node',
+      `${node.data.type}-node`,
+      node.data.type,
+      isSelected ? 'selected' : '',
+      hasChildren ? 'has-children' : '',
+      isOpen ? 'expanded' : 'collapsed',
+      isEditing ? 'editing' : '',
+      isHighlighted ? 'recently-moved' : '',
+      isProcessing ? 'processing' : '',
+      moveResult === 'success' ? 'move-success' : '',
+      moveResult === 'error' ? 'move-error' : ''
+    ].filter(Boolean).join(' ');
+
     return (
       <div 
-        className={`tree-node ${node.data.type} ${isSelected ? 'selected' : ''} ${hasChildren ? 'has-children' : ''} ${isOpen ? 'expanded' : 'collapsed'} ${isEditing ? 'editing' : ''}`}
+        className={nodeClasses}
         style={style}
         ref={dragHandle}
         onClick={handleClick}
@@ -279,7 +377,7 @@ const CategoryTreeEditor = ({
         aria-level={node.level + 1}
         aria-setsize={node.parent?.children?.length || treeData.length}
         aria-posinset={node.index + 1}
-        aria-label={`${node.data.type}: ${name}${amount > 0 ? `, ${formatCurrency(amount)}` : ''}${hasChildren ? `, ${node.children.length} child${node.children.length !== 1 ? 'ren' : ''}` : ''}`}
+        aria-label={`${node.data.type}: ${name}${amount > 0 ? `, ${formatCurrency(amount)}` : ''}${hasChildren ? `, ${node.children.length} child${node.children.length !== 1 ? 'ren' : ''}` : ''}${vendorRule ? ' with auto-assignment rule' : ''}`}
         aria-describedby={`node-description-${node.id}`}
         tabIndex={focusedNodeId === node.id ? 0 : -1}
         data-node-id={node.id}
@@ -314,7 +412,7 @@ const CategoryTreeEditor = ({
 
           {/* Icon with enhanced styling */}
           <span className={`node-icon ${isCategory ? 'category-icon' : ''} ${isVendor ? 'vendor-icon' : ''} ${isTransaction ? 'transaction-icon' : ''}`}>
-            {isCategory && (isOpen ? <FiFolderOpen /> : <FiFolder />)}
+                          {isCategory && <FiFolder />}
             {isVendor && <FiTag />}
             {isTransaction && <FiDollarSign />}
           </span>
@@ -383,6 +481,15 @@ const CategoryTreeEditor = ({
             </span>
           )}
 
+          {/* Vendor Rule Indicator */}
+          {isVendor && vendorRule && (
+            <div className="vendor-rule-indicator rule-active">
+              <div className="vendor-rule-tooltip">
+                Auto-rule: {vendorRule.category_name}
+              </div>
+            </div>
+          )}
+
           {/* Context menu trigger */}
           {!isEditing && node.data.type !== 'transaction' && (
             <button 
@@ -402,62 +509,126 @@ const CategoryTreeEditor = ({
         </div>
       </div>
     );
-  };
+  }, [editingNodeId, editingValue, validationError, contextMenu, treeData, selectedNodeId, onSelect, showContextMenu, saveEdit, cancelEditing, vendorRules, recentlyMovedNodes, processingNodes, moveResults, onDelete, onCreateChild, onDuplicate, findNodeById]);
 
-  // Enhanced move handler with validation
-  const handleMove = (args) => {
-    const { dragIds, parentId, index } = args;
+  // Optimized move handler with useCallback
+  const handleMove = useCallback(async (args) => {
+    const { dragIds, parentId } = args;
     
     // Validation logic to prevent invalid drops
-    const isValidMove = validateMove(dragIds[0], parentId, data);
+    const isValidMove = validateMove(dragIds[0], parentId, treeData);
     
     if (!isValidMove) {
       console.warn('Invalid move operation prevented');
       return;
     }
 
-    if (onMove) {
-      onMove(args);
-    }
-  };
+    const dragNode = findNodeById(dragIds[0], treeData);
+    const targetParent = parentId ? findNodeById(parentId, treeData) : null;
 
-  // Move validation function
-  const validateMove = (dragNodeId, targetParentId, treeData) => {
-    if (!dragNodeId || !treeData) return false;
-    
-    const dragNode = findNodeById(dragNodeId, treeData);
-    const targetParent = targetParentId ? findNodeById(targetParentId, treeData) : null;
-    
-    if (!dragNode) return false;
-    
-    // Prevent dropping a node on itself
-    if (dragNodeId === targetParentId) return false;
-    
-    // Prevent dropping a parent into its own child (circular reference)
-    if (targetParentId && isDescendant(targetParentId, dragNodeId, treeData)) {
-      return false;
+    // Check if this is a vendor being moved to a different category
+    if (dragNode && dragNode.type === 'vendor' && targetParent && targetParent.type === 'category') {
+      // Set processing state
+      setProcessingNodes(prev => new Set([...prev, dragNode.id]));
+      
+      try {
+        // Check for existing vendor rules
+        setVendorRuleUpdateModal(prev => ({
+          ...prev,
+          isChecking: true
+        }));
+        
+        const existingRules = await vendorRuleService.getVendorRules({
+          vendor_name: dragNode.name
+        });
+        
+        const conflictingRule = existingRules.find(rule => 
+          rule.vendor_name === dragNode.name && 
+          rule.category_id !== targetParent.id &&
+          rule.is_persistent
+        );
+        
+        if (conflictingRule) {
+          // Show vendor rule update modal
+          setVendorRuleUpdateModal({
+            isOpen: true,
+            vendorName: dragNode.name,
+            oldCategoryName: conflictingRule.category_name,
+            newCategoryName: targetParent.name,
+            existingRule: conflictingRule,
+            newCategoryId: targetParent.id,
+            pendingMoveArgs: args,
+            isChecking: false
+          });
+          
+          // Don't proceed with move yet - wait for user decision
+          setProcessingNodes(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(dragNode.id);
+            return newSet;
+          });
+          return;
+        }
+        
+        // Clear checking state
+        setVendorRuleUpdateModal(prev => ({
+          ...prev,
+          isChecking: false
+        }));
+        
+      } catch (error) {
+        console.error('Error checking vendor rules:', error);
+        
+        // Clear loading state
+        setVendorRuleUpdateModal(prev => ({
+          ...prev,
+          isChecking: false
+        }));
+        
+        // Show user-friendly error message but allow the move to continue
+        const errorMessage = error.response?.data?.message || 'Failed to check vendor rules. The move will continue without rule verification.';
+        
+        // You could show a toast notification here if you have a notification system
+        console.warn('Vendor rule check failed:', errorMessage);
+        
+        // Continue with the move despite the error
+      } finally {
+        // Clear processing state
+        setProcessingNodes(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(dragNode.id);
+          return newSet;
+        });
+      }
     }
-    
-    // Type-based validation rules
-    if (dragNode.type === 'transaction') {
-      // Transactions can only be dropped on vendors or categories
-      if (targetParent && !['vendor', 'category'].includes(targetParent.type)) {
-        return false;
-      }
-    } else if (dragNode.type === 'vendor') {
-      // Vendors can only be dropped on categories or at root level
-      if (targetParent && targetParent.type !== 'category') {
-        return false;
-      }
-    } else if (dragNode.type === 'category') {
-      // Categories can be dropped on other categories or at root level
-      if (targetParent && targetParent.type !== 'category') {
-        return false;
-      }
+
+    // Proceed with the move if no vendor rule conflicts or not a vendor move
+    if (onMove) {
+      // Add visual feedback
+      setRecentlyMovedNodes(prev => new Set([...prev, dragIds[0]]));
+      
+      // Set move result
+      setMoveResults(prev => new Map([...prev, [dragIds[0], { status: 'success', timestamp: Date.now() }]]));
+      
+      // Execute the move
+      onMove(args);
+      
+      // Clear highlighting after animation
+      setTimeout(() => {
+        setRecentlyMovedNodes(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(dragIds[0]);
+          return newSet;
+        });
+        
+        setMoveResults(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(dragIds[0]);
+          return newMap;
+        });
+      }, 2000);
     }
-    
-    return true;
-  };
+  }, [treeData, validateMove, onMove]);
 
   // Helper function to find node by ID
   const findNodeById = (id, nodes) => {
@@ -469,18 +640,6 @@ const CategoryTreeEditor = ({
       }
     }
     return null;
-  };
-
-  // Helper function to check if a node is descendant of another
-  const isDescendant = (potentialDescendantId, ancestorId, nodes) => {
-    const ancestor = findNodeById(ancestorId, nodes);
-    if (!ancestor || !ancestor.children) return false;
-    
-    for (const child of ancestor.children) {
-      if (child.id === potentialDescendantId) return true;
-      if (isDescendant(potentialDescendantId, child.id, nodes)) return true;
-    }
-    return false;
   };
 
   // Inline editing functions
@@ -537,7 +696,7 @@ const CategoryTreeEditor = ({
     }
     
     return null;
-  }, [data]);
+  }, [data, findNodeById]);
 
   const saveEdit = useCallback(() => {
     if (!editingNodeId || !editingValue) return;
@@ -563,7 +722,7 @@ const CategoryTreeEditor = ({
     }
     
     cancelEditing();
-  }, [editingNodeId, editingValue, data, validateNodeName, onRename, cancelEditing]);
+  }, [editingNodeId, editingValue, data, validateNodeName, onRename, cancelEditing, findNodeById]);
 
   // Context menu functions
   const showContextMenu = useCallback((e, nodeId) => {
@@ -600,6 +759,9 @@ const CategoryTreeEditor = ({
       case 'add-child':
         if (onCreateChild) {
           onCreateChild({ parentId: nodeId, parentNode: node });
+        } else {
+          // Use internal modal if no external handler provided
+          handleCreateChildCategory(nodeId, node);
         }
         break;
       case 'duplicate':
@@ -610,13 +772,109 @@ const CategoryTreeEditor = ({
       default:
         break;
     }
-  }, [data, hideContextMenu, startEditing, onDelete, onCreateChild, onDuplicate]);
+  }, [data, hideContextMenu, startEditing, onDelete, onCreateChild, onDuplicate, findNodeById, handleCreateChildCategory]);
 
   const handleRename = (args) => {
     if (onRename) {
       onRename(args);
     }
   };
+
+  // Vendor rule update modal handlers
+  const handleVendorRuleUpdated = async (result) => {
+    const { pendingMoveArgs, vendorName } = vendorRuleUpdateModal;
+    
+    // Update vendor rules cache based on the result
+    if (result.action === 'updated' && result.updatedRule) {
+      setVendorRules(prev => new Map([...prev, [vendorName, result.updatedRule]]));
+    } else if (result.action === 'removed') {
+      setVendorRules(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(vendorName);
+        return newMap;
+      });
+    }
+    
+    // Close the modal
+    setVendorRuleUpdateModal({
+      isOpen: false,
+      vendorName: '',
+      oldCategoryName: '',
+      newCategoryName: '',
+      existingRule: null,
+      newCategoryId: null,
+      pendingMoveArgs: null,
+      isChecking: false
+    });
+
+    // Proceed with the move with visual feedback
+    if (pendingMoveArgs && onMove) {
+      try {
+        await onMove(pendingMoveArgs);
+        addMoveHighlight(pendingMoveArgs.dragIds[0], 'success');
+        announceToScreenReader(`Successfully moved ${vendorName}`);
+      } catch (error) {
+        console.error('Error during pending move operation:', error);
+        addMoveHighlight(pendingMoveArgs.dragIds[0], 'error');
+        announceToScreenReader(`Failed to move ${vendorName}: ${error.message}`);
+      } finally {
+        setNodeProcessing(pendingMoveArgs.dragIds[0], false);
+      }
+    }
+
+    // Announce the result to screen readers
+    if (result.message) {
+      announceToScreenReader(result.message);
+    }
+  };
+
+  const handleVendorRuleModalClose = () => {
+    setVendorRuleUpdateModal({
+      isOpen: false,
+      vendorName: '',
+      oldCategoryName: '',
+      newCategoryName: '',
+      existingRule: null,
+      newCategoryId: null,
+      pendingMoveArgs: null,
+      isChecking: false
+    });
+  };
+
+  // Category creation modal handlers
+  const handleCreateRootCategory = useCallback(() => {
+    setCategoryCreationModal({
+      isOpen: true,
+      preSelectedParent: null
+    });
+  }, []);
+
+  const handleCreateChildCategory = useCallback((parentId, parentNode) => {
+    setCategoryCreationModal({
+      isOpen: true,
+      preSelectedParent: {
+        id: parentId,
+        name: parentNode.name
+      }
+    });
+  }, []);
+
+  const handleCategoryCreationModalClose = () => {
+    setCategoryCreationModal({
+      isOpen: false,
+      preSelectedParent: null
+    });
+  };
+
+  const handleCategoryCreated = useCallback((newCategory) => {
+    // Notify parent component about the new category
+    if (onCategoryCreated) {
+      onCategoryCreated(newCategory);
+    }
+    
+    // Announce to screen readers
+    announceToScreenReader(`Category "${newCategory.name}" created successfully`);
+  }, [onCategoryCreated, announceToScreenReader]);
 
   // Context Menu Component
   const ContextMenu = () => {
@@ -740,6 +998,20 @@ const CategoryTreeEditor = ({
         {announceText}
       </div>
 
+      {/* Tree editor toolbar */}
+      <div className="tree-editor-toolbar">
+        <button
+          type="button"
+          className="btn btn-primary tree-add-root-btn"
+          onClick={handleCreateRootCategory}
+          title="Create a new root-level category"
+          aria-label="Create new category"
+        >
+          <FiPlus />
+          <span>New Category</span>
+        </button>
+      </div>
+
       <Tree
         ref={treeRef}
         data={treeData}
@@ -749,10 +1021,14 @@ const CategoryTreeEditor = ({
         openByDefault={false}
         indent={24}
         rowHeight={36}
+        overscanCount={5}
         width="100%"
         height="100%"
         padding={8}
         className="arborist-tree"
+        // Performance optimizations
+        disableMultiSelection={false}
+        selectionFollowsFocus={true}
         // Accessibility attributes
         role="tree"
         aria-label="Category tree with vendors and transactions"
@@ -762,44 +1038,65 @@ const CategoryTreeEditor = ({
         disableDrag={false}
         disableDrop={false}
         dragPreview={true}
-        // Custom drag and drop behavior
+        // Optimized virtualization settings
+        renderContainer={({ children, style, dragDropManager, ref }) => (
+          <div 
+            ref={ref}
+            style={{
+              ...style,
+              willChange: 'transform',
+              contain: 'layout style paint'
+            }}
+          >
+            {children}
+          </div>
+        )}
+        // Custom drag and drop behavior with performance optimizations
         onCanDrop={(args) => {
           const isValid = validateMove(args.dragIds[0], args.parentId, data);
           
-          // Add visual feedback for invalid drops
+          // Throttled visual feedback for invalid drops
           if (args.dragNode && args.parentNode) {
             const targetElement = document.querySelector(`[data-node-id="${args.parentNode.id}"]`);
             if (targetElement) {
-              if (isValid) {
-                targetElement.setAttribute('data-drop-target', 'valid');
-              } else {
-                targetElement.setAttribute('data-drop-target', 'invalid');
-              }
+              requestAnimationFrame(() => {
+                if (isValid) {
+                  targetElement.setAttribute('data-drop-target', 'valid');
+                } else {
+                  targetElement.setAttribute('data-drop-target', 'invalid');
+                }
+              });
             }
           }
           
           return isValid;
         }}
         onWillReceiveDrop={(args) => {
-          // Clean up visual feedback
-          const allNodes = document.querySelectorAll('[data-drop-target]');
-          allNodes.forEach(node => node.removeAttribute('data-drop-target'));
+          // Clean up visual feedback using animation frame
+          requestAnimationFrame(() => {
+            const allNodes = document.querySelectorAll('[data-drop-target]');
+            allNodes.forEach(node => node.removeAttribute('data-drop-target'));
+          });
           
           return validateMove(args.dragIds[0], args.parentId, data);
         }}
-        // Enhanced drag start and end handlers
+        // Enhanced drag start and end handlers with performance optimization
         onDragStart={(args) => {
           const dragElement = document.querySelector(`[data-node-id="${args.dragIds[0]}"]`);
           if (dragElement) {
-            dragElement.setAttribute('data-dragging', 'true');
+            requestAnimationFrame(() => {
+              dragElement.setAttribute('data-dragging', 'true');
+            });
           }
         }}
         onDragEnd={(args) => {
-          // Clean up all drag-related attributes
-          const allNodes = document.querySelectorAll('[data-dragging], [data-drop-target]');
-          allNodes.forEach(node => {
-            node.removeAttribute('data-dragging');
-            node.removeAttribute('data-drop-target');
+          // Clean up all drag-related attributes using animation frame
+          requestAnimationFrame(() => {
+            const allNodes = document.querySelectorAll('[data-dragging], [data-drop-target]');
+            allNodes.forEach(node => {
+              node.removeAttribute('data-dragging');
+              node.removeAttribute('data-drop-target');
+            });
           });
         }}
       />
@@ -814,9 +1111,29 @@ const CategoryTreeEditor = ({
       </div>
       
       <ContextMenu />
+      
+      <VendorRuleUpdateModal
+        isOpen={vendorRuleUpdateModal.isOpen}
+        onClose={handleVendorRuleModalClose}
+        vendorName={vendorRuleUpdateModal.vendorName}
+        oldCategoryName={vendorRuleUpdateModal.oldCategoryName}
+        newCategoryName={vendorRuleUpdateModal.newCategoryName}
+        existingRule={vendorRuleUpdateModal.existingRule}
+        newCategoryId={vendorRuleUpdateModal.newCategoryId}
+        onRuleUpdated={handleVendorRuleUpdated}
+        isChecking={vendorRuleUpdateModal.isChecking}
+      />
+      
+      <CategoryCreationModal
+        isOpen={categoryCreationModal.isOpen}
+        onClose={handleCategoryCreationModalClose}
+        onCategoryCreated={handleCategoryCreated}
+        preSelectedParent={categoryCreationModal.preSelectedParent}
+        availableCategories={data}
+      />
     </div>
   );
-};
+});
 
 CategoryTreeEditor.propTypes = {
   data: PropTypes.array,
@@ -825,7 +1142,9 @@ CategoryTreeEditor.propTypes = {
   onSelect: PropTypes.func,
   onDelete: PropTypes.func,
   onCreateChild: PropTypes.func,
+  onCreateRoot: PropTypes.func,
   onDuplicate: PropTypes.func,
+  onCategoryCreated: PropTypes.func,
   transactions: PropTypes.array,
   categorySpendingTotals: PropTypes.object,
   selectedNodeId: PropTypes.string,
@@ -843,7 +1162,9 @@ CategoryTreeEditor.defaultProps = {
   onSelect: () => {},
   onDelete: () => {},
   onCreateChild: () => {},
-  onDuplicate: () => {}
+  onCreateRoot: () => {},
+  onDuplicate: () => {},
+  onCategoryCreated: () => {}
 };
 
 export default CategoryTreeEditor; 
