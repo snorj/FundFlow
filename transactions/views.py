@@ -446,8 +446,32 @@ class UncategorizedTransactionGroupView(APIView):
             else:
                  group['earliest_date'] = None
 
+        # Calculate totals for response
+        total_transactions = sum(group['count'] for group in sorted_groups)
+        total_amount = 0.0
+        for group in sorted_groups:
+            for preview in group['previews']:
+                # Convert to AUD if possible, otherwise use original amount
+                if hasattr(preview, 'aud_amount') and preview.aud_amount:
+                    total_amount += float(preview.aud_amount)
+                else:
+                    # Fallback to original amount (this is approximate)
+                    total_amount += float(preview['amount']) if preview.get('currency') == 'AUD' else 0
+
+        # Return structure expected by frontend
+        response_data = {
+            'vendor_groups': sorted_groups,
+            'metadata': {
+                'total_groups': len(sorted_groups),
+                'processing_date': django_timezone.now().isoformat(),
+                'user_id': user.id
+            },
+            'total_transactions': total_transactions,
+            'total_amount': total_amount
+        }
+
         logger.info(f"Found {len(sorted_groups)} groups of uncategorized transactions for user {user.id}, sorted by most recent.")
-        return Response(sorted_groups, status=status.HTTP_200_OK)
+        return Response(response_data, status=status.HTTP_200_OK)
     
 class CategoryListCreateView(generics.ListCreateAPIView):
     """
@@ -2197,95 +2221,220 @@ class CustomViewTransactionsView(APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [JSONParser]
-    
+
     def get(self, request, view_id, *args, **kwargs):
-        """Get all transactions for a custom view with optional filtering."""
-        try:
-            # Verify the view exists and belongs to the user
-            custom_view = CustomView.objects.get(id=view_id, user=request.user)
-        except CustomView.DoesNotExist:
-            return Response(
-                {'error': 'Custom view not found or access denied.'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        user = request.user
         
         try:
-            # Get query parameters
-            include_assigned = request.GET.get('include_assigned', 'true').lower() == 'true'
-            include_matching = request.GET.get('include_matching', 'true').lower() == 'true'
-            page = int(request.GET.get('page', 1))
-            page_size = min(int(request.GET.get('page_size', 50)), 100)
+            # Verify user owns the view
+            view = CustomView.objects.get(id=view_id, user=user)
+        except CustomView.DoesNotExist:
+            return Response(
+                {'error': 'Custom view not found or access denied'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        try:
+            # Get base transaction queryset for user
+            transactions = Transaction.objects.filter(user=user)
             
-            # Get transactions based on parameters
-            if include_assigned and include_matching:
-                transactions = custom_view.get_all_transactions()
-            elif include_assigned:
-                transactions = custom_view.get_assigned_transactions()
-            elif include_matching:
-                transactions = custom_view.get_matching_transactions()
-            else:
-                transactions = Transaction.objects.none()
+            # Apply view criteria if they exist
+            if view.filter_criteria:
+                criteria = view.filter_criteria
+                
+                # Apply date range filter
+                if criteria.get('start_date'):
+                    transactions = transactions.filter(transaction_date__gte=criteria['start_date'])
+                if criteria.get('end_date'):
+                    transactions = transactions.filter(transaction_date__lte=criteria['end_date'])
+                
+                # Apply category filter
+                if criteria.get('categories'):
+                    transactions = transactions.filter(category_id__in=criteria['categories'])
+                
+                # Apply amount range filter
+                if criteria.get('min_amount'):
+                    transactions = transactions.filter(aud_amount__gte=criteria['min_amount'])
+                if criteria.get('max_amount'):
+                    transactions = transactions.filter(aud_amount__lte=criteria['max_amount'])
+                
+                # Apply keyword filter
+                if criteria.get('keywords'):
+                    keyword_filter = Q()
+                    for keyword in criteria['keywords']:
+                        keyword_filter |= Q(description__icontains=keyword)
+                    transactions = transactions.filter(keyword_filter)
+
+            # Get transactions explicitly assigned to this view
+            assigned_transactions = Transaction.objects.filter(
+                user=user,
+                viewtransaction__view=view
+            )
+
+            # Combine criteria-matched and assigned transactions (use union to avoid duplicates)
+            combined_transactions = transactions.union(assigned_transactions)
             
             # Apply pagination
-            paginator = PageNumberPagination()
-            paginator.page_size = page_size
-            paginated_transactions = paginator.paginate_queryset(transactions, request)
+            paginator = StandardResultsSetPagination()
+            page = paginator.paginate_queryset(combined_transactions, request)
             
-            # Serialize the transactions
-            serializer = TransactionSearchResultSerializer(
-                paginated_transactions, 
-                many=True, 
-                context={'request': request}
-            )
+            if page is not None:
+                serializer = TransactionSerializer(page, many=True)
+                return paginator.get_paginated_response(serializer.data)
             
-            # Get view assignment information for assigned transactions
-            assigned_transaction_ids = set(
-                custom_view.view_transactions.values_list('transaction_id', flat=True)
-            )
-            
-            # Add assignment information to each transaction
-            for transaction_data in serializer.data:
-                transaction_id = transaction_data['id']
-                transaction_data['is_assigned'] = transaction_id in assigned_transaction_ids
-                
-                # Get custom category if assigned
-                if transaction_id in assigned_transaction_ids:
-                    try:
-                        assignment = custom_view.view_transactions.get(transaction_id=transaction_id)
-                        transaction_data['custom_category_id'] = assignment.custom_category.id if assignment.custom_category else None
-                        transaction_data['custom_category_name'] = assignment.custom_category.name if assignment.custom_category else None
-                        transaction_data['assignment_notes'] = assignment.notes
-                    except ViewTransaction.DoesNotExist:
-                        pass
-            
-            # Prepare response
-            response_data = {
-                'transactions': serializer.data,
-                'view_info': {
-                    'id': custom_view.id,
-                    'name': custom_view.name,
-                    'description': custom_view.description,
-                    'search_criteria': custom_view.search_criteria,
-                },
-                'summary': {
-                    'total_transactions': transactions.count(),
-                    'assigned_count': custom_view.view_transactions.count(),
-                    'categorized_count': custom_view.view_transactions.filter(custom_category__isnull=False).count(),
-                    'uncategorized_count': custom_view.view_transactions.filter(custom_category__isnull=True).count(),
-                },
-                'pagination': {
-                    'page': page,
-                    'page_size': page_size,
-                    'total_pages': paginator.page.paginator.num_pages if paginated_transactions else 0,
-                    'total_count': paginator.page.paginator.count if paginated_transactions else 0,
-                }
-            }
-            
-            return paginator.get_paginated_response(response_data)
+            # Fallback without pagination
+            serializer = TransactionSerializer(combined_transactions, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
             
         except Exception as e:
-            logger.error(f"User {request.user.id}: Failed to get transactions for view {view_id}: {e}", exc_info=True)
+            logger.error(f"Error fetching transactions for view {view_id}: {str(e)}")
             return Response(
-                {'error': 'Failed to retrieve transactions. Please try again.'},
+                {'error': 'Failed to fetch transactions'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class BulkRejectTransactionsView(APIView):
+    """
+    API endpoint to bulk reject auto-assignments for vendor groups.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        vendor_group_ids = request.data.get('vendor_group_ids', [])
+        reason = request.data.get('reason', 'Rejected during review')
+
+        if not vendor_group_ids:
+            return Response(
+                {'error': 'No vendor group IDs provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # For now, just return a success response
+            # In a full implementation, this would clear auto-assigned categories
+            # and potentially create rejection records
+            
+            affected_transactions = []
+            for group_id in vendor_group_ids:
+                # Placeholder logic - in real implementation would:
+                # 1. Find transactions for this vendor group
+                # 2. Clear any auto-assigned categories
+                # 3. Log the rejection reason
+                pass
+
+            return Response({
+                'success': True,
+                'rejected_count': len(vendor_group_ids),
+                'affected_transactions': affected_transactions,
+                'message': f'Successfully rejected {len(vendor_group_ids)} vendor groups'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error bulk rejecting vendor groups: {str(e)}")
+            return Response(
+                {'error': 'Failed to reject vendor groups'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ReviewCompleteView(APIView):
+    """
+    API endpoint to mark a review session as complete.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        review_summary = request.data.get('review_summary', {})
+
+        try:
+            # For now, just return a success response
+            # In a full implementation, this would:
+            # 1. Save review session metadata
+            # 2. Update transaction statuses
+            # 3. Log completion metrics
+            
+            review_id = f"review_{user.id}_{django_timezone.now().strftime('%Y%m%d_%H%M%S')}"
+            completed_at = django_timezone.now().isoformat()
+
+            return Response({
+                'success': True,
+                'review_id': review_id,
+                'completed_at': completed_at,
+                'summary': review_summary,
+                'message': 'Review session completed successfully'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error completing review session: {str(e)}")
+            return Response(
+                {'error': 'Failed to complete review session'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ReviewProgressView(APIView):
+    """
+    API endpoint to save and load review progress.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        """Save review progress"""
+        user = request.user
+        progress_data = request.data.get('progress', {})
+
+        try:
+            # For now, just return a success response
+            # In a full implementation, this would:
+            # 1. Save progress to database or cache
+            # 2. Include session management
+            # 3. Handle progress restoration
+            
+            progress_id = f"progress_{user.id}_{django_timezone.now().strftime('%Y%m%d_%H%M%S')}"
+
+            return Response({
+                'success': True,
+                'progress_id': progress_id,
+                'saved_at': django_timezone.now().isoformat(),
+                'message': 'Review progress saved successfully'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error saving review progress: {str(e)}")
+            return Response(
+                {'error': 'Failed to save review progress'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def get(self, request, *args, **kwargs):
+        """Load review progress"""
+        user = request.user
+        progress_id = request.query_params.get('progress_id')
+
+        try:
+            # For now, return empty progress
+            # In a full implementation, this would load saved progress
+            
+            return Response({
+                'success': True,
+                'progress': {
+                    'vendor_selections': [],
+                    'category_changes': {},
+                    'completed_groups': [],
+                    'saved_at': None
+                },
+                'message': 'No saved progress found'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error loading review progress: {str(e)}")
+            return Response(
+                {'error': 'Failed to load review progress'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

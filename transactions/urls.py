@@ -15,6 +15,9 @@ from .views import (
     TransactionDestroyView,
     UncategorizedTransactionGroupView,
     BatchCategorizeTransactionView,
+    BulkRejectTransactionsView,
+    ReviewCompleteView,
+    ReviewProgressView,
     DashboardBalanceView,
     TransactionSearchView,
     CustomViewListCreateView,
@@ -47,7 +50,12 @@ urlpatterns = [
     path('transactions/create/', TransactionCreateView.as_view(), name='transaction-create'),
     path('transactions/<int:pk>/', TransactionUpdateView.as_view(), name='transaction-detail-update'),
     path('transactions/uncategorized-groups/', UncategorizedTransactionGroupView.as_view(), name='transaction-uncategorized-groups'),
+    path('transactions/pending-review/', UncategorizedTransactionGroupView.as_view(), name='transaction-pending-review'),
     path('transactions/batch-categorize/', BatchCategorizeTransactionView.as_view(), name='transaction-batch-categorize'),
+    path('transactions/bulk-categorize/', BatchCategorizeTransactionView.as_view(), name='transaction-bulk-categorize'),
+    path('transactions/bulk-reject/', BulkRejectTransactionsView.as_view(), name='transaction-bulk-reject'),
+    path('transactions/review-complete/', ReviewCompleteView.as_view(), name='transaction-review-complete'),
+    path('transactions/review-progress/', ReviewProgressView.as_view(), name='transaction-review-progress'),
     
     # Dashboard URLs
     path('dashboard/balance/', DashboardBalanceView.as_view(), name='dashboard-balance'),

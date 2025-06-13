@@ -7,7 +7,6 @@ import {
   FiDollarSign,
   FiMoreVertical,
   FiChevronRight,
-  FiChevronDown,
   FiEdit3,
   FiTrash2,
   FiPlus,
@@ -423,7 +422,7 @@ const CategoryTreeEditor = ({
 
   // Enhanced move handler with validation and vendor rule checking
   const handleMove = async (args) => {
-    const { dragIds, parentId, index } = args;
+    const { dragIds, parentId } = args;
     
     // Validation logic to prevent invalid drops
     const isValidMove = validateMove(dragIds[0], parentId, data);

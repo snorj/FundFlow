@@ -20,7 +20,6 @@ const TreeEditorTestPage = () => {
     pushOperation,
     undo,
     redo,
-    clearHistory,
     getStatus,
     getOperationPreview
   } = useHistoryStack(30);
