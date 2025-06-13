@@ -9,7 +9,8 @@ import {
   FiSearch,
   FiSettings, 
   FiLogOut, 
-  FiUsers
+  FiUsers,
+  FiCheckSquare
 } from 'react-icons/fi';
 import './Sidebar.css';
 
@@ -25,6 +26,7 @@ const Sidebar = () => {
   const navItems = [
     { path: '/dashboard', icon: FiHome, label: 'Dashboard' },
     { path: '/upload', icon: FiUpload, label: 'Upload' },
+    { path: '/review', icon: FiCheckSquare, label: 'Review' },
     { path: '/categorise', icon: FiTag, label: 'Categorise' },
     { path: '/search', icon: FiSearch, label: 'Search' },
     { path: '/visualise', icon: FiBarChart, label: 'Visualise' },

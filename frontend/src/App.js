@@ -11,6 +11,7 @@ import CategoriseTransactionsPage from './pages/CategoriseTransactionsPage';
 import VisualisePage from './pages/VisualisePage';
 import TreeEditorTestPage from './pages/TreeEditorTestPage';
 import TransactionSearchPage from './pages/TransactionSearchPage';
+import ReviewTransactionsPage from './pages/ReviewTransactionsPage';
 import MainLayout from './components/layout/MainLayout';
 
 const Settings = () => <div style={{ padding: '20px' }}>Settings Page Content</div>;
@@ -32,6 +33,7 @@ function App() {
               <Route path="/upload" element={<UploadPage />} />
               <Route path="/categorise" element={<CategorisePage />} />
               <Route path="/categorise/transactions" element={<CategoriseTransactionsPage />} />
+              <Route path="/review" element={<ReviewTransactionsPage />} />
               <Route path="/visualise" element={<VisualisePage />} />
               <Route path="/search" element={<TransactionSearchPage />} />
               <Route path="/tree-editor-test" element={<TreeEditorTestPage />} />
