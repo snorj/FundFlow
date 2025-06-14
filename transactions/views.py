@@ -521,21 +521,18 @@ class UncategorizedTransactionGroupView(APIView):
         # Check if client wants enhanced format with metadata
         include_metadata = request.query_params.get('include_metadata', 'false').lower() == 'true'
         
-        if include_metadata:
-            # Return enhanced structure with metadata
-            response_data = {
-                'vendor_groups': sorted_groups,
-                'metadata': {
-                    'total_groups': len(sorted_groups),
-                    'processing_date': django_timezone.now().isoformat(),
-                    'user_id': user.id
-                },
-                'total_transactions': total_transactions,
-                'total_amount': total_amount
-            }
-        else:
-            # Return simple list for backward compatibility
-            response_data = sorted_groups
+        # For the review endpoint, always return the enhanced format with vendor_groups
+        # This endpoint is specifically for the review interface which expects this structure
+        response_data = {
+            'vendor_groups': sorted_groups,
+            'metadata': {
+                'total_groups': len(sorted_groups),
+                'processing_date': django_timezone.now().isoformat(),
+                'user_id': user.id
+            },
+            'total_transactions': total_transactions,
+            'total_amount': total_amount
+        }
 
         logger.info(f"Found {len(sorted_groups)} groups of uncategorized transactions for user {user.id}, sorted by most recent.")
         return Response(response_data, status=status.HTTP_200_OK)
