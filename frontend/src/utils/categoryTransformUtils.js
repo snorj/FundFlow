@@ -301,7 +301,7 @@ export const filterTreeData = (treeData, searchTerm, visibleItemIds = null) => {
     // Filter children recursively
     const filteredChildren = node.children
       ? node.children
-          .map(child => filterNode(child))
+      .map(child => filterNode(child))
           .filter(child => child !== null)
       : [];
 

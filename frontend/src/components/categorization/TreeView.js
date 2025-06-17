@@ -1,12 +1,19 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { useDrop } from 'react-dnd';
 import TreeNode from './TreeNode';
 import { filterTreeData } from '../../utils/categoryTransformUtils';
 import './TreeView.css';
 
+const ItemTypes = {
+  CATEGORY: 'category',
+  VENDOR: 'vendor',
+  TRANSACTION: 'transaction'
+};
+
 const TreeView = ({ 
-  data = [], 
+  data = [],
   searchTerm = '', 
   onCategorySelect,
   onVendorSelect,
@@ -21,16 +28,22 @@ const TreeView = ({
   selectedTransactionId,
   deletingCategoryId,
   isCreating,
-  visibleItemIds
+  visibleItemIds,
+  expandedNodes: externalExpandedNodes,
+  onExpandedNodesChange
 }) => {
-  const [expandedNodes, setExpandedNodes] = useState(new Set());
+  const [internalExpandedNodes, setInternalExpandedNodes] = useState(new Set());
   const [draggedItem, setDraggedItem] = useState(null);
+
+  // Use external expanded nodes if provided, otherwise use internal state
+  const expandedNodes = externalExpandedNodes || internalExpandedNodes;
+  const setExpandedNodes = onExpandedNodesChange || setInternalExpandedNodes;
 
   // Filter data based on search term and visible items
   const filteredData = useMemo(() => {
     if (!searchTerm.trim() && !visibleItemIds) {
       return data;
-    }
+      }
     return filterTreeData(data, searchTerm, visibleItemIds);
   }, [data, searchTerm, visibleItemIds]);
 
@@ -45,8 +58,8 @@ const TreeView = ({
       }
       return newSet;
     });
-  }, []);
-
+  }, [setExpandedNodes]);
+  
   // Handle drag start
   const handleDragStart = useCallback((item) => {
     setDraggedItem(item);
@@ -60,8 +73,16 @@ const TreeView = ({
   // Handle drop operation
   const handleDrop = useCallback((draggedNode, targetNode, position) => {
     // Validate the drop operation
-    if (!draggedNode || !targetNode) {
+    if (!draggedNode) {
       onDropValidation?.(false, 'Invalid drop operation', { draggedNode, targetNode });
+      return;
+    }
+
+    // Handle root-level drops (making items top-level)
+    if (position === 'root' || !targetNode) {
+      if (onCategoryMove) {
+        onCategoryMove(draggedNode.id, null, 'root');
+      }
       return;
     }
 
@@ -72,7 +93,7 @@ const TreeView = ({
     }
 
     // Prevent dropping parent into child (circular dependency)
-    if (isDescendant(targetNode, draggedNode)) {
+    if (position === 'inside' && isDescendant(targetNode, draggedNode)) {
       onDropValidation?.(false, 'Cannot create circular dependency', { draggedNode, targetNode });
       return;
     }
@@ -82,8 +103,8 @@ const TreeView = ({
       onDropValidation?.(false, 'Only categories can be moved', { draggedNode, targetNode });
       return;
     }
-
-    // Call the move handler
+      
+    // Call the move handler with the position
     if (onCategoryMove) {
       onCategoryMove(draggedNode.id, targetNode.id, position);
     }
@@ -92,9 +113,9 @@ const TreeView = ({
   // Helper function to check if target is a descendant of source
   const isDescendant = useCallback((target, source) => {
     if (!target.children || target.children.length === 0) {
-      return false;
-    }
-    
+          return false;
+        }
+        
     for (const child of target.children) {
       if (child.id === source.id || isDescendant(child, source)) {
         return true;
@@ -113,7 +134,7 @@ const TreeView = ({
       });
     }
   }, [searchTerm, visibleItemIds]);
-
+  
   return (
     <DndProvider backend={HTML5Backend}>
       <div className="tree-view">
@@ -122,15 +143,15 @@ const TreeView = ({
             {searchTerm ? 'No items match your search' : 'No categories available'}
           </div>
         ) : (
-          <div className="tree-nodes">
+          <RootDropZone onDrop={handleDrop}>
             {filteredData.map(node => (
-                             <TreeNode
-                 key={node.id}
-                 node={node}
-                 level={0}
-                 expanded={expandedNodes.has(node.id)}
-                 expandedNodes={expandedNodes}
-                 onToggleExpand={handleToggleExpand}
+              <TreeNode
+                key={node.id}
+                node={node}
+                level={0}
+                expanded={expandedNodes.has(node.id)}
+                expandedNodes={expandedNodes}
+                onToggleExpand={handleToggleExpand}
                 onCategorySelect={onCategorySelect}
                 onVendorSelect={onVendorSelect}
                 onTransactionSelect={onTransactionSelect}
@@ -149,11 +170,37 @@ const TreeView = ({
                 searchTerm={searchTerm}
               />
             ))}
-          </div>
+          </RootDropZone>
         )}
       </div>
     </DndProvider>
   );
 };
 
-export default TreeView; 
+// Root drop zone component for making items top-level
+const RootDropZone = ({ onDrop, children }) => {
+  const [{ isOver, canDrop }, drop] = useDrop({
+    accept: ItemTypes.CATEGORY,
+    drop: (item, monitor) => {
+      if (!monitor.didDrop()) {
+        // Drop on root means make it top-level (no parent)
+        onDrop?.(item.node, null, 'root');
+      }
+    },
+    collect: (monitor) => ({
+      isOver: monitor.isOver({ shallow: true }),
+      canDrop: monitor.canDrop(),
+    }),
+  });
+
+  return (
+    <div 
+      ref={drop}
+      className={`tree-nodes ${isOver && canDrop ? 'root-drop-target' : ''}`}
+    >
+      {children}
+    </div>
+  );
+};
+
+export default TreeView;

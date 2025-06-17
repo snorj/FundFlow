@@ -27,10 +27,14 @@ const CategorisePage = () => {
 
   const [showTopLevelInput, setShowTopLevelInput] = useState(false);
   const [newTopLevelName, setNewTopLevelName] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
-  const [createError, setCreateError] = useState(null);
+  const [expandedNodes, setExpandedNodes] = useState(new Set());
 
+  // State for operations
+  const [isCreating, setIsCreating] = useState(false);
   const [deletingCategoryId, setDeletingCategoryId] = useState(null);
+
+  // Error states  
+  const [createError, setCreateError] = useState(null);
   const [deleteError, setDeleteError] = useState(null);
 
   // Transaction details modal state
@@ -143,43 +147,67 @@ const CategorisePage = () => {
     console.log('Drop validation:', { success, message, details });
     
     if (success) {
-      // Refresh data after successful move to get updated structure from backend
-      fetchItems();
+      // Show success feedback without refreshing data (optimistic updates handle this)
+      console.log('Drag operation successful:', message);
     } else {
       // Show error message for failed operations
       console.warn('Drag operation failed:', message);
     }
-  }, [fetchItems]);
+  }, []);
 
   // Handler for category move operations
   const handleCategoryMove = useCallback(async (draggedCategoryId, targetCategoryId, position) => {
     try {
-      // For now, we'll implement a simple parent change
-      // The position parameter can be 'inside', 'before', or 'after'
-      const newParentId = position === 'inside' ? targetCategoryId : null;
+      // Perform optimistic update
+      const updatedItems = [...allItems];
+      const draggedIndex = updatedItems.findIndex(item => item.id === draggedCategoryId);
       
+      if (draggedIndex === -1) {
+        throw new Error('Dragged category not found');
+      }
+      
+      const draggedCategory = { ...updatedItems[draggedIndex] };
+      
+      // Determine the new parent based on position
+      let newParentId = null;
+      if (position === 'inside') {
+        newParentId = targetCategoryId;
+      } else if (position === 'before' || position === 'after') {
+        const targetCategory = allItems.find(item => item.id === targetCategoryId);
+        newParentId = targetCategory?.parent || null;
+      } else if (position === 'root') {
+        newParentId = null;
+      }
+      
+      // Update the dragged category's parent
+      draggedCategory.parent = newParentId;
+      updatedItems[draggedIndex] = draggedCategory;
+      
+      // Optimistically update the UI
+      setAllItems(updatedItems);
+      
+      // Perform the actual backend update
       await categoryService.updateCategory(draggedCategoryId, { 
         parent: newParentId 
       });
       
-      // Refresh data to reflect the change
-      await fetchItems();
+      // Success! No need to refetch - optimistic update is already applied
+      console.log('Category moved successfully:', draggedCategoryId, 'to position:', position);
       
-      // Notify success
-      handleDropValidation(true, 'Category moved successfully', {
-        draggedCategoryId,
-        targetCategoryId,
-        position
-      });
     } catch (error) {
       console.error('Failed to move category:', error);
+      
+      // On error, rollback by refetching the original data
+      await fetchItems();
+      
+      // Show error feedback
       handleDropValidation(false, error.message || 'Failed to move category', {
         draggedCategoryId,
         targetCategoryId,
         position
       });
     }
-  }, [fetchItems, handleDropValidation]);
+  }, [allItems, categoryService, handleDropValidation, setAllItems, fetchItems]);
 
   const itemsById = useMemo(() => 
     new Map(allItems.map(item => [item.id, item]))
@@ -273,11 +301,8 @@ const CategorisePage = () => {
   };
 
   const handleCollapseAll = () => {
-    // Use the tree ref to collapse all nodes
-    if (treeRef.current) {
-      // react-arborist tree API to close all nodes
-      treeRef.current.closeAll?.();
-    }
+    // Collapse all expanded nodes
+    setExpandedNodes(new Set());
   };
 
   const isPageBusy = isLoadingCategories || isCreating || deletingCategoryId !== null;
@@ -402,6 +427,8 @@ const CategorisePage = () => {
               deletingCategoryId={deletingCategoryId}
               isCreating={isCreating}
               visibleItemIds={visibleItemIds}
+              expandedNodes={expandedNodes}
+              onExpandedNodesChange={setExpandedNodes}
             />
           )}
         </div>

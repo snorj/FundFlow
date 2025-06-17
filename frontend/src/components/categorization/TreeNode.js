@@ -45,6 +45,7 @@ const TreeNode = ({
   const [isHovered, setIsHovered] = useState(false);
   const [showCreateInput, setShowCreateInput] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [dropPosition, setDropPosition] = useState(null);
 
   // Drag functionality (only for categories)
   const [{ isDragging }, drag] = useDrag({
@@ -62,12 +63,36 @@ const TreeNode = ({
     canDrag: () => node.type === 'category' && !node.is_system
   });
 
-  // Drop functionality
+  // Drop functionality - enhanced to support multiple drop positions
   const [{ isOver, canDrop }, drop] = useDrop({
     accept: ItemTypes.CATEGORY,
+    hover: (item, monitor) => {
+      if (!monitor.canDrop()) return;
+      
+      const hoverBoundingRect = ref.current?.getBoundingClientRect();
+      if (!hoverBoundingRect) return;
+      
+      const hoverMiddleY = (hoverBoundingRect.bottom - hoverBoundingRect.top) / 2;
+      const clientOffset = monitor.getClientOffset();
+      const hoverClientY = clientOffset.y - hoverBoundingRect.top;
+      
+      // Determine drop position based on cursor position
+      let position;
+      if (hoverClientY < hoverMiddleY * 0.25) {
+        position = 'before';
+      } else if (hoverClientY > hoverMiddleY * 1.75) {
+        position = 'after';
+      } else {
+        position = 'inside';
+      }
+      
+      setDropPosition(position);
+    },
     drop: (item, monitor) => {
       if (!monitor.didDrop()) {
-        onDrop?.(item.node, node, 'inside');
+        const position = dropPosition || 'inside';
+        onDrop?.(item.node, node, position);
+        setDropPosition(null);
       }
     },
     collect: (monitor) => ({
@@ -78,11 +103,14 @@ const TreeNode = ({
       // Can't drop on self
       if (item.id === node.id) return false;
       
-      // Can only drop categories on categories
-      if (item.type !== 'category' || node.type !== 'category') return false;
+      // Can only drop categories
+      if (item.type !== 'category') return false;
       
-      // Can't drop on system categories
-      if (node.is_system) return false;
+      // For 'inside' drops, target must be a category and not system
+      if (node.type !== 'category' || node.is_system) {
+        // But allow 'before' and 'after' drops if the parent allows it
+        return level > 0; // Can drop before/after if not at root level
+      }
       
       return true;
     }
@@ -159,7 +187,10 @@ const TreeNode = ({
     }
     
     if (isDragging) classes.push('dragging');
-    if (isOver && canDrop) classes.push('drop-target');
+    if (isOver && canDrop) {
+      classes.push('drop-target');
+      if (dropPosition) classes.push(`drop-${dropPosition}`);
+    }
     if (isOver && !canDrop) classes.push('drop-invalid');
     if (deletingCategoryId === node.id) classes.push('deleting');
     
@@ -171,6 +202,11 @@ const TreeNode = ({
 
   return (
     <React.Fragment>
+      {/* Drop zone before node */}
+      {isOver && canDrop && dropPosition === 'before' && (
+        <div className="drop-zone drop-zone-before" />
+      )}
+      
       <div
         ref={dragDropRef}
         className={getNodeClassName()}
@@ -253,11 +289,16 @@ const TreeNode = ({
         </div>
       </div>
 
+      {/* Drop zone after node */}
+      {isOver && canDrop && dropPosition === 'after' && (
+        <div className="drop-zone drop-zone-after" />
+      )}
+
       {/* Create new category input */}
       {showCreateInput && (
         <div
           className="tree-node create-input"
-          style={{ paddingLeft: `${indentWidth + 20}px` }}
+          style={{ paddingLeft: `${(level + 1) * 20}px` }}
         >
           <div className="tree-node-content">
             <div className="tree-node-toggle">
@@ -277,16 +318,22 @@ const TreeNode = ({
                   handleCancelNewCategory();
                 }
               }}
-              onBlur={handleCancelNewCategory}
               placeholder="Category name..."
-              autoFocus
               className="category-input"
+              autoFocus
             />
+            <div className="tree-node-actions">
+              <button onClick={handleSaveNewCategory} className="action-button">
+                ✓
+              </button>
+              <button onClick={handleCancelNewCategory} className="action-button">
+                ✕
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Render children */}
       {expanded && hasChildren && (
         <div className="tree-node-children">
           {node.children.map(child => (
