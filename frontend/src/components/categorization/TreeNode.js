@@ -46,6 +46,8 @@ const TreeNode = ({
   const [showCreateInput, setShowCreateInput] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [dropPosition, setDropPosition] = useState(null);
+  const [mouseDownTime, setMouseDownTime] = useState(null);
+  const [mouseDownPosition, setMouseDownPosition] = useState(null);
 
   // Drag functionality (only for categories)
   const [{ isDragging }, drag] = useDrag({
@@ -60,39 +62,35 @@ const TreeNode = ({
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
-    canDrag: () => node.type === 'category' && !node.is_system
+    canDrag: () => {
+      // Only categories (not system) can be dragged
+      return node.type === 'category' && !node.is_system;
+    }
   });
 
   // Drop functionality - enhanced to support multiple drop positions
   const [{ isOver, canDrop }, drop] = useDrop({
     accept: ItemTypes.CATEGORY,
     hover: (item, monitor) => {
-      if (!monitor.canDrop()) return;
+      if (!ref.current) return;
       
-      const hoverBoundingRect = ref.current?.getBoundingClientRect();
-      if (!hoverBoundingRect) return;
-      
+      const hoverBoundingRect = ref.current.getBoundingClientRect();
       const hoverMiddleY = (hoverBoundingRect.bottom - hoverBoundingRect.top) / 2;
       const clientOffset = monitor.getClientOffset();
       const hoverClientY = clientOffset.y - hoverBoundingRect.top;
       
-      // Determine drop position based on cursor position
-      let position;
-      if (hoverClientY < hoverMiddleY * 0.25) {
-        position = 'before';
-      } else if (hoverClientY > hoverMiddleY * 1.75) {
-        position = 'after';
+      // Determine drop position based on hover location
+      if (hoverClientY < hoverMiddleY * 0.3) {
+        setDropPosition('before');
+      } else if (hoverClientY > hoverMiddleY * 1.7) {
+        setDropPosition('after');
       } else {
-        position = 'inside';
+        setDropPosition('inside');
       }
-      
-      setDropPosition(position);
     },
     drop: (item, monitor) => {
       if (!monitor.didDrop()) {
-        const position = dropPosition || 'inside';
-        onDrop?.(item.node, node, position);
-        setDropPosition(null);
+        onDrop?.(item.node, node, dropPosition);
       }
     },
     collect: (monitor) => ({
@@ -109,7 +107,7 @@ const TreeNode = ({
       // For 'inside' drops, target must be a category and not system
       if (node.type !== 'category' || node.is_system) {
         // But allow 'before' and 'after' drops if the parent allows it
-        return level > 0; // Can drop before/after if not at root level
+        return level > 0;
       }
       
       return true;
@@ -118,6 +116,30 @@ const TreeNode = ({
 
   // Combine drag and drop refs
   const dragDropRef = drag(drop(ref));
+
+  // Smart click handler that doesn't interfere with drag
+  const handleMouseDown = (e) => {
+    setMouseDownTime(Date.now());
+    setMouseDownPosition({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseUp = (e) => {
+    if (!mouseDownTime || !mouseDownPosition) return;
+    
+    const clickDuration = Date.now() - mouseDownTime;
+    const distance = Math.sqrt(
+      Math.pow(e.clientX - mouseDownPosition.x, 2) + 
+      Math.pow(e.clientY - mouseDownPosition.y, 2)
+    );
+    
+    // Only treat as click if it was quick and didn't move much
+    if (clickDuration < 300 && distance < 5) {
+      handleClick();
+    }
+    
+    setMouseDownTime(null);
+    setMouseDownPosition(null);
+  };
 
   const handleClick = () => {
     if (node.type === 'category') {
@@ -211,9 +233,10 @@ const TreeNode = ({
         ref={dragDropRef}
         className={getNodeClassName()}
         style={{ paddingLeft: `${indentWidth}px` }}
-        onClick={handleClick}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
       >
         <div className="tree-node-content">
           {/* Expand/Collapse Toggle */}

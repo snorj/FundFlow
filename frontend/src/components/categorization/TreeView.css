@@ -39,6 +39,7 @@
   display: flex;
   align-items: center;
   transition: background-color 0.1s ease; /* Fast, subtle transition */
+  user-select: none; /* Prevent text selection that can interfere with drag */
 }
 
 .tree-node:hover {
@@ -54,6 +55,16 @@
   opacity: 0.5;
   transform: rotate(2deg);
   transition: opacity 0.1s ease, transform 0.1s ease; /* Smooth drag feedback */
+  cursor: grabbing; /* Show grabbing cursor during drag */
+}
+
+/* Ensure draggable categories have proper cursor */
+.tree-node.category:not(.tree-node.system-category) {
+  cursor: grab; /* Show grab cursor for draggable items */
+}
+
+.tree-node.category:not(.tree-node.system-category):active {
+  cursor: grabbing; /* Show grabbing cursor when mouse is down */
 }
 
 .tree-node.drop-target {
