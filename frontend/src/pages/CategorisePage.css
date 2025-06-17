@@ -205,6 +205,18 @@
   margin-top: 10px;
 }
 
+/* TreeView integration styles */
+.category-tree-view .tree-view-container {
+  border: none; /* Remove border since we have the management area border */
+  border-radius: 0;
+  background: transparent;
+  height: 600px; /* Set a fixed height for the tree */
+}
+
+.category-tree-view .tree-view-container:focus-within {
+  box-shadow: none; /* Remove focus shadow since we're inside a card */
+}
+
 .disabled-tree,
 .category-tree-view.disabled-tree {
   opacity: 0.6;

@@ -9,17 +9,34 @@ jest.mock('../../services/categories', () => ({
   getCategories: jest.fn(),
 }));
 
-// Mock CategoryTreeNode to simplify testing
-jest.mock('./CategoryTreeNode', () => {
-  return function MockCategoryTreeNode({ item, onSelectNode, pendingSelectionId }) {
-    const isSelected = pendingSelectionId === item.id;
+// Mock TreeView to simplify testing
+jest.mock('./TreeView', () => {
+  return function MockTreeView({ data, onCategorySelect, selectedCategoryId, enableSmartInteractions }) {
+    const renderNode = (node) => {
+      const isSelected = selectedCategoryId === node.id;
+      const handleClick = () => {
+        if (enableSmartInteractions && onCategorySelect && node.type === 'category') {
+          onCategorySelect(node);
+        }
+      };
+      
+      return (
+        <div key={node.id}>
+          <div 
+            data-testid={`category-node-${node.id}`}
+            className={`mock-tree-node ${isSelected ? 'selected' : ''}`}
+            onClick={handleClick}
+          >
+            {node.name}
+          </div>
+          {node.children && node.children.map(child => renderNode(child))}
+        </div>
+      );
+    };
+
     return (
-      <div 
-        data-testid={`category-node-${item.id}`}
-        className={`mock-category-node ${isSelected ? 'selected' : ''}`}
-        onClick={() => onSelectNode && onSelectNode(item.id)}
-      >
-        {item.name}
+      <div data-testid="mock-tree-view">
+        {data.map(node => renderNode(node))}
       </div>
     );
   };
@@ -181,11 +198,11 @@ describe('CategorySelectorModal', () => {
         <CategorySelectorModal {...defaultProps} showSystemCategories={false} />
       );
       
-      expect(screen.queryByText('System Categories')).not.toBeInTheDocument();
+      // System categories (Food & Dining) should not be visible
       expect(screen.queryByTestId('category-node-1')).not.toBeInTheDocument();
       
       rerender(<CategorySelectorModal {...defaultProps} showSystemCategories={true} />);
-      expect(screen.getByText('System Categories')).toBeInTheDocument();
+      // System categories should be visible
       expect(screen.getByTestId('category-node-1')).toBeInTheDocument();
     });
 
@@ -194,11 +211,11 @@ describe('CategorySelectorModal', () => {
         <CategorySelectorModal {...defaultProps} showUserCategories={false} />
       );
       
-      expect(screen.queryByText('Custom Categories')).not.toBeInTheDocument();
+      // User categories (Custom Category) should not be visible
       expect(screen.queryByTestId('category-node-3')).not.toBeInTheDocument();
       
       rerender(<CategorySelectorModal {...defaultProps} showUserCategories={true} />);
-      expect(screen.getByText('Custom Categories')).toBeInTheDocument();
+      // User categories should be visible
       expect(screen.getByTestId('category-node-3')).toBeInTheDocument();
     });
   });

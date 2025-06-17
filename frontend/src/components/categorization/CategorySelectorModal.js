@@ -1,7 +1,8 @@
 // frontend/src/components/categorization/CategorySelectorModal.js
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import CategoryTreeNode from './CategoryTreeNode';
+import TreeView from './TreeView';
+import { transformCategoryData, calculateCategorySpendingTotals } from '../../utils/categoryTransformUtils';
 import './CategorySelectorModal.css';
 // --- Add FiSave, FiXCircle ---
 import { FiX, FiPlus, FiLoader, FiSave, FiXCircle } from 'react-icons/fi';
@@ -21,9 +22,12 @@ const CategorySelectorModal = ({
   categories = [], // New: preferred prop name
   availableCategories = [], // Legacy: for backward compatibility
   onCategoriesUpdate, // Optional
+  transactions = [], // New: transactions for TreeView
   
   // Feature Control
   allowCreate = true, // New: control creation capability
+  showVendors = false, // New: control vendor display in tree
+  showTransactions = false, // New: control transaction display in tree
   
   // UI Customization
   modalTitle = 'Select Category', // New: customizable title
@@ -73,22 +77,39 @@ const CategorySelectorModal = ({
     }
   }, [isOpen, normalizedInitialCategory, selectionMode]);
 
-  // Filter and organize categories
-  const processedCategories = useMemo(() => {
+  // Transform categories to tree format and calculate spending totals
+  const processedData = useMemo(() => {
     let filtered = normalizedCategories.filter(item => !item.type || item.type === 'category');
     
+    // Calculate spending totals if transactions are provided
+    const categorySpendingTotals = transactions.length > 0 
+      ? calculateCategorySpendingTotals(transactions, filtered)
+      : {};
+
+    // Transform to tree format for TreeView
+    const treeData = transformCategoryData(filtered, transactions, {
+      includeVendors: showVendors,
+      includeTransactions: showTransactions,
+      showSystemCategories,
+      showUserCategories,
+      categorySpendingTotals
+    });
+
     return {
       all: filtered,
+      treeData,
+      categorySpendingTotals,
+      // Legacy compatibility
       systemRoot: filtered.filter(cat => !cat.parent && !cat.is_custom && showSystemCategories),
       userRoot: filtered.filter(cat => !cat.parent && cat.is_custom && showUserCategories),
     };
-  }, [normalizedCategories, showSystemCategories, showUserCategories]);
+  }, [normalizedCategories, transactions, showVendors, showTransactions, showSystemCategories, showUserCategories]);
 
   // Selection handlers based on mode
   const handleNodeSelect = useCallback((categoryId) => {
     if (selectionMode === 'immediate') {
       // Immediate mode: select and notify parent immediately
-      const selectedCategory = processedCategories.all.find(c => c.id === categoryId);
+      const selectedCategory = processedData.all.find(c => c.id === categoryId);
       setSelectionState(prev => ({ ...prev, selectedCategoryId: categoryId }));
       onSelectCategory(selectedCategory); // Pass the full category object for consistency
       onClose(); // Auto-close modal
@@ -97,17 +118,17 @@ const CategorySelectorModal = ({
       setSelectionState(prev => ({ ...prev, pendingSelectionId: categoryId }));
     }
     // 'none' mode: no selection handling
-  }, [selectionMode, onSelectCategory, onClose, processedCategories.all]);
+  }, [selectionMode, onSelectCategory, onClose, processedData.all]);
 
   const handleConfirm = useCallback(() => {
     if (selectionMode === 'confirm' && selectionState.pendingSelectionId !== null) {
       // Find the full category object to pass to parent
-      const selectedCategory = processedCategories.all.find(c => c.id === selectionState.pendingSelectionId);
+      const selectedCategory = processedData.all.find(c => c.id === selectionState.pendingSelectionId);
       setSelectionState(prev => ({ ...prev, selectedCategoryId: prev.pendingSelectionId }));
       onSelectCategory(selectedCategory); // Pass the full category object for maximum flexibility
       onClose(); // Close modal after confirming
     }
-  }, [selectionMode, selectionState.pendingSelectionId, onSelectCategory, processedCategories.all, onClose]);
+  }, [selectionMode, selectionState.pendingSelectionId, onSelectCategory, processedData.all, onClose]);
 
   // Category creation handler
   const handleCreateCategory = useCallback(async (name, parentId = null) => {
@@ -177,6 +198,13 @@ const CategorySelectorModal = ({
     }));
   }, []);
 
+  // TreeView-compatible category selection handler
+  const handleCategorySelect = useCallback((categoryNode) => {
+    if (categoryNode && categoryNode.type === 'category') {
+      handleNodeSelect(categoryNode.id);
+    }
+  }, [handleNodeSelect]);
+
   if (!isOpen) return null;
 
   // Determine what to display as selected
@@ -184,7 +212,7 @@ const CategorySelectorModal = ({
     ? selectionState.pendingSelectionId 
     : selectionState.selectedCategoryId;
   
-  const selectedCategory = processedCategories.all.find(c => c.id === displaySelectedId);
+  const selectedCategory = processedData.all.find(c => c.id === displaySelectedId);
   const selectedCategoryName = selectedCategory ? selectedCategory.name : 'None';
 
   // Determine modal CSS classes
@@ -254,46 +282,24 @@ const CategorySelectorModal = ({
           )}
           
           <div className={`category-tree-container ${creationState.isCreating ? 'disabled-tree' : ''}`}>
-            {/* System Categories */}
-            {showSystemCategories && processedCategories.systemRoot.length > 0 && (
-              <div className="tree-section">
-                <h4>System Categories</h4>
-                {processedCategories.systemRoot.map(rootCat => (
-                  <CategoryTreeNode
-                    key={rootCat.id} 
-                    item={rootCat} 
-                    allItems={processedCategories.all}
-                    visibleItemIds={null}
-                    onSelectNode={selectionMode !== 'none' ? handleNodeSelect : () => {}} 
-                    pendingSelectionId={displaySelectedId}
-                    onCreateCategory={allowCreate ? handleCreateCategory : null}
-                    isCreating={creationState.isCreating}
-                  />
-                ))}
-              </div>
-            )}
-            
-            {/* User Categories */}
-            {showUserCategories && processedCategories.userRoot.length > 0 && (
-              <div className="tree-section">
-                <h4>Custom Categories</h4>
-                {processedCategories.userRoot.map(rootCat => (
-                  <CategoryTreeNode
-                    key={rootCat.id} 
-                    item={rootCat} 
-                    allItems={processedCategories.all}
-                    visibleItemIds={null}
-                    onSelectNode={selectionMode !== 'none' ? handleNodeSelect : () => {}} 
-                    pendingSelectionId={displaySelectedId}
-                    onCreateCategory={allowCreate ? handleCreateCategory : null} 
-                    isCreating={creationState.isCreating}
-                  />
-                ))}
-              </div>
-            )}
-            
-            {/* No categories message */}
-            {processedCategories.systemRoot.length === 0 && processedCategories.userRoot.length === 0 && (
+            {processedData.treeData.length > 0 ? (
+              <TreeView
+                data={processedData.treeData}
+                width={400}
+                height={300}
+                onCategorySelect={selectionMode !== 'none' ? handleCategorySelect : undefined}
+                onCreateCategory={allowCreate ? handleCreateCategory : undefined}
+                onDeleteCategory={undefined} // Don't allow deletion in modal
+                isCreating={creationState.isCreating}
+                isDeleting={false}
+                categorySpendingTotals={processedData.categorySpendingTotals}
+                selectedCategoryId={displaySelectedId}
+                showSpendingTotals={transactions.length > 0}
+                enableSmartInteractions={selectionMode !== 'none' && !creationState.isCreating}
+                enableDragAndDrop={false}
+                className="category-selector-tree"
+              />
+            ) : (
               <p className="no-categories-message">No categories available.</p>
             )}
           </div>
@@ -337,9 +343,12 @@ CategorySelectorModal.propTypes = {
   categories: PropTypes.array,
   availableCategories: PropTypes.array, // Legacy support
   onCategoriesUpdate: PropTypes.func,
+  transactions: PropTypes.array, // New: transactions for TreeView
   
   // Feature Control
   allowCreate: PropTypes.bool,
+  showVendors: PropTypes.bool, // New: control vendor display
+  showTransactions: PropTypes.bool, // New: control transaction display
   
   // UI Customization
   modalTitle: PropTypes.string,

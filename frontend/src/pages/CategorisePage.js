@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import CategoryTreeNode from '../components/categorization/CategoryTreeNode';
+import TreeView from '../components/categorization/TreeView';
+import { transformCategoryData } from '../utils/categoryTransformUtils';
 import TransactionDetailsModal from '../components/transactions/TransactionDetailsModal';
 import categoryService from '../services/categories';
 import transactionService from '../services/transactions';
@@ -9,6 +10,7 @@ import './CategorisePage.css'; // We'll create this CSS file next
 
 const CategorisePage = () => {
   const navigate = useNavigate();
+  const treeRef = useRef();
   const [allItems, setAllItems] = useState([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [error, setError] = useState(null);
@@ -35,8 +37,7 @@ const CategorisePage = () => {
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [isTransactionDetailsOpen, setIsTransactionDetailsOpen] = useState(false);
   
-  // Collapse all functionality
-  const [collapseAllTrigger, setCollapseAllTrigger] = useState(0);
+  // Collapse all functionality - removed unused state since TreeView handles this via ref
 
   const fetchItems = useCallback(async () => {
     setIsLoadingCategories(true);
@@ -137,6 +138,49 @@ const CategorisePage = () => {
     setIsTransactionDetailsOpen(true);
   }, []);
 
+  // Handler for drag and drop validation feedback
+  const handleDropValidation = useCallback((success, message, details) => {
+    console.log('Drop validation:', { success, message, details });
+    
+    if (success) {
+      // Refresh data after successful move to get updated structure from backend
+      fetchItems();
+    } else {
+      // Show error message for failed operations
+      console.warn('Drag operation failed:', message);
+    }
+  }, [fetchItems]);
+
+  // Handler for category move operations
+  const handleCategoryMove = useCallback(async (draggedCategoryId, targetCategoryId, position) => {
+    try {
+      // For now, we'll implement a simple parent change
+      // The position parameter can be 'inside', 'before', or 'after'
+      const newParentId = position === 'inside' ? targetCategoryId : null;
+      
+      await categoryService.updateCategory(draggedCategoryId, { 
+        parent: newParentId 
+      });
+      
+      // Refresh data to reflect the change
+      await fetchItems();
+      
+      // Notify success
+      handleDropValidation(true, 'Category moved successfully', {
+        draggedCategoryId,
+        targetCategoryId,
+        position
+      });
+    } catch (error) {
+      console.error('Failed to move category:', error);
+      handleDropValidation(false, error.message || 'Failed to move category', {
+        draggedCategoryId,
+        targetCategoryId,
+        position
+      });
+    }
+  }, [fetchItems, handleDropValidation]);
+
   const itemsById = useMemo(() => 
     new Map(allItems.map(item => [item.id, item]))
   , [allItems]);
@@ -184,23 +228,24 @@ const CategorisePage = () => {
     return visibleIds;
   }, [allItems, searchTerm, itemsById]);
 
-  const systemRootCategories = useMemo(() => 
-    allItems.filter(item => 
+  // Transform data for TreeView
+  const treeData = useMemo(() => {
+    // Filter categories based on search
+    let filteredCategories = allItems.filter(item => 
       item.type === 'category' &&
-      !item.parent && 
-      !item.is_custom &&
       (visibleItemIds === null || visibleItemIds.has(item.id))
-    )
-  , [allItems, visibleItemIds]);
+    );
 
-  const userRootCategories = useMemo(() => 
-    allItems.filter(item => 
-      item.type === 'category' &&
-      !item.parent && 
-      item.is_custom &&
-      (visibleItemIds === null || visibleItemIds.has(item.id))
-    )
-  , [allItems, visibleItemIds]);
+    return transformCategoryData(filteredCategories, transactions, {
+      includeVendors: true,
+      includeTransactions: true,
+      showSystemCategories: true,
+      showUserCategories: true,
+      categorySpendingTotals
+    });
+  }, [allItems, transactions, categorySpendingTotals, visibleItemIds]);
+
+  // Categories are now handled directly in treeData - no need to separate system/user
 
   const handleAddTopLevelClick = () => {
     setShowTopLevelInput(true);
@@ -228,7 +273,11 @@ const CategorisePage = () => {
   };
 
   const handleCollapseAll = () => {
-    setCollapseAllTrigger(prev => prev + 1);
+    // Use the tree ref to collapse all nodes
+    if (treeRef.current) {
+      // react-arborist tree API to close all nodes
+      treeRef.current.closeAll?.();
+    }
   };
 
   const isPageBusy = isLoadingCategories || isCreating || deletingCategoryId !== null;
@@ -254,7 +303,7 @@ const CategorisePage = () => {
   }
 
   const noResultsFromSearch = searchTerm.trim() && visibleItemIds && visibleItemIds.size === 0;
-  const noItemsToShow = systemRootCategories.length === 0 && userRootCategories.length === 0 && !showTopLevelInput && !searchTerm.trim() && !isLoadingCategories && (!allItems.some(item => item.type === 'vendor'));
+  const noItemsToShow = treeData.length === 0 && !showTopLevelInput && !searchTerm.trim() && !isLoadingCategories;
 
   return (
     <div className="categorise-page-container">
@@ -335,58 +384,26 @@ const CategorisePage = () => {
           {noResultsFromSearch && (
             <p>No categories or vendors match your search term "{searchTerm}".</p>
           )}
-          {systemRootCategories.map(category => (
-            <CategoryTreeNode
-              key={category.id}
-              item={category}
-              allItems={allItems}
-              visibleItemIds={visibleItemIds}
-              level={0}
-              onSelectNode={() => {}}
+          {treeData.length > 0 && (
+            <TreeView
+              data={treeData}
+              searchTerm={searchTerm}
               onCategorySelect={handleCategorySelect}
               onVendorSelect={handleVendorSelect}
               onTransactionSelect={handleTransactionSelect}
               onTransactionInfo={handleTransactionInfo}
-              onCreateCategory={handleCreateCategory}
-              onDeleteCategory={handleDeleteCategory}
-              isCreating={isCreating}
-              isDeleting={deletingCategoryId === category.id}
-              transactions={transactions}
-              categorySpendingTotals={categorySpendingTotals}
+              onCategoryCreate={handleCreateCategory}
+              onCategoryDelete={handleDeleteCategory}
+              onCategoryMove={handleCategoryMove}
+              onDropValidation={handleDropValidation}
               selectedCategoryId={selectedCategoryId}
               selectedVendorId={selectedVendorId}
               selectedTransactionId={selectedTransactionId}
-              showSpendingTotals={true}
-              enableSmartInteractions={true}
-              collapseAllTrigger={collapseAllTrigger}
-            />
-          ))}
-          {userRootCategories.map(category => (
-            <CategoryTreeNode
-              key={category.id}
-              item={category}
-              allItems={allItems}
+              deletingCategoryId={deletingCategoryId}
+              isCreating={isCreating}
               visibleItemIds={visibleItemIds}
-              level={0}
-              onSelectNode={() => {}}
-              onCategorySelect={handleCategorySelect}
-              onVendorSelect={handleVendorSelect}
-              onTransactionSelect={handleTransactionSelect}
-              onTransactionInfo={handleTransactionInfo}
-              onCreateCategory={handleCreateCategory}
-              onDeleteCategory={handleDeleteCategory}
-              isCreating={isCreating}
-              isDeleting={deletingCategoryId === category.id}
-              transactions={transactions}
-              categorySpendingTotals={categorySpendingTotals}
-              selectedCategoryId={selectedCategoryId}
-              selectedVendorId={selectedVendorId}
-              selectedTransactionId={selectedTransactionId}
-              showSpendingTotals={true}
-              enableSmartInteractions={true}
-              collapseAllTrigger={collapseAllTrigger}
             />
-          ))}
+          )}
         </div>
       </div>
 

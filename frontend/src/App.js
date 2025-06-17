@@ -10,6 +10,8 @@ import CategorisePage from './pages/CategorisePage';
 import CategoriseTransactionsPage from './pages/CategoriseTransactionsPage';
 import VisualisePage from './pages/VisualisePage';
 import MainLayout from './components/layout/MainLayout';
+import TreeViewTestPage from './pages/TreeViewTestPage';
+
 
 const Settings = () => <div style={{ padding: '20px' }}>Settings Page Content</div>;
 const Admin = () => <div style={{ padding: '20px' }}>Admin Page Content</div>;
@@ -33,6 +35,8 @@ function App() {
               <Route path="/visualise" element={<VisualisePage />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={<Admin />} />
+              <Route path="/tree-test" element={<TreeViewTestPage />} />
+
             </Route>
           </Route>
           

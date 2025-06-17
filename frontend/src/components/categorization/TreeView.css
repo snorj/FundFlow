@@ -1,0 +1,370 @@
+/* TreeView Container */
+.tree-view {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #333;
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tree-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: #666;
+  font-style: italic;
+}
+
+.tree-nodes {
+  padding: 8px 0;
+}
+
+/* Tree Node Styles */
+.tree-node {
+  position: relative;
+  cursor: pointer;
+  border-radius: 4px;
+  margin: 1px 4px;
+  transition: all 0.2s ease;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.tree-node:hover {
+  background-color: #f8f9fa;
+}
+
+.tree-node.selected {
+  background-color: #e3f2fd;
+  border: 1px solid #2196f3;
+}
+
+.tree-node.dragging {
+  opacity: 0.5;
+  transform: rotate(5deg);
+  z-index: 1000;
+}
+
+.tree-node.drop-target {
+  background-color: #e8f5e8;
+  border: 2px dashed #4caf50;
+}
+
+.tree-node.drop-invalid {
+  background-color: #ffebee;
+  border: 2px dashed #f44336;
+}
+
+.tree-node.deleting {
+  background-color: #ffebee;
+  opacity: 0.6;
+}
+
+/* Tree Node Content */
+.tree-node-content {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 4px 8px;
+  gap: 8px;
+}
+
+/* Toggle Button */
+.tree-node-toggle {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.toggle-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 2px;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.toggle-button:hover {
+  background-color: #e0e0e0;
+  color: #333;
+}
+
+.toggle-spacer {
+  width: 16px;
+  height: 16px;
+}
+
+/* Drag Handle */
+.drag-handle {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  cursor: grab;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.drag-handle:hover {
+  background-color: #e0e0e0;
+  color: #666;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.tree-node.dragging .drag-handle {
+  cursor: grabbing;
+}
+
+/* Node Icon */
+.tree-node-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tree-node-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Category icons */
+.tree-node[data-type="category"] .tree-node-icon {
+  color: #ff9800;
+}
+
+/* Vendor icons */
+.tree-node[data-type="vendor"] .tree-node-icon {
+  color: #2196f3;
+}
+
+/* Transaction icons */
+.tree-node[data-type="transaction"] .tree-node-icon {
+  color: #4caf50;
+}
+
+/* Node Name */
+.tree-node-name {
+  flex: 1;
+  font-weight: 500;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-node.selected .tree-node-name {
+  font-weight: 600;
+  color: #1976d2;
+}
+
+/* Transaction and vendor counts/amounts */
+.transaction-count,
+.transaction-amount {
+  font-size: 12px;
+  color: #666;
+  margin-left: 8px;
+  font-weight: normal;
+}
+
+.transaction-amount {
+  color: #4caf50;
+  font-weight: 500;
+}
+
+/* Node Actions */
+.tree-node-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.tree-node:hover .tree-node-actions {
+  opacity: 1;
+}
+
+.action-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 3px;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  width: 24px;
+  height: 24px;
+}
+
+.action-button:hover {
+  background-color: #e0e0e0;
+  color: #333;
+}
+
+.action-button.delete:hover {
+  background-color: #ffebee;
+  color: #f44336;
+}
+
+.action-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Create Input */
+.tree-node.create-input {
+  background-color: #f8f9fa;
+  border: 1px solid #e0e0e0;
+}
+
+.category-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  outline: none;
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+
+.category-input:focus {
+  background-color: #fff;
+  box-shadow: 0 0 0 2px #2196f3;
+}
+
+/* Tree Node Children */
+.tree-node-children {
+  /* Children are handled by individual node padding */
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .tree-view {
+    font-size: 13px;
+  }
+  
+  .tree-node-content {
+    padding: 6px 4px;
+    gap: 6px;
+  }
+  
+  .tree-node-actions {
+    opacity: 1; /* Always show on mobile */
+  }
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+  .tree-node {
+    border: 1px solid transparent;
+  }
+  
+  .tree-node:hover {
+    border-color: #333;
+  }
+  
+  .tree-node.selected {
+    border-color: #000;
+    background-color: #fff;
+  }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .tree-node,
+  .toggle-button,
+  .drag-handle,
+  .action-button,
+  .tree-node-actions {
+    transition: none;
+  }
+  
+  .tree-node.dragging {
+    transform: none;
+  }
+}
+
+/* Focus Styles for Accessibility */
+.toggle-button:focus,
+.action-button:focus,
+.category-input:focus {
+  outline: 2px solid #2196f3;
+  outline-offset: 1px;
+}
+
+/* Loading State */
+.tree-node.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.tree-node.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #e0e0e0;
+  border-top: 2px solid #2196f3;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  transform: translateY(-50%);
+}
+
+@keyframes spin {
+  0% { transform: translateY(-50%) rotate(0deg); }
+  100% { transform: translateY(-50%) rotate(360deg); }
+}
+
+/* Drag Preview Styles */
+.tree-node-drag-preview {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 4px 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+  transform: rotate(5deg);
+}
+
+/* Drop Zones */
+.drop-zone {
+  height: 2px;
+  background-color: #4caf50;
+  border-radius: 1px;
+  margin: 1px 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.drop-zone.active {
+  opacity: 1;
+}
+
+.drop-zone.invalid {
+  background-color: #f44336;
+} 

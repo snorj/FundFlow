@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Category, Transaction, Vendor, BASE_CURRENCY_FOR_CONVERSION
+from .models import Category, Transaction, Vendor, VendorRule, BASE_CURRENCY_FOR_CONVERSION
 from django.db.models import Q
+import uuid
 
 User = get_user_model()
 
@@ -483,3 +484,144 @@ class TransactionCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Failed to create transaction. Please check your input and try again."
             )
+
+class VendorRuleSerializer(serializers.ModelSerializer):
+    """
+    Serializer for VendorRule model for CRUD operations.
+    Handles vendor rule creation, reading, updating, and deletion with proper validation.
+    """
+    # Make foreign key fields writeable using IDs
+    vendor_id = serializers.IntegerField(write_only=True, source='vendor.id')
+    category_id = serializers.IntegerField(write_only=True, source='category.id')
+    
+    # Read-only fields to show related object details
+    vendor_name = serializers.CharField(source='vendor.name', read_only=True)
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    
+    # Priority choices for validation
+    priority = serializers.ChoiceField(choices=VendorRule.PRIORITY_CHOICES, default=3)
+    
+    class Meta:
+        model = VendorRule
+        fields = [
+            'id',
+            'vendor_id',
+            'vendor_name',
+            'category_id', 
+            'category_name',
+            'pattern',
+            'is_persistent',
+            'priority',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'vendor_name', 'category_name', 'created_at', 'updated_at']
+
+    def validate_vendor_id(self, value):
+        """
+        Ensure the vendor exists and is accessible to the user.
+        Vendor must be a system vendor (user=None) or belong to the request.user.
+        """
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+
+        try:
+            vendor = Vendor.objects.filter(
+                Q(user__isnull=True) | Q(user=request.user)
+            ).get(id=value)
+            return vendor
+        except Vendor.DoesNotExist:
+            raise serializers.ValidationError("Vendor not found or access denied.")
+
+    def validate_category_id(self, value):
+        """
+        Ensure the category exists and is accessible to the user.
+        Category must be a system category (user=None) or belong to the request.user.
+        """
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+
+        try:
+            category = Category.objects.filter(
+                Q(user__isnull=True) | Q(user=request.user)
+            ).get(id=value)
+            return category
+        except Category.DoesNotExist:
+            raise serializers.ValidationError("Category not found or access denied.")
+
+    def validate_pattern(self, value):
+        """
+        Validate regex pattern if provided.
+        """
+        if value is not None and value.strip():
+            import re
+            try:
+                re.compile(value.strip())
+                return value.strip()
+            except re.error as e:
+                raise serializers.ValidationError(f"Invalid regex pattern: {e}")
+        return value
+
+    def validate(self, data):
+        """
+        Cross-field validation for vendor rules.
+        """
+        # Extract the vendor and category objects from validated data
+        vendor = data.get('vendor', {}).get('id') if 'vendor' in data else None
+        category = data.get('category', {}).get('id') if 'category' in data else None
+        pattern = data.get('pattern')
+        
+        # Check for duplicate rules (same vendor + pattern combination)
+        if vendor and category:
+            existing_rules = VendorRule.objects.filter(
+                vendor=vendor,
+                pattern=pattern or None  # Handle None and empty string consistently
+            )
+            
+            # Exclude self during updates
+            if self.instance:
+                existing_rules = existing_rules.exclude(pk=self.instance.pk)
+            
+            if existing_rules.exists():
+                raise serializers.ValidationError(
+                    "A rule with the same vendor and pattern already exists."
+                )
+
+        return data
+
+    def create(self, validated_data):
+        """
+        Create a new vendor rule with auto-generated UUID.
+        """
+        # Extract the related objects from validated data
+        vendor = validated_data.pop('vendor', {}).get('id') if 'vendor' in validated_data else None
+        category = validated_data.pop('category', {}).get('id') if 'category' in validated_data else None
+        
+        # Generate UUID for the rule
+        validated_data['id'] = str(uuid.uuid4())
+        validated_data['vendor'] = vendor
+        validated_data['category'] = category
+        
+        return VendorRule.objects.create(**validated_data)
+
+    def update(self, instance, validated_data):
+        """
+        Update an existing vendor rule.
+        """
+        # Extract the related objects from validated data
+        vendor = validated_data.pop('vendor', {}).get('id') if 'vendor' in validated_data else None
+        category = validated_data.pop('category', {}).get('id') if 'category' in validated_data else None
+        
+        if vendor:
+            instance.vendor = vendor
+        if category:
+            instance.category = category
+            
+        # Update other fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+            
+        instance.save()
+        return instance

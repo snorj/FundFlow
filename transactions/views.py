@@ -9,8 +9,8 @@ from rest_framework.views import APIView # Use APIView for custom logic
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser # For file uploads
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import Category, Transaction, Vendor, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
-from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, TransactionCreateSerializer # Add TransactionCreateSerializer
+from .models import Category, Transaction, Vendor, VendorRule, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
+from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, VendorRuleSerializer, TransactionCreateSerializer # Add TransactionCreateSerializer
 from .permissions import IsOwnerOrSystemReadOnly, IsOwner # Import IsOwner
 import logging
 from django.db.models import Count, Min, Sum, Case, When, Value, DecimalField
@@ -1042,3 +1042,87 @@ class DashboardBalanceView(views.APIView):
                 'conversion_purpose': 'Display only - core holdings remain in native currencies'
             }
         })
+
+# --- VendorRule Views ---
+class VendorRuleListCreateView(generics.ListCreateAPIView):
+    """
+    API endpoint to list and create vendor rules for the authenticated user.
+    Supports filtering by vendor, category, and priority.
+    """
+    serializer_class = VendorRuleSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
+    ordering_fields = ['priority', 'created_at', 'updated_at']
+    ordering = ['priority', '-created_at']  # Default: highest priority first, then newest
+
+    def get_queryset(self):
+        """
+        Return vendor rules with vendors/categories accessible to the user.
+        Only includes rules for vendors and categories the user can access.
+        """
+        user = self.request.user
+        return VendorRule.objects.filter(
+            Q(vendor__user__isnull=True) | Q(vendor__user=user),  # System or user's vendors
+            Q(category__user__isnull=True) | Q(category__user=user)  # System or user's categories
+        ).select_related('vendor', 'category').distinct()
+
+    def get_serializer_context(self):
+        """Pass request to serializer context for validation."""
+        return {'request': self.request}
+
+class VendorRuleDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint to retrieve, update, or delete a specific vendor rule.
+    Users can only modify rules for vendors/categories they have access to.
+    """
+    serializer_class = VendorRuleSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'pk'
+
+    def get_queryset(self):
+        """
+        Return vendor rules with vendors/categories accessible to the user.
+        """
+        user = self.request.user
+        return VendorRule.objects.filter(
+            Q(vendor__user__isnull=True) | Q(vendor__user=user),  # System or user's vendors
+            Q(category__user__isnull=True) | Q(category__user=user)  # System or user's categories
+        ).select_related('vendor', 'category').distinct()
+
+    def get_serializer_context(self):
+        """Pass request to serializer context for validation."""
+        return {'request': self.request}
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Handle vendor rule deletion with proper logging.
+        """
+        vendor_rule = self.get_object()
+        user = request.user
+
+        logger.info(f"User {user.id}: Attempting to delete vendor rule ID {vendor_rule.id} "
+                   f"({vendor_rule.vendor.name} -> {vendor_rule.category.name})")
+
+        try:
+            with db_transaction.atomic():
+                # Store info for logging before deletion
+                vendor_name = vendor_rule.vendor.name
+                category_name = vendor_rule.category.name
+                rule_id = vendor_rule.id
+                
+                # Delete the vendor rule
+                vendor_rule.delete()
+                
+                logger.info(f"User {user.id}: Successfully deleted vendor rule '{rule_id}' "
+                           f"({vendor_name} -> {category_name})")
+
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        except Exception as e:
+            logger.error(f"User {user.id}: Error during deletion of vendor rule '{vendor_rule.id}': {e}", 
+                        exc_info=True)
+            return Response(
+                {"error": "An error occurred while trying to delete the vendor rule."}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

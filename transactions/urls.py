@@ -5,6 +5,8 @@ from .views import (
     CategoryDetailView,
     VendorListCreateView,
     VendorDetailView,
+    VendorRuleListCreateView,
+    VendorRuleDetailView,
     TransactionCSVUploadView,
     TransactionListView,
     TransactionCreateView,
@@ -23,6 +25,10 @@ urlpatterns = [
     # Vendor URLs
     path('vendors/', VendorListCreateView.as_view(), name='vendor-list-create'),
     path('vendors/<int:pk>/', VendorDetailView.as_view(), name='vendor-detail'),
+    
+    # Vendor Rule URLs
+    path('vendor-rules/', VendorRuleListCreateView.as_view(), name='vendor-rule-list-create'),
+    path('vendor-rules/<str:pk>/', VendorRuleDetailView.as_view(), name='vendor-rule-detail'),
 
     # Transaction URLs
     path('transactions/upload/', TransactionCSVUploadView.as_view(), name='transaction-csv-upload'),
