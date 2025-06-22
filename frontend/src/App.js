@@ -9,6 +9,7 @@ import UploadPage from './pages/UploadPage';
 import CategorisePage from './pages/CategorisePage';
 import CategoriseTransactionsPage from './pages/CategoriseTransactionsPage';
 import VisualisePage from './pages/VisualisePage';
+import VendorRulesPage from './pages/VendorRulesPage';
 import MainLayout from './components/layout/MainLayout';
 import TreeViewTestPage from './pages/TreeViewTestPage';
 
@@ -33,6 +34,7 @@ function App() {
               <Route path="/categorise" element={<CategorisePage />} />
               <Route path="/categorise/transactions" element={<CategoriseTransactionsPage />} />
               <Route path="/visualise" element={<VisualisePage />} />
+              <Route path="/vendor-rules" element={<VendorRulesPage />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="/tree-test" element={<TreeViewTestPage />} />

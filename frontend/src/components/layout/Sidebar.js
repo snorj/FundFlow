@@ -8,7 +8,8 @@ import {
   FiBarChart,
   FiSettings, 
   FiLogOut, 
-  FiUsers
+  FiUsers,
+  FiCpu
 } from 'react-icons/fi';
 import './Sidebar.css';
 
@@ -26,6 +27,7 @@ const Sidebar = () => {
     { path: '/upload', icon: FiUpload, label: 'Upload' },
     { path: '/categorise', icon: FiTag, label: 'Categorise' },
     { path: '/visualise', icon: FiBarChart, label: 'Visualise' },
+    { path: '/vendor-rules', icon: FiCpu, label: 'Vendor Rules' },
     { path: '/admin', icon: FiUsers, label: 'Admin' },
     { path: '/settings', icon: FiSettings, label: 'Settings' },
   ];
