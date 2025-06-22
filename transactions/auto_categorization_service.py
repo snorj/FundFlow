@@ -1,19 +1,18 @@
 """
 Auto-categorization service for FundFlow transactions.
 
-This module implements the core algorithm for automatically categorizing transactions
-based on vendor rules with pattern matching, priority handling, and validation.
+This module implements the simplified core algorithm for automatically categorizing transactions
+based on vendor rules with direct vendor matching and newest-rule-wins conflict resolution.
 """
 
 import logging
-import re
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Any
 from decimal import Decimal
 from django.db import transaction as db_transaction
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
-from .models import Transaction, VendorRule, Vendor, Category
+from .models import Transaction, VendorRule, Vendor, Category, VendorMapping
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +75,7 @@ class AutoCategorizationResult:
 
 
 class AutoCategorizationService:
-    """Service for auto-categorizing transactions based on vendor rules."""
+    """Service for auto-categorizing transactions based on simplified vendor rules."""
     
     def __init__(self, user):
         self.user = user
@@ -85,7 +84,7 @@ class AutoCategorizationService:
     def categorize_transactions(self, transactions: QuerySet = None, 
                               force_recategorize: bool = False) -> AutoCategorizationResult:
         """
-        Auto-categorize transactions based on vendor rules.
+        Auto-categorize transactions based on vendor rules using direct vendor matching.
         
         Args:
             transactions: QuerySet of transactions to categorize. If None, processes all user's transactions.
@@ -107,14 +106,14 @@ class AutoCategorizationService:
         transactions = transactions.select_related('vendor', 'category').order_by('transaction_date', 'id')
         
         transaction_count = transactions.count()
-        self.logger.info(f"User {self.user.id}: Starting auto-categorization for {transaction_count} transactions "
+        self.logger.info(f"User {self.user.id}: Starting simplified auto-categorization for {transaction_count} transactions "
                         f"(force_recategorize={force_recategorize})")
         
         if transaction_count == 0:
             self.logger.info(f"User {self.user.id}: No transactions to categorize")
             return result
             
-        # Get applicable vendor rules for this user
+        # Get applicable vendor rules for this user (newest-rule-wins ordering)
         vendor_rules = self._get_applicable_vendor_rules()
         rule_count = vendor_rules.count()
         
@@ -138,7 +137,7 @@ class AutoCategorizationService:
                 if processed % 500 == 0:  # Log progress every 500 transactions
                     self.logger.info(f"User {self.user.id}: Processed {processed}/{transaction_count} transactions")
                     
-        self.logger.info(f"User {self.user.id}: Auto-categorization complete. "
+        self.logger.info(f"User {self.user.id}: Simplified auto-categorization complete. "
                         f"Categorized: {result.categorized_count}, "
                         f"Skipped: {result.skipped_count}, "
                         f"Errors: {result.error_count}")
@@ -148,7 +147,7 @@ class AutoCategorizationService:
     def categorize_single_transaction(self, transaction: Transaction, 
                                     force_recategorize: bool = False) -> Optional[VendorRule]:
         """
-        Auto-categorize a single transaction.
+        Auto-categorize a single transaction using direct vendor matching.
         
         Args:
             transaction: Transaction instance to categorize
@@ -167,7 +166,7 @@ class AutoCategorizationService:
             self.logger.debug(f"Transaction {transaction.id} has no vendor, skipping")
             return None
             
-        # Find matching rule
+        # Find matching rule using simplified logic
         matching_rule = self._find_matching_rule(transaction)
         
         if not matching_rule:
@@ -182,7 +181,7 @@ class AutoCategorizationService:
                 
                 self.logger.info(f"User {self.user.id}: Auto-categorized transaction {transaction.id} "
                                f"using rule {matching_rule.id} "
-                               f"({matching_rule.vendor.name} -> {matching_rule.category.name})")
+                               f"({transaction.vendor.name} -> {matching_rule.category.name})")
                 
                 return matching_rule
                 
@@ -191,16 +190,14 @@ class AutoCategorizationService:
             return None
             
     def _get_applicable_vendor_rules(self) -> QuerySet:
-        """Get vendor rules applicable to this user."""
+        """Get vendor rules applicable to this user, ordered by newest-first for newest-rule-wins."""
         return VendorRule.objects.filter(
-            Q(vendor__user__isnull=True) | Q(vendor__user=self.user),  # System or user's vendors
-            Q(category__user__isnull=True) | Q(category__user=self.user),  # System or user's categories
             is_persistent=True  # Only apply persistent rules automatically
-        ).select_related('vendor', 'category').order_by('priority', '-created_at')
+        ).select_related('vendor', 'category').order_by('-updated_at')  # Newest rule wins
         
     def _process_transaction_batch(self, transactions: QuerySet, vendor_rules: QuerySet, 
                                  result: AutoCategorizationResult) -> None:
-        """Process a batch of transactions for categorization."""
+        """Process a batch of transactions for categorization using simplified logic."""
         for transaction in transactions:
             try:
                 # Skip if no vendor
@@ -213,7 +210,7 @@ class AutoCategorizationService:
                     result.add_skip(transaction.id, f"Already categorized as {transaction.category.name}")
                     continue
                     
-                # Find matching rule
+                # Find matching rule using simplified logic
                 matching_rule = self._find_matching_rule_from_queryset(transaction, vendor_rules)
                 
                 if not matching_rule:
@@ -232,42 +229,22 @@ class AutoCategorizationService:
                 result.add_error(transaction.id, str(e), e)
                 
     def _find_matching_rule(self, transaction: Transaction) -> Optional[VendorRule]:
-        """Find the best matching vendor rule for a transaction."""
+        """Find the best matching vendor rule for a transaction using direct vendor matching."""
         vendor_rules = self._get_applicable_vendor_rules().filter(vendor=transaction.vendor)
         return self._find_matching_rule_from_queryset(transaction, vendor_rules)
         
     def _find_matching_rule_from_queryset(self, transaction: Transaction, 
                                         vendor_rules: QuerySet) -> Optional[VendorRule]:
-        """Find the best matching rule from a queryset of vendor rules."""
+        """Find the best matching rule from a queryset using simplified direct vendor matching."""
         if not transaction.vendor:
             return None
             
-        # Filter rules for this vendor
+        # Filter rules for this vendor - direct vendor matching only
         matching_rules = vendor_rules.filter(vendor=transaction.vendor)
         
-        # Find rules that match the pattern (if any)
-        for rule in matching_rules:
-            if self._rule_matches_transaction(rule, transaction):
-                return rule
-                
-        return None
+        # Return the first (newest) rule for this vendor (newest-rule-wins)
+        return matching_rules.first()
         
-    def _rule_matches_transaction(self, rule: VendorRule, transaction: Transaction) -> bool:
-        """Check if a vendor rule matches a transaction."""
-        # If no pattern specified, match all transactions from this vendor
-        if not rule.pattern:
-            return True
-            
-        # Check if pattern matches transaction description
-        try:
-            # Use case-insensitive regex matching
-            pattern = re.compile(rule.pattern, re.IGNORECASE)
-            return bool(pattern.search(transaction.description))
-        except re.error as e:
-            self.logger.warning(f"Invalid regex pattern in rule {rule.id}: {rule.pattern}. Error: {e}")
-            # If pattern is invalid, fall back to simple string matching
-            return rule.pattern.lower() in transaction.description.lower()
-            
     def get_categorization_suggestions(self, transaction: Transaction) -> List[Dict[str, Any]]:
         """
         Get categorization suggestions for a transaction without applying them.
@@ -276,72 +253,37 @@ class AutoCategorizationService:
             transaction: Transaction to get suggestions for
             
         Returns:
-            List of suggestion dictionaries with rule details and confidence scores
+            List of suggestion dictionaries with rule details (simplified)
         """
         suggestions = []
         
         if not transaction.vendor:
             return suggestions
             
-        # Get all applicable rules for this vendor
+        # Get all applicable rules for this vendor (direct vendor matching)
         vendor_rules = self._get_applicable_vendor_rules().filter(vendor=transaction.vendor)
         
         for rule in vendor_rules:
-            if self._rule_matches_transaction(rule, transaction):
-                confidence = self._calculate_rule_confidence(rule, transaction)
-                suggestions.append({
-                    'rule_id': rule.id,
-                    'category_id': rule.category.id,
-                    'category_name': rule.category.name,
-                    'vendor_name': rule.vendor.name,
-                    'pattern': rule.pattern,
-                    'priority': rule.priority,
-                    'confidence': confidence,
-                    'is_persistent': rule.is_persistent
-                })
+            suggestions.append({
+                'rule_id': rule.id,
+                'category_id': rule.category.id,
+                'category_name': rule.category.name,
+                'vendor_name': rule.vendor.name,
+                'is_persistent': rule.is_persistent,
+                'created_at': rule.created_at.isoformat(),
+                'updated_at': rule.updated_at.isoformat()
+            })
                 
-        # Sort by priority (lower number = higher priority) then confidence
-        suggestions.sort(key=lambda x: (x['priority'], -x['confidence']))
+        # Sort by newest first (newest-rule-wins)
+        suggestions.sort(key=lambda x: x['updated_at'], reverse=True)
         
         return suggestions
-        
-    def _calculate_rule_confidence(self, rule: VendorRule, transaction: Transaction) -> float:
-        """
-        Calculate confidence score for a rule match.
-        
-        Args:
-            rule: VendorRule that matches
-            transaction: Transaction being categorized
-            
-        Returns:
-            Confidence score between 0.0 and 1.0
-        """
-        confidence = 0.5  # Base confidence
-        
-        # Higher confidence for exact vendor match
-        confidence += 0.2
-        
-        # Adjust based on priority (higher priority = higher confidence)
-        priority_bonus = (6 - rule.priority) * 0.1  # Priority 1 gets 0.5, Priority 5 gets 0.1
-        confidence += priority_bonus
-        
-        # Pattern specificity bonus
-        if rule.pattern:
-            # More specific patterns get higher confidence
-            pattern_length = len(rule.pattern)
-            if pattern_length > 10:
-                confidence += 0.1
-            elif pattern_length > 20:
-                confidence += 0.2
-                
-        # Cap at 1.0
-        return min(confidence, 1.0)
 
 
 def auto_categorize_user_transactions(user, transactions: QuerySet = None, 
                                     force_recategorize: bool = False) -> AutoCategorizationResult:
     """
-    Convenience function to auto-categorize transactions for a user.
+    Convenience function to auto-categorize transactions for a user using simplified logic.
     
     Args:
         user: User whose transactions to categorize
@@ -358,7 +300,7 @@ def auto_categorize_user_transactions(user, transactions: QuerySet = None,
 def auto_categorize_single_transaction(transaction: Transaction, 
                                      force_recategorize: bool = False) -> Optional[VendorRule]:
     """
-    Convenience function to auto-categorize a single transaction.
+    Convenience function to auto-categorize a single transaction using simplified logic.
     
     Args:
         transaction: Transaction to categorize

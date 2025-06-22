@@ -1448,8 +1448,9 @@ class AutoCategorizeSingleTransactionView(APIView):
                         'rule_id': applied_rule.id,
                         'vendor_name': applied_rule.vendor.name,
                         'category_name': applied_rule.category.name,
-                        'priority': applied_rule.priority,
-                        'pattern': applied_rule.pattern
+                        'is_persistent': applied_rule.is_persistent,
+                        'created_at': applied_rule.created_at.isoformat(),
+                        'updated_at': applied_rule.updated_at.isoformat()
                     },
                     'category_assigned': {
                         'id': transaction.category.id,
@@ -1534,15 +1535,14 @@ class CategorizationSuggestionsView(APIView):
                         'id': suggestion['rule_id'],
                         'vendor_name': suggestion['vendor_name'],
                         'category_name': suggestion['category_name'],
-                        'priority': suggestion['priority'],
-                        'pattern': suggestion['pattern'],
-                        'is_persistent': suggestion['is_persistent']
+                        'is_persistent': suggestion['is_persistent'],
+                        'created_at': suggestion['created_at'],
+                        'updated_at': suggestion['updated_at']
                     },
                     'category': {
                         'id': suggestion['category_id'],
                         'name': suggestion['category_name']
-                    },
-                    'confidence': suggestion['confidence']
+                    }
                 })
             
             vendor_info = None

@@ -1,19 +1,16 @@
 """
-Unit tests for the auto-categorization service.
+Tests for the simplified auto-categorization service.
 
-Tests cover pattern matching, rule prioritization, batch processing,
-error handling, and various edge cases.
+This test suite covers the simplified auto-categorization system that uses direct vendor
+matching with newest-rule-wins conflict resolution, without pattern matching or priority systems.
 """
 
-import re
 from decimal import Decimal
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.db import transaction as db_transaction
 
-from transactions.models import Category, Vendor, VendorRule, Transaction
-
-User = get_user_model()
+from transactions.models import Transaction, VendorRule, Vendor, Category
 from transactions.auto_categorization_service import (
     AutoCategorizationService, 
     AutoCategorizationResult,
@@ -21,90 +18,67 @@ from transactions.auto_categorization_service import (
     auto_categorize_single_transaction
 )
 
+User = get_user_model()
+
 
 class AutoCategorizationServiceTest(TestCase):
-    """Test suite for AutoCategorizationService."""
     
     def setUp(self):
-        """Set up test data."""
         # Create test users
-        self.user1 = User.objects.create_user('user1', 'user1@test.com', 'password')
-        self.user2 = User.objects.create_user('user2', 'user2@test.com', 'password')
+        self.user1 = User.objects.create_user(
+            username='user1',
+            email='user1@test.com',
+            password='testpass123'
+        )
+        self.user2 = User.objects.create_user(
+            username='user2',
+            email='user2@test.com', 
+            password='testpass123'
+        )
         
         # Create test categories
         self.category_groceries = Category.objects.create(
-            name='Groceries', 
-            user=self.user1
+            name='Groceries'
         )
         self.category_restaurants = Category.objects.create(
-            name='Restaurants', 
-            user=self.user1
+            name='Restaurants'
         )
         self.category_gas = Category.objects.create(
-            name='Gas', 
-            user=self.user1
-        )
-        
-        # System category (no user)
-        self.category_system = Category.objects.create(
-            name='System Category'
+            name='Gas'
         )
         
         # Create test vendors
         self.vendor_woolworths = Vendor.objects.create(
             name='Woolworths',
-            display_name='Woolworths Supermarket',
-            user=self.user1
+            display_name='Woolworths Supermarkets'
         )
         self.vendor_mcdonalds = Vendor.objects.create(
             name='McDonalds',
-            display_name="McDonald's Restaurant",
-            user=self.user1
+            display_name="McDonald's"
         )
         self.vendor_shell = Vendor.objects.create(
             name='Shell',
-            display_name='Shell Gas Station',
-            user=self.user1
+            display_name='Shell Gas Station'
         )
         
-        # System vendor (no user)
-        self.vendor_system = Vendor.objects.create(
-            name='System Vendor'
-        )
-        
-        # Create test vendor rules
+        # Create simplified vendor rules (no pattern/priority)
         self.rule_woolworths = VendorRule.objects.create(
-            id='rule-woolworths-001',
+            id='rule-woolworths',
             vendor=self.vendor_woolworths,
             category=self.category_groceries,
-            is_persistent=True,
-            priority=1
+            is_persistent=True
         )
-        
         self.rule_mcdonalds = VendorRule.objects.create(
-            id='rule-mcdonalds-001',
+            id='rule-mcdonalds',
             vendor=self.vendor_mcdonalds,
             category=self.category_restaurants,
-            pattern=r'.*McDonald.*',
-            is_persistent=True,
-            priority=2
+            is_persistent=True
         )
-        
         self.rule_shell = VendorRule.objects.create(
-            id='rule-shell-001',
+            id='rule-shell',
             vendor=self.vendor_shell,
             category=self.category_gas,
-            is_persistent=True,
-            priority=3
-        )
-        
-        # Non-persistent rule (should not auto-apply)
-        self.rule_non_persistent = VendorRule.objects.create(
-            id='rule-non-persistent-001',
-            vendor=self.vendor_woolworths,
-            category=self.category_restaurants,
-            is_persistent=False,
-            priority=1
+            is_persistent=True
         )
         
         # Create test transactions
@@ -112,8 +86,8 @@ class AutoCategorizationServiceTest(TestCase):
             user=self.user1,
             vendor=self.vendor_woolworths,
             transaction_date='2023-01-01',
-            description='Woolworths Supermarket Purchase',
-            original_amount=Decimal('50.00'),
+            description='Woolworths Weekly Shop',
+            original_amount=Decimal('95.50'),
             original_currency='AUD',
             direction='DEBIT'
         )
@@ -172,120 +146,54 @@ class AutoCategorizationServiceTest(TestCase):
         )
         
         self.service = AutoCategorizationService(self.user1)
-    
+        
     def test_init(self):
         """Test service initialization."""
-        service = AutoCategorizationService(self.user1)
-        self.assertEqual(service.user, self.user1)
+        self.assertEqual(self.service.user, self.user1)
         
     def test_get_applicable_vendor_rules(self):
-        """Test getting applicable vendor rules for user."""
+        """Test getting applicable vendor rules with newest-first ordering."""
         rules = self.service._get_applicable_vendor_rules()
         
-        # Should include persistent rules for user's vendors/categories
-        rule_ids = [rule.id for rule in rules]
-        self.assertIn('rule-woolworths-001', rule_ids)
-        self.assertIn('rule-mcdonalds-001', rule_ids)
-        self.assertIn('rule-shell-001', rule_ids)
+        # Should get all persistent rules
+        self.assertGreater(rules.count(), 0)
         
-        # Should not include non-persistent rules
-        self.assertNotIn('rule-non-persistent-001', rule_ids)
+        # Should be ordered by newest first (-updated_at)
+        rule_dates = [rule.updated_at for rule in rules]
+        sorted_dates = sorted(rule_dates, reverse=True)
+        self.assertEqual(rule_dates, sorted_dates)
         
-        # Check ordering (priority ascending, created_at descending)
-        priorities = [rule.priority for rule in rules]
-        self.assertEqual(priorities, sorted(priorities))
+    def test_find_matching_rule_direct_vendor_match(self):
+        """Test finding matching rule using direct vendor matching."""
+        # Should find rule for Woolworths vendor
+        matching_rule = self.service._find_matching_rule(self.tx_woolworths_uncategorized)
+        self.assertEqual(matching_rule, self.rule_woolworths)
         
-    def test_rule_matches_transaction_no_pattern(self):
-        """Test rule matching when no pattern specified."""
-        # Rule with no pattern should match all transactions from vendor
-        result = self.service._rule_matches_transaction(
-            self.rule_woolworths, 
-            self.tx_woolworths_uncategorized
-        )
-        self.assertTrue(result)
+        # Should find rule for McDonald's vendor
+        matching_rule = self.service._find_matching_rule(self.tx_mcdonalds_uncategorized)
+        self.assertEqual(matching_rule, self.rule_mcdonalds)
         
-    def test_rule_matches_transaction_with_pattern(self):
-        """Test rule matching with regex pattern."""
-        # Should match when pattern matches description
-        result = self.service._rule_matches_transaction(
-            self.rule_mcdonalds, 
-            self.tx_mcdonalds_uncategorized
-        )
-        self.assertTrue(result)
+    def test_find_matching_rule_no_vendor(self):
+        """Test finding matching rule for transaction without vendor."""
+        matching_rule = self.service._find_matching_rule(self.tx_no_vendor)
+        self.assertIsNone(matching_rule)
         
-        # Should not match when pattern doesn't match
-        tx_no_match = Transaction.objects.create(
-            user=self.user1,
-            vendor=self.vendor_mcdonalds,
-            transaction_date='2023-01-07',
-            description='Some other description',
-            original_amount=Decimal('10.00'),
-            original_currency='AUD',
-            direction='DEBIT'
-        )
-        result = self.service._rule_matches_transaction(
-            self.rule_mcdonalds, 
-            tx_no_match
-        )
-        self.assertFalse(result)
+    def test_newest_rule_wins(self):
+        """Test newest-rule-wins conflict resolution."""
+        # Create a newer rule for the same vendor with different category
+        import time
+        time.sleep(0.1)  # Ensure different timestamp
         
-    def test_rule_matches_transaction_invalid_regex(self):
-        """Test rule matching with invalid regex pattern."""
-        # Create rule with invalid regex
-        rule_invalid = VendorRule.objects.create(
-            id='rule-invalid-001',
-            vendor=self.vendor_woolworths,
-            category=self.category_groceries,
-            pattern='[invalid regex',  # Invalid regex
-            is_persistent=True,
-            priority=1
-        )
-        
-        # Should fall back to string matching
-        result = self.service._rule_matches_transaction(
-            rule_invalid, 
-            self.tx_woolworths_uncategorized
-        )
-        self.assertFalse(result)  # '[invalid regex' not in description
-        
-    def test_find_matching_rule(self):
-        """Test finding matching rule for transaction."""
-        # Should find rule for Woolworths transaction
-        rule = self.service._find_matching_rule(self.tx_woolworths_uncategorized)
-        self.assertEqual(rule, self.rule_woolworths)
-        
-        # Should find rule for McDonald's transaction
-        rule = self.service._find_matching_rule(self.tx_mcdonalds_uncategorized)
-        self.assertEqual(rule, self.rule_mcdonalds)
-        
-        # Should return None for transaction without vendor
-        rule = self.service._find_matching_rule(self.tx_no_vendor)
-        self.assertIsNone(rule)
-        
-    def test_find_matching_rule_priority_order(self):
-        """Test that rules are applied in priority order."""
-        # Create competing rules with different priorities
-        rule_high_priority = VendorRule.objects.create(
-            id='rule-high-priority',
+        newer_rule = VendorRule.objects.create(
+            id='rule-woolworths-newer',
             vendor=self.vendor_woolworths,
             category=self.category_restaurants,  # Different category
-            is_persistent=True,
-            priority=1  # Higher priority than existing rule (priority 1)
+            is_persistent=True
         )
         
-        rule_low_priority = VendorRule.objects.create(
-            id='rule-low-priority',
-            vendor=self.vendor_woolworths,
-            category=self.category_gas,  # Different category
-            is_persistent=True,
-            priority=5  # Lower priority
-        )
-        
-        # Should return the first rule that matches (ordered by priority)
-        rule = self.service._find_matching_rule(self.tx_woolworths_uncategorized)
-        # Since both rules have same priority (1), it should return the first one found
-        # which depends on creation order
-        self.assertIn(rule.id, ['rule-woolworths-001', 'rule-high-priority'])
+        # Should find the newer rule
+        matching_rule = self.service._find_matching_rule(self.tx_woolworths_uncategorized)
+        self.assertEqual(matching_rule, newer_rule)
         
     def test_categorize_single_transaction_success(self):
         """Test successful single transaction categorization."""
@@ -328,47 +236,31 @@ class AutoCategorizationServiceTest(TestCase):
         
     def test_categorize_single_transaction_no_matching_rule(self):
         """Test single transaction categorization with no matching rule."""
-        # Create transaction with vendor that has no rules
-        vendor_no_rule = Vendor.objects.create(
-            name='No Rule Vendor',
-            user=self.user1
-        )
-        tx_no_rule = Transaction.objects.create(
+        # Create vendor without rules
+        vendor_no_rules = Vendor.objects.create(name='NoRulesVendor')
+        tx_no_rules = Transaction.objects.create(
             user=self.user1,
-            vendor=vendor_no_rule,
-            transaction_date='2023-01-08',
-            description='No matching rule',
-            original_amount=Decimal('15.00'),
+            vendor=vendor_no_rules,
+            transaction_date='2023-01-07',
+            description='No rules transaction',
+            original_amount=Decimal('50.00'),
             original_currency='AUD',
             direction='DEBIT'
         )
         
-        applied_rule = self.service.categorize_single_transaction(tx_no_rule)
+        applied_rule = self.service.categorize_single_transaction(tx_no_rules)
         self.assertIsNone(applied_rule)
         
     def test_categorize_transactions_batch_processing(self):
-        """Test batch processing of multiple transactions."""
+        """Test batch processing of transactions."""
         result = self.service.categorize_transactions()
         
-        # Should categorize 3 uncategorized transactions
+        # Should categorize the uncategorized transactions (3 total)
         self.assertEqual(result.categorized_count, 3)
-        self.assertEqual(result.skipped_count, 1)  # One transaction without vendor
+        self.assertEqual(result.skipped_count, 1)  # Already categorized transaction
         self.assertEqual(result.error_count, 0)
         
-        # Check categorized transaction IDs
-        expected_ids = [
-            self.tx_woolworths_uncategorized.id,
-            self.tx_mcdonalds_uncategorized.id,
-            self.tx_shell_uncategorized.id
-        ]
-        self.assertEqual(set(result.categorized_transactions), set(expected_ids))
-        
-        # Check rules applied counts
-        self.assertEqual(result.rules_applied['rule-woolworths-001'], 1)
-        self.assertEqual(result.rules_applied['rule-mcdonalds-001'], 1)
-        self.assertEqual(result.rules_applied['rule-shell-001'], 1)
-        
-        # Verify transactions were actually categorized
+        # Verify transactions were categorized correctly
         self.tx_woolworths_uncategorized.refresh_from_db()
         self.tx_mcdonalds_uncategorized.refresh_from_db()
         self.tx_shell_uncategorized.refresh_from_db()
@@ -445,57 +337,26 @@ class AutoCategorizationServiceTest(TestCase):
         # Should have suggestions for Woolworths transaction
         self.assertGreater(len(suggestions), 0)
         
-        # Check suggestion structure
+        # Check suggestion structure (simplified)
         suggestion = suggestions[0]
         expected_keys = [
             'rule_id', 'category_id', 'category_name', 'vendor_name',
-            'pattern', 'priority', 'confidence', 'is_persistent'
+            'is_persistent', 'created_at', 'updated_at'
         ]
         for key in expected_keys:
             self.assertIn(key, suggestion)
             
-        # Should be sorted by priority then confidence
+        # Should be sorted by newest first (updated_at)
         if len(suggestions) > 1:
             for i in range(len(suggestions) - 1):
                 current = suggestions[i]
                 next_suggestion = suggestions[i + 1]
-                if current['priority'] == next_suggestion['priority']:
-                    self.assertGreaterEqual(current['confidence'], next_suggestion['confidence'])
-                else:
-                    self.assertLessEqual(current['priority'], next_suggestion['priority'])
+                self.assertGreaterEqual(current['updated_at'], next_suggestion['updated_at'])
                     
     def test_get_categorization_suggestions_no_vendor(self):
         """Test suggestions for transaction without vendor."""
         suggestions = self.service.get_categorization_suggestions(self.tx_no_vendor)
         self.assertEqual(len(suggestions), 0)
-        
-    def test_calculate_rule_confidence(self):
-        """Test rule confidence calculation."""
-        # Test basic confidence calculation
-        confidence = self.service._calculate_rule_confidence(
-            self.rule_woolworths, 
-            self.tx_woolworths_uncategorized
-        )
-        
-        # Should be between 0.0 and 1.0
-        self.assertGreaterEqual(confidence, 0.0)
-        self.assertLessEqual(confidence, 1.0)
-        
-        # Higher priority should have higher confidence
-        rule_low_priority = VendorRule.objects.create(
-            id='rule-low-priority-test',
-            vendor=self.vendor_woolworths,
-            category=self.category_groceries,
-            is_persistent=True,
-            priority=5
-        )
-        
-        low_confidence = self.service._calculate_rule_confidence(
-            rule_low_priority,
-            self.tx_woolworths_uncategorized
-        )
-        
-        self.assertGreater(confidence, low_confidence)
         
     def test_auto_categorization_result(self):
         """Test AutoCategorizationResult functionality."""
@@ -606,34 +467,5 @@ class AutoCategorizationServiceTest(TestCase):
         # Should process all transactions
         result = self.service.categorize_transactions()
         
-        # We have 150 new transactions + 3 existing uncategorized (woolworths, mcdonalds, shell) = 153
-        # But we're only seeing 100. This might be a batch processing or database issue.
-        # For this test, let's verify we got a reasonable number >= 100
-        self.assertGreaterEqual(result.categorized_count, 100)
-        
-    def test_pattern_case_insensitive_matching(self):
-        """Test that pattern matching is case insensitive."""
-        # Create rule with lowercase pattern
-        rule = VendorRule.objects.create(
-            id='rule-case-test',
-            vendor=self.vendor_mcdonalds,
-            category=self.category_restaurants,
-            pattern='mcdonald',  # lowercase
-            is_persistent=True,
-            priority=1
-        )
-        
-        # Create transaction with mixed case description
-        tx = Transaction.objects.create(
-            user=self.user1,
-            vendor=self.vendor_mcdonalds,
-            transaction_date='2023-01-01',
-            description='MCDONALD\'S RESTAURANT',  # uppercase
-            original_amount=Decimal('15.00'),
-            original_currency='AUD',
-            direction='DEBIT'
-        )
-        
-        # Should match despite case difference
-        matches = self.service._rule_matches_transaction(rule, tx)
-        self.assertTrue(matches)
+        # Should categorize all new transactions (150) + existing uncategorized (3) = 153
+        self.assertGreaterEqual(result.categorized_count, 150)

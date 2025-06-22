@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Category, Transaction, Vendor, VendorRule, BASE_CURRENCY_FOR_CONVERSION
+from .models import Category, Transaction, Vendor, VendorRule, VendorMapping, BASE_CURRENCY_FOR_CONVERSION
 from django.db.models import Q
 import uuid
 
@@ -598,6 +598,98 @@ class VendorRuleSerializer(serializers.ModelSerializer):
             instance.category = category
             
         # Update other fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+            
+        instance.save()
+        return instance
+
+
+class VendorMappingSerializer(serializers.ModelSerializer):
+    """
+    Serializer for VendorMapping model for CRUD operations.
+    Handles vendor mapping creation, reading, updating, and deletion with proper validation.
+    """
+    # User field should not be directly set by API client, set internally in view
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    
+    class Meta:
+        model = VendorMapping
+        fields = [
+            'id',
+            'user',
+            'original_name',
+            'mapped_vendor',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+
+    def validate_original_name(self, value):
+        """
+        Ensure the original name is not empty and is properly formatted.
+        """
+        if not value or not value.strip():
+            raise serializers.ValidationError("Original vendor name cannot be empty.")
+        
+        # Normalize whitespace
+        return value.strip()
+
+    def validate_mapped_vendor(self, value):
+        """
+        Ensure the mapped vendor name is not empty and is properly formatted.
+        """
+        if not value or not value.strip():
+            raise serializers.ValidationError("Mapped vendor name cannot be empty.")
+        
+        # Normalize whitespace
+        return value.strip()
+
+    def validate(self, data):
+        """
+        Cross-field validation for vendor mappings.
+        """
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+        
+        user = request.user
+        original_name = data.get('original_name')
+        
+        # Check for duplicate original_name for this user
+        if original_name:
+            existing_mappings = VendorMapping.objects.filter(
+                user=user,
+                original_name=original_name
+            )
+            
+            # Exclude self during updates
+            if self.instance:
+                existing_mappings = existing_mappings.exclude(pk=self.instance.pk)
+            
+            if existing_mappings.exists():
+                raise serializers.ValidationError(
+                    "A mapping for this original vendor name already exists."
+                )
+
+        return data
+
+    def create(self, validated_data):
+        """
+        Create a new vendor mapping for the authenticated user.
+        """
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+        
+        validated_data['user'] = request.user
+        return VendorMapping.objects.create(**validated_data)
+
+    def update(self, instance, validated_data):
+        """
+        Update an existing vendor mapping.
+        """
+        # Update fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
             

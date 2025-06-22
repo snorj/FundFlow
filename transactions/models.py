@@ -188,6 +188,68 @@ class VendorRule(models.Model):
         persistent_text = " [Auto]" if self.is_persistent else ""
         return f"{self.vendor.name} -> {self.category.name}{persistent_text}"
 
+class VendorMapping(models.Model):
+    """
+    Maps original vendor names to standardized vendor names, allowing multiple
+    original names to be mapped to the same vendor for consistent categorization.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='vendor_mappings',
+        db_index=True,
+        help_text="User who owns this vendor mapping."
+    )
+    original_name = models.CharField(
+        max_length=255,
+        help_text="The original vendor name as it appears in transaction data."
+    )
+    mapped_vendor = models.CharField(
+        max_length=255,
+        help_text="The standardized vendor name this original name maps to."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Vendor Mapping"
+        verbose_name_plural = "Vendor Mappings"
+        unique_together = ('user', 'original_name')
+        ordering = ['mapped_vendor', 'original_name']
+        indexes = [
+            models.Index(fields=['user', 'original_name']),
+            models.Index(fields=['mapped_vendor']),
+            models.Index(fields=['created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.original_name} -> {self.mapped_vendor}"
+
+    @classmethod
+    def get_mapping_for_user(cls, user_id, original_name):
+        """
+        Efficiently retrieve the mapped vendor name for a given original name and user.
+        Returns the mapped_vendor if found, otherwise returns the original_name.
+        """
+        try:
+            mapping = cls.objects.get(user_id=user_id, original_name=original_name)
+            return mapping.mapped_vendor
+        except cls.DoesNotExist:
+            return original_name
+
+    @classmethod
+    def bulk_get_mappings_for_user(cls, user_id, original_names):
+        """
+        Efficiently retrieve mappings for multiple original names.
+        Returns a dictionary mapping original_name -> mapped_vendor.
+        """
+        mappings = cls.objects.filter(
+            user_id=user_id,
+            original_name__in=original_names
+        ).values('original_name', 'mapped_vendor')
+        
+        return {m['original_name']: m['mapped_vendor'] for m in mappings}
+
 class SplitTransaction(models.Model):
     """
     Represents a split portion of a parent transaction, allowing users to 
