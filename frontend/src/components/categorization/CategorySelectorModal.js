@@ -4,9 +4,7 @@ import PropTypes from 'prop-types';
 import TreeView from './TreeView';
 import { transformCategoryData, calculateCategorySpendingTotals } from '../../utils/categoryTransformUtils';
 import './CategorySelectorModal.css';
-// --- Add FiSave, FiXCircle ---
-import { FiX, FiPlus, FiLoader, FiSave, FiXCircle } from 'react-icons/fi';
-import categoryService from '../../services/categories';
+import { FiX } from 'react-icons/fi';
 
 const CategorySelectorModal = ({
   // Core Modal Props
@@ -25,7 +23,6 @@ const CategorySelectorModal = ({
   transactions = [], // New: transactions for TreeView
   
   // Feature Control
-  allowCreate = true, // New: control creation capability
   showVendors = false, // New: control vendor display in tree
   showTransactions = false, // New: control transaction display in tree
   
@@ -53,13 +50,6 @@ const CategorySelectorModal = ({
     selectedCategoryId: normalizedInitialCategory,
     pendingSelectionId: null, // Only used in 'confirm' mode
   });
-  
-  const [creationState, setCreationState] = useState({
-    isCreating: false,
-    showTopLevelInput: false,
-    newTopLevelName: '',
-    createError: null,
-  });
 
   // Reset state when modal opens
   useEffect(() => {
@@ -67,12 +57,6 @@ const CategorySelectorModal = ({
       setSelectionState({
         selectedCategoryId: normalizedInitialCategory,
         pendingSelectionId: selectionMode === 'confirm' ? normalizedInitialCategory : null,
-      });
-      setCreationState({
-        isCreating: false,
-        showTopLevelInput: false,
-        newTopLevelName: '',
-        createError: null,
       });
     }
   }, [isOpen, normalizedInitialCategory, selectionMode]);
@@ -130,73 +114,7 @@ const CategorySelectorModal = ({
     }
   }, [selectionMode, selectionState.pendingSelectionId, onSelectCategory, processedData.all, onClose]);
 
-  // Category creation handler
-  const handleCreateCategory = useCallback(async (name, parentId = null) => {
-    if (!allowCreate) return;
-    
-    console.log(`Modal: handleCreateCategory called with Name: ${name}, ParentID: ${parentId}`);
-    setCreationState(prev => ({ ...prev, isCreating: true, createError: null }));
-    
-    try {
-      const newCategoryData = { name, parent: parentId };
-      const createdCategory = await categoryService.createCategory(newCategoryData);
-      console.log("Modal: Category created via API:", createdCategory);
 
-      // Refresh the category list if callback provided
-      if (onCategoriesUpdate) {
-        const updatedCategoriesData = await categoryService.getCategories();
-        onCategoriesUpdate(updatedCategoriesData || []);
-      }
-
-      // Reset creation UI
-      setCreationState(prev => ({
-        ...prev,
-        showTopLevelInput: false,
-        newTopLevelName: '',
-      }));
-
-      // Auto-select newly created category in immediate mode
-      if (selectionMode === 'immediate' && createdCategory) {
-        handleNodeSelect(createdCategory.id);
-      }
-
-    } catch (error) {
-      console.error("Modal: Failed to create category:", error);
-      setCreationState(prev => ({
-        ...prev,
-        createError: error.message || "Failed to create category."
-      }));
-      throw error;
-    } finally {
-      setCreationState(prev => ({ ...prev, isCreating: false }));
-    }
-  }, [allowCreate, onCategoriesUpdate, selectionMode, handleNodeSelect]);
-
-  // Top-level creation handlers
-  const handleAddTopLevelClick = useCallback(() => {
-    if (!allowCreate) return;
-    setCreationState(prev => ({
-      ...prev,
-      showTopLevelInput: true,
-      newTopLevelName: '',
-      createError: null,
-    }));
-  }, [allowCreate]);
-
-  const handleSaveTopLevel = useCallback(() => {
-    if (creationState.newTopLevelName.trim()) {
-      handleCreateCategory(creationState.newTopLevelName.trim(), null);
-    }
-  }, [creationState.newTopLevelName, handleCreateCategory]);
-
-  const handleCancelTopLevel = useCallback(() => {
-    setCreationState(prev => ({
-      ...prev,
-      showTopLevelInput: false,
-      newTopLevelName: '',
-      createError: null,
-    }));
-  }, []);
 
   // TreeView-compatible category selection handler
   const handleCategorySelect = useCallback((categoryNode) => {
@@ -220,7 +138,7 @@ const CategorySelectorModal = ({
     'category-modal-content',
     `category-modal--${selectionMode}`,
     `category-modal--${modalSize}`,
-    allowCreate ? 'category-modal--with-creation' : 'category-modal--no-creation'
+    'category-modal--no-creation'
   ].join(' ');
 
   return (
@@ -234,44 +152,7 @@ const CategorySelectorModal = ({
           </button>
         </div>
 
-        {/* Top Actions - Only show if creation is allowed */}
-        {allowCreate && (
-          <div className="modal-actions-top">
-            {!creationState.showTopLevelInput ? (
-              <button 
-                className="add-top-level-button" 
-                onClick={handleAddTopLevelClick} 
-                disabled={creationState.isCreating}
-              >
-                <FiPlus/> Add Top-Level Category
-              </button>
-            ) : (
-              <div className="add-top-level-input-area">
-                <input
-                  type="text"
-                  value={creationState.newTopLevelName}
-                  onChange={(e) => setCreationState(prev => ({ ...prev, newTopLevelName: e.target.value }))}
-                  placeholder="New top-level category name..."
-                  disabled={creationState.isCreating}
-                  autoFocus
-                />
-                <button 
-                  onClick={handleSaveTopLevel} 
-                  disabled={!creationState.newTopLevelName.trim() || creationState.isCreating} 
-                  title="Save"
-                >
-                  {creationState.isCreating ? <FiLoader size="14" className="spinner-inline"/> : <FiSave size="14"/>}
-                </button>
-                <button onClick={handleCancelTopLevel} disabled={creationState.isCreating} title="Cancel">
-                  <FiXCircle size="14"/>
-                </button>
-              </div>
-            )}
-            {creationState.createError && (
-              <p className="inline-error-text modal-error">{creationState.createError}</p>
-            )}
-          </div>
-        )}
+
 
         {/* Body */}
         <div className="modal-body">
@@ -281,21 +162,21 @@ const CategorySelectorModal = ({
             </p>
           )}
           
-          <div className={`category-tree-container ${creationState.isCreating ? 'disabled-tree' : ''}`}>
+          <div className="category-tree-container">
             {processedData.treeData.length > 0 ? (
               <TreeView
                 data={processedData.treeData}
                 width={400}
                 height={300}
                 onCategorySelect={selectionMode !== 'none' ? handleCategorySelect : undefined}
-                onCreateCategory={allowCreate ? handleCreateCategory : undefined}
+                onCreateCategory={undefined} // No category creation allowed
                 onDeleteCategory={undefined} // Don't allow deletion in modal
-                isCreating={creationState.isCreating}
+                isCreating={false}
                 isDeleting={false}
                 categorySpendingTotals={processedData.categorySpendingTotals}
                 selectedCategoryId={displaySelectedId}
                 showSpendingTotals={transactions.length > 0}
-                enableSmartInteractions={selectionMode !== 'none' && !creationState.isCreating}
+                enableSmartInteractions={selectionMode !== 'none'}
                 enableDragAndDrop={false}
                 className="category-selector-tree"
               />
@@ -308,14 +189,13 @@ const CategorySelectorModal = ({
         {/* Footer - Only show if needed */}
         {normalizedShowFooter && (
           <div className="modal-footer">
-            <button onClick={onClose} className="modal-button cancel" disabled={creationState.isCreating}>
+            <button onClick={onClose} className="modal-button cancel">
               Cancel
             </button>
             <button 
               onClick={handleConfirm} 
               className="modal-button confirm" 
               disabled={
-                creationState.isCreating || 
                 selectionState.pendingSelectionId === normalizedInitialCategory || 
                 !selectionState.pendingSelectionId
               }
@@ -346,7 +226,6 @@ CategorySelectorModal.propTypes = {
   transactions: PropTypes.array, // New: transactions for TreeView
   
   // Feature Control
-  allowCreate: PropTypes.bool,
   showVendors: PropTypes.bool, // New: control vendor display
   showTransactions: PropTypes.bool, // New: control transaction display
   

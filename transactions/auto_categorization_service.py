@@ -147,7 +147,7 @@ class AutoCategorizationService:
     def categorize_single_transaction(self, transaction: Transaction, 
                                     force_recategorize: bool = False) -> Optional[VendorRule]:
         """
-        Auto-categorize a single transaction using direct vendor matching.
+        Auto-categorize a single transaction using direct vendor name matching.
         
         Args:
             transaction: Transaction instance to categorize
@@ -161,9 +161,9 @@ class AutoCategorizationService:
             self.logger.debug(f"Transaction {transaction.id} already categorized, skipping")
             return None
             
-        # Check if transaction has a vendor
-        if not transaction.vendor:
-            self.logger.debug(f"Transaction {transaction.id} has no vendor, skipping")
+        # Check if transaction has a vendor name
+        if not transaction.vendor_name:
+            self.logger.debug(f"Transaction {transaction.id} has no vendor name, skipping")
             return None
             
         # Find matching rule using simplified logic
@@ -177,11 +177,12 @@ class AutoCategorizationService:
         try:
             with db_transaction.atomic():
                 transaction.category = matching_rule.category
-                transaction.save(update_fields=['category', 'updated_at'])
+                transaction.auto_categorized = True  # Mark as auto-categorized
+                transaction.save(update_fields=['category', 'auto_categorized', 'updated_at'])
                 
                 self.logger.info(f"User {self.user.id}: Auto-categorized transaction {transaction.id} "
                                f"using rule {matching_rule.id} "
-                               f"({transaction.vendor.name} -> {matching_rule.category.name})")
+                               f"({transaction.vendor_name} -> {matching_rule.category.name})")
                 
                 return matching_rule
                 
@@ -197,12 +198,12 @@ class AutoCategorizationService:
         
     def _process_transaction_batch(self, transactions: QuerySet, vendor_rules: QuerySet, 
                                  result: AutoCategorizationResult) -> None:
-        """Process a batch of transactions for categorization using simplified logic."""
+        """Process a batch of transactions for categorization using vendor name matching."""
         for transaction in transactions:
             try:
-                # Skip if no vendor
-                if not transaction.vendor:
-                    result.add_skip(transaction.id, "No vendor assigned")
+                # Skip if no vendor name
+                if not transaction.vendor_name:
+                    result.add_skip(transaction.id, "No vendor name")
                     continue
                     
                 # Skip if already categorized (double-check)
@@ -210,16 +211,17 @@ class AutoCategorizationService:
                     result.add_skip(transaction.id, f"Already categorized as {transaction.category.name}")
                     continue
                     
-                # Find matching rule using simplified logic
+                # Find matching rule using vendor name matching
                 matching_rule = self._find_matching_rule_from_queryset(transaction, vendor_rules)
                 
                 if not matching_rule:
-                    result.add_skip(transaction.id, f"No matching rule for vendor {transaction.vendor.name}")
+                    result.add_skip(transaction.id, f"No matching rule for vendor '{transaction.vendor_name}'")
                     continue
                     
                 # Apply the rule
                 transaction.category = matching_rule.category
-                transaction.save(update_fields=['category', 'updated_at'])
+                transaction.auto_categorized = True  # Mark as auto-categorized
+                transaction.save(update_fields=['category', 'auto_categorized', 'updated_at'])
                 
                 result.add_success(transaction.id, matching_rule.id)
                 
@@ -229,20 +231,27 @@ class AutoCategorizationService:
                 result.add_error(transaction.id, str(e), e)
                 
     def _find_matching_rule(self, transaction: Transaction) -> Optional[VendorRule]:
-        """Find the best matching vendor rule for a transaction using direct vendor matching."""
-        vendor_rules = self._get_applicable_vendor_rules().filter(vendor=transaction.vendor)
-        return self._find_matching_rule_from_queryset(transaction, vendor_rules)
+        """Find the best matching vendor rule for a transaction using vendor name matching."""
+        if not transaction.vendor_name:
+            return None
+            
+        vendor_rules = self._get_applicable_vendor_rules()
+        # Find vendor rules by matching vendor names
+        matching_rules = vendor_rules.filter(vendor__name__iexact=transaction.vendor_name)
+        
+        # Return the first (newest) rule for this vendor name (newest-rule-wins)
+        return matching_rules.first()
         
     def _find_matching_rule_from_queryset(self, transaction: Transaction, 
                                         vendor_rules: QuerySet) -> Optional[VendorRule]:
-        """Find the best matching rule from a queryset using simplified direct vendor matching."""
-        if not transaction.vendor:
+        """Find the best matching rule from a queryset using vendor name matching."""
+        if not transaction.vendor_name:
             return None
             
-        # Filter rules for this vendor - direct vendor matching only
-        matching_rules = vendor_rules.filter(vendor=transaction.vendor)
+        # Filter rules for this vendor name - case-insensitive matching
+        matching_rules = vendor_rules.filter(vendor__name__iexact=transaction.vendor_name)
         
-        # Return the first (newest) rule for this vendor (newest-rule-wins)
+        # Return the first (newest) rule for this vendor name (newest-rule-wins)
         return matching_rules.first()
         
     def get_categorization_suggestions(self, transaction: Transaction) -> List[Dict[str, Any]]:
@@ -253,15 +262,17 @@ class AutoCategorizationService:
             transaction: Transaction to get suggestions for
             
         Returns:
-            List of suggestion dictionaries with rule details (simplified)
+            List of suggestion dictionaries with rule details
         """
         suggestions = []
         
-        if not transaction.vendor:
+        if not transaction.vendor_name:
             return suggestions
             
-        # Get all applicable rules for this vendor (direct vendor matching)
-        vendor_rules = self._get_applicable_vendor_rules().filter(vendor=transaction.vendor)
+        # Get all applicable rules for this vendor name (case-insensitive matching)
+        vendor_rules = self._get_applicable_vendor_rules().filter(
+            vendor__name__iexact=transaction.vendor_name
+        )
         
         for rule in vendor_rules:
             suggestions.append({

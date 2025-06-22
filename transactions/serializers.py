@@ -116,6 +116,9 @@ class TransactionSerializer(serializers.ModelSerializer):
             'exchange_rate_to_aud', 
             'signed_original_amount',
             'signed_aud_amount',
+            'original_vendor_name', # New field for vendor mapping
+            'vendor_name',          # New field for vendor mapping
+            'auto_categorized',     # New field to indicate auto-categorization
             'source',               
             'bank_transaction_id',  
             'source_account_identifier',
@@ -130,7 +133,8 @@ class TransactionSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id', 'user', 'category_name',
             'signed_original_amount', 'signed_aud_amount', 
-            'aud_amount', 'exchange_rate_to_aud', 
+            'aud_amount', 'exchange_rate_to_aud',
+            'original_vendor_name', 'vendor_name', 'auto_categorized', # New fields are read-only in this serializer
             'created_at', 'updated_at', 'last_modified' # Add last_modified here
         ]
 
@@ -462,6 +466,23 @@ class TransactionCreateSerializer(serializers.ModelSerializer):
         validated_data['category'] = category
         validated_data['vendor'] = vendor
         validated_data['user'] = request.user
+        
+        # Set vendor name fields for manual transactions
+        if vendor:
+            # For manual transactions with a vendor, use the vendor's name
+            vendor_name = vendor.name
+        else:
+            # Extract vendor name from description for manual transactions
+            description = validated_data.get('description', '')
+            # Simple extraction - take first part before any separators
+            vendor_name = description.split(' - ')[0].split(' | ')[0].split(':')[0].strip()
+            if not vendor_name:
+                vendor_name = 'Manual Entry'
+        
+        # For manual transactions, original and mapped vendor names are the same
+        validated_data['original_vendor_name'] = vendor_name
+        validated_data['vendor_name'] = vendor_name
+        validated_data['auto_categorized'] = False  # Manual transactions are not auto-categorized
         
         try:
             # Create the transaction

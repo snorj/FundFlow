@@ -2,8 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import transactionService from '../services/transactions';
 import categoryService from '../services/categories';
+import vendorRuleService from '../services/vendorRules';
 import CategorySelectorModal from '../components/categorization/CategorySelectorModal';
 import TransactionDetailsModal from '../components/transactions/TransactionDetailsModal';
+import VendorRulePromptModal from '../components/categorization/VendorRulePromptModal';
 import './CategoriseTransactions.css';
 import { FiLoader, FiInbox, FiAlertCircle, FiCheck, FiTag, FiSquare, FiCheckSquare, FiInfo, FiEdit3, FiX } from 'react-icons/fi';
 import { formatDate, formatCurrency } from '../utils/formatting';
@@ -26,6 +28,9 @@ const CategoriseTransactionsPage = () => {
     const [isAutoCategorizingSelected, setIsAutoCategorizingSelected] = useState(false);
     const [autoCategorizeError, setAutoCategorizeError] = useState(null);
     const [autoCategorizeResults, setAutoCategorizeResults] = useState(null);
+    const [isVendorRulePromptOpen, setIsVendorRulePromptOpen] = useState(false);
+    const [vendorRulePromptData, setVendorRulePromptData] = useState(null);
+    const [isCreatingVendorRules, setIsCreatingVendorRules] = useState(false);
     const navigate = useNavigate();
 
     const handleCategoriesUpdate = useCallback(async () => {
@@ -166,7 +171,68 @@ const CategoriseTransactionsPage = () => {
         setEditingVendor(null);
     };
 
+    const handleVendorRulePromptConfirm = async () => {
+        setIsCreatingVendorRules(true);
+        try {
+            // Create vendor rules and then perform categorization
+            await performCategorization(true);
+            setIsVendorRulePromptOpen(false);
+            setVendorRulePromptData(null);
+        } catch (error) {
+            console.error("Error in vendor rule creation and categorization:", error);
+            setSubmitError(error.message || 'Failed to create vendor rules and categorize transactions.');
+            setIsVendorRulePromptOpen(false);
+            setVendorRulePromptData(null);
+        } finally {
+            setIsCreatingVendorRules(false);
+        }
+    };
+
+    const handleVendorRulePromptClose = async () => {
+        if (isCreatingVendorRules) return; // Prevent closing while in progress
+        
+        setIsVendorRulePromptOpen(false);
+        // Proceed with categorization without creating rules
+        if (vendorRulePromptData) {
+            // Restore the selection from the prompt data
+            setSelectedTransactionIds(vendorRulePromptData.selectedTransactionIds);
+            setVendorRulePromptData(null);
+            // Perform categorization without creating rules
+            await performCategorization(false);
+        }
+    };
+
     const handleCategorizeSelected = async () => {
+        if (!selectedCategory || selectedTransactionIds.size === 0) return;
+        
+        // Check if user is categorizing entire vendor groups and should be prompted for vendor rules
+        const vendorGroupsToRule = [];
+        
+        groupedTransactions.forEach(group => {
+            const selectedInGroup = group.transaction_ids.filter(id => selectedTransactionIds.has(id));
+            // If user selected ALL transactions in this group, consider it for vendor rule creation
+            if (selectedInGroup.length === group.transaction_ids.length && group.transaction_ids.length > 0) {
+                vendorGroupsToRule.push(group.description);
+            }
+        });
+        
+        // If there are vendor groups that could benefit from rules, show the prompt
+        if (vendorGroupsToRule.length > 0) {
+            setVendorRulePromptData({
+                vendors: vendorGroupsToRule,
+                category: selectedCategory.name,
+                categoryId: selectedCategory.id,
+                selectedTransactionIds: new Set(selectedTransactionIds)
+            });
+            setIsVendorRulePromptOpen(true);
+            return; // Don't proceed with categorization yet
+        }
+        
+        // Otherwise, proceed with normal categorization
+        await performCategorization();
+    };
+
+    const performCategorization = async (createRules = false) => {
         if (!selectedCategory || selectedTransactionIds.size === 0) return;
         
         setIsSubmitting(true);
@@ -182,6 +248,21 @@ const CategoriseTransactionsPage = () => {
                     transactionsByDescription.set(group.description, selectedInGroup);
                 }
             });
+            
+            // Create vendor rules if requested
+            if (createRules && vendorRulePromptData) {
+                try {
+                    await vendorRuleService.createVendorRulesForVendors(
+                        vendorRulePromptData.vendors,
+                        vendorRulePromptData.categoryId,
+                        true // is_persistent
+                    );
+                } catch (ruleError) {
+                    console.error("Error creating vendor rules:", ruleError);
+                    // Continue with categorization even if rule creation fails
+                    setSubmitError(ruleError.message || 'Vendor rules could not be created, but transactions will still be categorized.');
+                }
+            }
             
             // Make separate API calls for each description group
             const promises = Array.from(transactionsByDescription.entries()).map(([description, transactionIds]) => {
@@ -518,6 +599,17 @@ const CategoriseTransactionsPage = () => {
                 onClose={() => setIsTransactionDetailsOpen(false)}
                 transaction={selectedTransaction}
             />
+
+            {/* Vendor Rule Prompt Modal */}
+            {vendorRulePromptData && (
+                <VendorRulePromptModal
+                    isOpen={isVendorRulePromptOpen}
+                    onClose={handleVendorRulePromptClose}
+                    vendors={vendorRulePromptData.vendors}
+                    category={vendorRulePromptData.category}
+                    onConfirm={handleVendorRulePromptConfirm}
+                />
+            )}
         </div>
     );
 };

@@ -539,6 +539,22 @@ class Transaction(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions', db_index=True)
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions', db_index=True)
     vendor = models.ForeignKey(Vendor, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions', db_index=True)
+    
+    # New fields for vendor mapping support
+    original_vendor_name = models.CharField(
+        max_length=255,
+        help_text="The original vendor name as it appeared in the source data (CSV, bank API, etc.)"
+    )
+    vendor_name = models.CharField(
+        max_length=255,
+        help_text="The vendor name after applying any user mappings (used for categorization rules)"
+    )
+    auto_categorized = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Whether this transaction was automatically categorized by vendor rules"
+    )
+    
     transaction_date = models.DateField(db_index=True)
     description = models.TextField(help_text="Description of the transaction (e.g., merchant name, notes).")
 
@@ -635,6 +651,10 @@ class Transaction(models.Model):
             models.Index(fields=['bank_transaction_id']),
             models.Index(fields=['original_currency', 'transaction_date']),
             models.Index(fields=['user', 'created_at']),
+            # New indexes for vendor name fields
+            models.Index(fields=['user', 'vendor_name']),
+            models.Index(fields=['user', 'original_vendor_name']),
+            models.Index(fields=['auto_categorized']),
         ]
         constraints = [
             models.CheckConstraint(

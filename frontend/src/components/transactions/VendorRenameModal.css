@@ -1,0 +1,298 @@
+/* VendorRenameModal.css */
+
+/* Modal Overlay */
+.vendor-rename-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+/* Modal Content */
+.vendor-rename-modal-content {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  max-width: 500px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: hidden;
+  position: relative;
+  animation: vendor-rename-modal-enter 0.3s ease-out;
+}
+
+@keyframes vendor-rename-modal-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Header */
+.vendor-rename-modal-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vendor-rename-modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.vendor-rename-modal-close-button {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: #6b7280;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+}
+
+.vendor-rename-modal-close-button:hover:not(:disabled) {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.vendor-rename-modal-close-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.vendor-rename-modal-close-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Body */
+.vendor-rename-modal-body {
+  padding: 24px;
+}
+
+.vendor-rename-form-group {
+  margin-bottom: 20px;
+}
+
+.vendor-rename-form-group:last-child {
+  margin-bottom: 0;
+}
+
+.vendor-rename-form-label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #374151;
+  font-size: 0.875rem;
+}
+
+.vendor-rename-form-label .required {
+  color: #dc2626;
+  margin-left: 2px;
+}
+
+.vendor-rename-current-name {
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 12px;
+  font-weight: 500;
+  color: #111827;
+  font-size: 0.875rem;
+}
+
+.vendor-rename-form-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.vendor-rename-form-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.vendor-rename-form-input.error {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+}
+
+.vendor-rename-form-input:disabled {
+  background-color: #f9fafb;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+.vendor-rename-error-message {
+  display: flex;
+  align-items: center;
+  margin-top: 6px;
+  color: #dc2626;
+  font-size: 0.75rem;
+  gap: 4px;
+}
+
+.vendor-rename-error-message svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.vendor-rename-info-text {
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 16px;
+}
+
+.vendor-rename-info-text p {
+  margin: 0;
+  color: #1e40af;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+/* Footer */
+.vendor-rename-modal-footer {
+  padding: 16px 24px 24px;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  border-top: 1px solid #e5e7eb;
+}
+
+.vendor-rename-button {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  min-width: 80px;
+  justify-content: center;
+}
+
+.vendor-rename-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.vendor-rename-button-secondary {
+  background-color: white;
+  color: #374151;
+  border-color: #d1d5db;
+}
+
+.vendor-rename-button-secondary:hover:not(:disabled) {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.vendor-rename-button-primary {
+  background-color: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.vendor-rename-button-primary:hover:not(:disabled) {
+  background-color: #2563eb;
+  border-color: #2563eb;
+}
+
+.vendor-rename-button-spinner {
+  animation: vendor-rename-spin 1s linear infinite;
+  width: 14px;
+  height: 14px;
+}
+
+@keyframes vendor-rename-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 640px) {
+  .vendor-rename-modal-overlay {
+    padding: 16px;
+  }
+  
+  .vendor-rename-modal-content {
+    max-width: 100%;
+  }
+  
+  .vendor-rename-modal-header {
+    padding: 16px 20px 12px;
+  }
+  
+  .vendor-rename-modal-body {
+    padding: 20px;
+  }
+  
+  .vendor-rename-modal-footer {
+    padding: 12px 20px 20px;
+    flex-direction: column-reverse;
+  }
+  
+  .vendor-rename-button {
+    width: 100%;
+  }
+  
+  .vendor-rename-modal-header h2 {
+    font-size: 1.125rem;
+  }
+}
+
+/* Focus Management */
+.vendor-rename-modal-overlay:focus {
+  outline: none;
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+  .vendor-rename-modal-content {
+    border: 2px solid #000;
+  }
+  
+  .vendor-rename-form-input {
+    border-width: 2px;
+  }
+  
+  .vendor-rename-button {
+    border-width: 2px;
+  }
+} 

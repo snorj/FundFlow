@@ -180,16 +180,7 @@ describe('CategorySelectorModal', () => {
       expect(container.querySelector('.category-modal--lg')).toBeInTheDocument();
     });
 
-    test('allowCreate controls creation UI', () => {
-      const { rerender } = render(
-        <CategorySelectorModal {...defaultProps} allowCreate={false} />
-      );
-      
-      expect(screen.queryByText('Add Top-Level Category')).not.toBeInTheDocument();
-      
-      rerender(<CategorySelectorModal {...defaultProps} allowCreate={true} />);
-      expect(screen.getByText('Add Top-Level Category')).toBeInTheDocument();
-    });
+
   });
 
   describe('Category Filtering', () => {
@@ -302,15 +293,14 @@ describe('CategorySelectorModal', () => {
           onSelectCategory={onSelectCategory}
           modalTitle="Select Category"
           modalSize="md"
-          allowCreate={true}
         />
       );
 
       // Should show custom title
       expect(screen.getByText('Select Category')).toBeInTheDocument();
       
-      // Should show creation button
-      expect(screen.getByText('Add Top-Level Category')).toBeInTheDocument();
+      // Should NOT show creation button (creation removed)
+      expect(screen.queryByText('Add Top-Level Category')).not.toBeInTheDocument();
       
       // Should not show footer (immediate mode)
       expect(screen.queryByText('Confirm Selection')).not.toBeInTheDocument();
@@ -338,7 +328,7 @@ describe('CategorySelectorModal', () => {
       // Should use defaults that match legacy behavior
       expect(screen.getByText('Select Category')).toBeInTheDocument(); // Default title
       expect(screen.getByText('Confirm Selection')).toBeInTheDocument(); // Confirm mode
-      expect(screen.getByText('Add Top-Level Category')).toBeInTheDocument(); // Creation allowed
+      expect(screen.queryByText('Add Top-Level Category')).not.toBeInTheDocument(); // Creation removed
       
       // Should require confirmation
       fireEvent.click(screen.getByTestId('category-node-1'));

@@ -894,6 +894,11 @@ class TransactionCSVUploadView(APIView):
             skipped_conversion_error_count = 0
             applied_rules_count = 0
             user_mappings = { m.original_description.strip().lower(): m for m in DescriptionMapping.objects.filter(user=current_user) }
+            
+            # Get vendor mappings for the user
+            from .models import VendorMapping
+            vendor_mappings = VendorMapping.objects.filter(user=current_user)
+            vendor_mapping_dict = {vm.original_name.lower(): vm.mapped_vendor for vm in vendor_mappings}
 
             for data_item in potential_transactions_data:
                 raw_description = data_item['raw_description']
@@ -937,6 +942,20 @@ class TransactionCSVUploadView(APIView):
                         logger.warning(f"User {current_user.id} - Row {data_item['row_num']}: Rate fetch failed for {original_currency_code}->{BASE_CURRENCY_FOR_CONVERSION} on {data_item['transaction_date']}.")
                 # --- END OF MODIFIED SECTION ---
 
+                # --- NEW VENDOR MAPPING LOGIC ---
+                # Extract original vendor name from CSV data
+                original_vendor_name = data_item.get('counterparty_identifier', '').strip()
+                if not original_vendor_name:
+                    # Fallback to description if no counterparty
+                    original_vendor_name = final_description.split(' - ')[0].split(' | ')[0].strip()
+                if not original_vendor_name:
+                    original_vendor_name = 'Unknown Vendor'
+                
+                # Check for vendor mapping
+                mapped_vendor_name = vendor_mapping_dict.get(original_vendor_name.lower())
+                vendor_name = mapped_vendor_name if mapped_vendor_name else original_vendor_name
+                # --- END VENDOR MAPPING LOGIC ---
+
                 transactions_to_create.append(
                     Transaction(
                         user=current_user, category=assigned_category, description=final_description,
@@ -949,6 +968,10 @@ class TransactionCSVUploadView(APIView):
                         counterparty_identifier=data_item['counterparty_identifier'],
                         source_code=data_item['source_code'], source_type=data_item['source_type'],
                         source_notifications=data_item['source_notifications'],
+                        # New vendor name fields
+                        original_vendor_name=original_vendor_name,
+                        vendor_name=vendor_name,
+                        auto_categorized=False,  # Will be set to True by auto-categorization if a rule is applied
                     )
                 )
             # ... (Phase 4: Bulk Create and Phase 5: Prepare Response - logic remains the same) ...

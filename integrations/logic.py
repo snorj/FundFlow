@@ -183,6 +183,17 @@ def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, sinc
             
             description = attributes['description']
 
+            # --- NEW VENDOR MAPPING LOGIC ---
+            # Extract original vendor name from Up Bank description
+            original_vendor_name = description.split(' - ')[0].split(' | ')[0].strip()
+            if not original_vendor_name:
+                original_vendor_name = 'Up Bank Transaction'
+            
+            # For Up Bank transactions, initially use the same name for both fields
+            # Later, vendor identification and mapping will update these
+            vendor_name = original_vendor_name
+            # --- END VENDOR MAPPING LOGIC ---
+
             # Create the Transaction object using actual Up Bank AUD amounts
             new_tx = Transaction(
                 user=user, 
@@ -194,7 +205,11 @@ def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, sinc
                 original_currency=original_currency_code,  # Store original currency for reference
                 direction=direction, 
                 aud_amount=abs_aud_amount,  # Use Up Bank's actual AUD charge (authoritative)
-                exchange_rate_to_aud=effective_rate  # Store Up Bank's effective rate
+                exchange_rate_to_aud=effective_rate,  # Store Up Bank's effective rate
+                # New vendor name fields
+                original_vendor_name=original_vendor_name,
+                vendor_name=vendor_name,
+                auto_categorized=False,  # Will be set to True by auto-categorization if a rule is applied
             )
             transactions_to_create.append(new_tx)
 
