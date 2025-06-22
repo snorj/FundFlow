@@ -4,13 +4,14 @@ import io # To handle in-memory text stream
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timezone
 from django.db import transaction as db_transaction # Renamed to avoid confusion
-from rest_framework import generics, permissions, status, views
+from rest_framework import generics, permissions, status, views, viewsets
+from rest_framework.decorators import action
 from rest_framework.views import APIView # Use APIView for custom logic
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser # For file uploads
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import Category, Transaction, Vendor, VendorRule, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
-from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, VendorRuleSerializer, TransactionCreateSerializer # Add TransactionCreateSerializer
+from .models import Category, Transaction, Vendor, VendorRule, VendorMapping, DescriptionMapping, BASE_CURRENCY_FOR_CONVERSION, HistoricalExchangeRate # Import Transaction model
+from .serializers import CategorySerializer, TransactionSerializer, TransactionUpdateSerializer, VendorSerializer, VendorRuleSerializer, VendorMappingSerializer, TransactionCreateSerializer # Add TransactionCreateSerializer
 from .permissions import IsOwnerOrSystemReadOnly, IsOwner # Import IsOwner
 import logging
 from django.db.models import Count, Min, Sum, Case, When, Value, DecimalField
@@ -1581,3 +1582,177 @@ class CategorizationSuggestionsView(APIView):
                 'error': 'An error occurred while getting suggestions',
                 'detail': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# --- NEW: VendorMappingViewSet ---
+class VendorMappingViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint to create, retrieve, update, or delete vendor mappings.
+    """
+    serializer_class = VendorMappingSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Return vendor mappings accessible to the user.
+        """
+        user = self.request.user
+        return VendorMapping.objects.filter(user=user)
+
+    def perform_create(self, serializer):
+        """
+        Automatically set the user field to the logged-in user
+        when creating a new vendor mapping.
+        """
+        serializer.save(user=self.request.user)
+
+    def perform_update(self, serializer):
+        """Ensure user context is available for serializer validation during update."""
+        serializer.save()  # User field is read-only, won't be changed
+
+    def perform_destroy(self, instance):
+        """
+        Handle vendor mapping deletion with proper logging.
+        """
+        logger.info(f"User {self.request.user.id}: Attempting to delete vendor mapping ID {instance.id}")
+
+        try:
+            with db_transaction.atomic():
+                # Delete the vendor mapping
+                instance.delete()
+                
+                logger.info(f"User {self.request.user.id}: Successfully deleted vendor mapping ID {instance.id}")
+
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        except Exception as e:
+            logger.error(f"User {self.request.user.id}: Error during deletion of vendor mapping ID {instance.id}: {e}", exc_info=True)
+            return Response(
+                {"error": "An error occurred while trying to delete the vendor mapping."}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['post'])
+    def rename_vendor(self, request):
+        """Endpoint to rename a vendor with validation for uniqueness"""
+        original_name = request.data.get('original_name')
+        new_name = request.data.get('new_name')
+        
+        # Validate input
+        if not original_name or not new_name:
+            return Response({'error': 'Both original_name and new_name are required'}, 
+                            status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check for duplicate vendor names
+        if VendorMapping.objects.filter(user=request.user, mapped_vendor=new_name).exists():
+            return Response({'error': 'This vendor name already exists'}, 
+                            status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create or update the mapping
+        obj, created = VendorMapping.objects.update_or_create(
+            user=request.user,
+            original_name=original_name,
+            defaults={'mapped_vendor': new_name}
+        )
+        
+        logger.info(f"User {request.user.id}: {'Created' if created else 'Updated'} vendor mapping: '{original_name}' -> '{new_name}'")
+        
+        return Response(VendorMappingSerializer(obj).data)
+    
+    @action(detail=False, methods=['post'])
+    def assign_to_existing(self, request):
+        """Endpoint to assign a vendor name to an existing vendor"""
+        original_name = request.data.get('original_name')
+        existing_vendor = request.data.get('existing_vendor')
+        
+        # Validate input
+        if not original_name or not existing_vendor:
+            return Response({'error': 'Both original_name and existing_vendor are required'}, 
+                            status=status.HTTP_400_BAD_REQUEST)
+        
+        # Verify the existing vendor exists
+        if not VendorMapping.objects.filter(user=request.user, mapped_vendor=existing_vendor).exists():
+            return Response({'error': 'The specified existing vendor does not exist'}, 
+                            status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create or update the mapping
+        obj, created = VendorMapping.objects.update_or_create(
+            user=request.user,
+            original_name=original_name,
+            defaults={'mapped_vendor': existing_vendor}
+        )
+        
+        logger.info(f"User {request.user.id}: {'Created' if created else 'Updated'} vendor assignment: '{original_name}' -> '{existing_vendor}'")
+        
+        return Response(VendorMappingSerializer(obj).data)
+    
+    @action(detail=False, methods=['post'])
+    def bulk_mapping(self, request):
+        """Endpoint to handle bulk mapping operations"""
+        mappings = request.data.get('mappings', [])
+        
+        if not mappings or not isinstance(mappings, list):
+            return Response({'error': 'A list of mappings is required'}, 
+                            status=status.HTTP_400_BAD_REQUEST)
+        
+        results = []
+        errors = []
+        
+        for mapping in mappings:
+            original_name = mapping.get('original_name')
+            mapped_vendor = mapping.get('mapped_vendor')
+            
+            if not original_name or not mapped_vendor:
+                errors.append(f"Missing required fields for mapping: {mapping}")
+                continue
+            
+            try:
+                obj, created = VendorMapping.objects.update_or_create(
+                    user=request.user,
+                    original_name=original_name,
+                    defaults={'mapped_vendor': mapped_vendor}
+                )
+                results.append(VendorMappingSerializer(obj).data)
+            except Exception as e:
+                errors.append(f"Error processing mapping {mapping}: {str(e)}")
+        
+        logger.info(f"User {request.user.id}: Bulk mapping completed. {len(results)} successful, {len(errors)} errors")
+        
+        return Response({
+            'results': results,
+            'errors': errors
+        })
+    
+    @action(detail=False, methods=['get'])
+    def auto_categorization_results(self, request):
+        """Endpoint to retrieve auto-categorization results based on vendor mappings"""
+        # Get all transactions for the user that have descriptions
+        transactions = Transaction.objects.filter(user=request.user).exclude(description='')
+        
+        # Get all vendor mappings for the user
+        mappings = VendorMapping.objects.filter(user=request.user)
+        
+        # Create a dictionary for quick lookup
+        mapping_dict = {m.original_name: m.mapped_vendor for m in mappings}
+        
+        # Get vendor rules with their categories
+        vendor_rules = VendorRule.objects.select_related('vendor', 'category').all()
+        rule_dict = {rule.vendor.name: rule.category.name for rule in vendor_rules}
+        
+        results = []
+        for transaction in transactions:
+            # Use the transaction description as the original vendor name
+            original_vendor = transaction.description
+            mapped_vendor = mapping_dict.get(original_vendor, original_vendor)
+            category = rule_dict.get(mapped_vendor, 'Uncategorized')
+            
+            results.append({
+                'transaction_id': transaction.id,
+                'original_vendor': original_vendor,
+                'mapped_vendor': mapped_vendor,
+                'category': category,
+                'current_category': transaction.category.name if transaction.category else None
+            })
+        
+        logger.info(f"User {request.user.id}: Retrieved auto-categorization results for {len(results)} transactions")
+        
+        return Response(results)

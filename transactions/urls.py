@@ -1,5 +1,6 @@
 # transactions/urls.py
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from .views import (
     CategoryListCreateView,
     CategoryDetailView,
@@ -7,6 +8,7 @@ from .views import (
     VendorDetailView,
     VendorRuleListCreateView,
     VendorRuleDetailView,
+    VendorMappingViewSet,
     TransactionCSVUploadView,
     TransactionListView,
     TransactionCreateView,
@@ -20,7 +22,14 @@ from .views import (
     CategorizationSuggestionsView
 )
 
+# Create a router and register our ViewSets with it
+router = DefaultRouter()
+router.register(r'vendor-mappings', VendorMappingViewSet, basename='vendor-mappings')
+
 urlpatterns = [
+    # Include the router URLs
+    path('', include(router.urls)),
+    
     # Category URLs
     path('categories/', CategoryListCreateView.as_view(), name='category-list-create'),
     path('categories/<int:pk>/', CategoryDetailView.as_view(), name='category-detail'),
