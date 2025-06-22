@@ -21,6 +21,7 @@ const TreeView = ({
   onTransactionInfo,
   onCategoryCreate,
   onCategoryDelete,
+  onCategoryRename,
   onCategoryMove,
   onDropValidation,
   selectedCategoryId,
@@ -158,6 +159,7 @@ const TreeView = ({
                 onTransactionInfo={onTransactionInfo}
                 onCategoryCreate={onCategoryCreate}
                 onCategoryDelete={onCategoryDelete}
+                onCategoryRename={onCategoryRename}
                 onDrop={handleDrop}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}

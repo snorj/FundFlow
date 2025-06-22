@@ -90,6 +90,30 @@
     gap: 10px;
   }
 
+  .auto-categorize-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--warm-orange);
+    border: 1px solid var(--warm-orange);
+    padding: 8px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    color: var(--white);
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+
+  .auto-categorize-button:hover:not(:disabled) {
+    background-color: var(--orange-darker, #d97706);
+    border-color: var(--orange-darker, #d97706);
+  }
+
+  .auto-categorize-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .category-select-button {
     display: flex;
     align-items: center;
@@ -470,6 +494,67 @@
       font-size: 14px;
   }
 
+  .auto-categorize-results.success-message {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background-color: #f0f9ff;
+    border: 1px solid #bae6fd;
+    color: #0369a1;
+    padding: 12px 15px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+    font-weight: 500;
+    position: relative;
+  }
+
+  .auto-categorize-results .results-content {
+    flex-grow: 1;
+  }
+
+  .auto-categorize-results .results-content p {
+    margin: 0 0 8px 0;
+  }
+
+  .auto-categorize-results .error-details {
+    margin-top: 8px;
+  }
+
+  .auto-categorize-results .error-details summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #dc2626;
+    margin-bottom: 4px;
+  }
+
+  .auto-categorize-results .error-details ul {
+    margin: 4px 0 0 0;
+    padding-left: 20px;
+  }
+
+  .auto-categorize-results .error-details li {
+    margin: 2px 0;
+    font-size: 0.9em;
+    color: #dc2626;
+  }
+
+  .dismiss-results-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #6b7280;
+    font-size: 16px;
+    padding: 2px;
+    border-radius: 3px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  .dismiss-results-button:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+    color: #374151;
+  }
+
   /* Responsive Design */
   @media (max-width: 768px) {
     .categorization-page {
@@ -493,6 +578,7 @@
       align-items: stretch;
     }
 
+    .auto-categorize-button,
     .category-select-button,
     .categorize-button {
       min-width: auto;

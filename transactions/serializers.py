@@ -498,9 +498,6 @@ class VendorRuleSerializer(serializers.ModelSerializer):
     vendor_name = serializers.CharField(source='vendor.name', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
     
-    # Priority choices for validation
-    priority = serializers.ChoiceField(choices=VendorRule.PRIORITY_CHOICES, default=3)
-    
     class Meta:
         model = VendorRule
         fields = [
@@ -509,9 +506,7 @@ class VendorRuleSerializer(serializers.ModelSerializer):
             'vendor_name',
             'category_id', 
             'category_name',
-            'pattern',
             'is_persistent',
-            'priority',
             'created_at',
             'updated_at',
         ]
@@ -551,19 +546,6 @@ class VendorRuleSerializer(serializers.ModelSerializer):
         except Category.DoesNotExist:
             raise serializers.ValidationError("Category not found or access denied.")
 
-    def validate_pattern(self, value):
-        """
-        Validate regex pattern if provided.
-        """
-        if value is not None and value.strip():
-            import re
-            try:
-                re.compile(value.strip())
-                return value.strip()
-            except re.error as e:
-                raise serializers.ValidationError(f"Invalid regex pattern: {e}")
-        return value
-
     def validate(self, data):
         """
         Cross-field validation for vendor rules.
@@ -571,14 +553,10 @@ class VendorRuleSerializer(serializers.ModelSerializer):
         # Extract the vendor and category objects from validated data
         vendor = data.get('vendor', {}).get('id') if 'vendor' in data else None
         category = data.get('category', {}).get('id') if 'category' in data else None
-        pattern = data.get('pattern')
         
-        # Check for duplicate rules (same vendor + pattern combination)
-        if vendor and category:
-            existing_rules = VendorRule.objects.filter(
-                vendor=vendor,
-                pattern=pattern or None  # Handle None and empty string consistently
-            )
+        # Check for duplicate vendor rules (simplified - only one rule per vendor)
+        if vendor:
+            existing_rules = VendorRule.objects.filter(vendor=vendor)
             
             # Exclude self during updates
             if self.instance:
@@ -586,7 +564,7 @@ class VendorRuleSerializer(serializers.ModelSerializer):
             
             if existing_rules.exists():
                 raise serializers.ValidationError(
-                    "A rule with the same vendor and pattern already exists."
+                    "A rule for this vendor already exists. Only one rule per vendor is allowed."
                 )
 
         return data

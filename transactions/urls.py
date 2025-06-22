@@ -14,7 +14,10 @@ from .views import (
     TransactionDestroyView,
     UncategorizedTransactionGroupView,
     BatchCategorizeTransactionView,
-    DashboardBalanceView
+    DashboardBalanceView,
+    AutoCategorizeTransactionsView,
+    AutoCategorizeSingleTransactionView,
+    CategorizationSuggestionsView
 )
 
 urlpatterns = [
@@ -37,6 +40,11 @@ urlpatterns = [
     path('transactions/<int:pk>/', TransactionUpdateView.as_view(), name='transaction-detail-update'),
     path('transactions/uncategorized-groups/', UncategorizedTransactionGroupView.as_view(), name='transaction-uncategorized-groups'),
     path('transactions/batch-categorize/', BatchCategorizeTransactionView.as_view(), name='transaction-batch-categorize'),
+    
+    # Auto-Categorization URLs
+    path('transactions/auto-categorize/', AutoCategorizeTransactionsView.as_view(), name='auto-categorize-transactions'),
+    path('transactions/<int:pk>/auto-categorize/', AutoCategorizeSingleTransactionView.as_view(), name='auto-categorize-single-transaction'),
+    path('transactions/<int:pk>/suggestions/', CategorizationSuggestionsView.as_view(), name='categorization-suggestions'),
     
     # Dashboard URLs
     path('dashboard/balance/', DashboardBalanceView.as_view(), name='dashboard-balance'),

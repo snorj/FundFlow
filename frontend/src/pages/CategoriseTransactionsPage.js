@@ -23,6 +23,9 @@ const CategoriseTransactionsPage = () => {
     const [isTransactionDetailsOpen, setIsTransactionDetailsOpen] = useState(false);
     const [editingVendor, setEditingVendor] = useState(null);
     const [isUpdatingVendor, setIsUpdatingVendor] = useState(false);
+    const [isAutoCategorizingSelected, setIsAutoCategorizingSelected] = useState(false);
+    const [autoCategorizeError, setAutoCategorizeError] = useState(null);
+    const [autoCategorizeResults, setAutoCategorizeResults] = useState(null);
     const navigate = useNavigate();
 
     const handleCategoriesUpdate = useCallback(async () => {
@@ -212,6 +215,52 @@ const CategoriseTransactionsPage = () => {
              setIsSubmitting(false);
         }
     };
+
+    const handleAutoCategorizeSelected = async () => {
+        if (selectedTransactionIds.size === 0) return;
+        
+        setIsAutoCategorizingSelected(true);
+        setAutoCategorizeError(null);
+        setAutoCategorizeResults(null);
+        
+        try {
+            const transactionIdsArray = Array.from(selectedTransactionIds);
+            const result = await transactionService.autoCategorizeTransactions(transactionIdsArray);
+            
+            setAutoCategorizeResults(result);
+            
+            if (result.categorized_count > 0) {
+                // Remove categorized transactions from the view
+                const categorizedIds = new Set(
+                    result.results
+                        .filter(r => r.status === 'categorized')
+                        .map(r => r.transaction_id)
+                );
+                
+                setGroupedTransactions(prev => {
+                    return prev.map(group => ({
+                        ...group,
+                        transaction_ids: group.transaction_ids.filter(id => !categorizedIds.has(id)),
+                        previews: group.previews.filter(preview => !categorizedIds.has(preview.id)),
+                        count: group.transaction_ids.filter(id => !categorizedIds.has(id)).length
+                    })).filter(group => group.count > 0); // Remove empty groups
+                });
+                
+                // Update selection to remove categorized transactions
+                setSelectedTransactionIds(prev => {
+                    const newSet = new Set(prev);
+                    categorizedIds.forEach(id => newSet.delete(id));
+                    return newSet;
+                });
+            }
+            
+        } catch (err) {
+            console.error("Error auto-categorizing selected transactions:", err);
+            setAutoCategorizeError(err.message || 'Failed to auto-categorize selected transactions.');
+        } finally {
+            setIsAutoCategorizingSelected(false);
+        }
+    };
     
     const isLoading = isLoadingGroups || isLoadingCategories;
     const totalTransactions = groupedTransactions.reduce((sum, group) => sum + group.count, 0);
@@ -263,6 +312,46 @@ const CategoriseTransactionsPage = () => {
                 </div>
              )}
 
+             {autoCategorizeError && (
+                <div className="categorization-error error-message">
+                   <FiAlertCircle /> {autoCategorizeError}
+                </div>
+             )}
+
+             {autoCategorizeResults && (
+                <div className="auto-categorize-results success-message">
+                   <FiCheck />
+                   <div className="results-content">
+                       <p>
+                           <strong>Auto-categorization completed:</strong> {autoCategorizeResults.categorized_count} categorized, 
+                           {' '}{autoCategorizeResults.skipped_count} skipped, {autoCategorizeResults.error_count} errors
+                       </p>
+                       {autoCategorizeResults.error_count > 0 && (
+                           <details className="error-details">
+                               <summary>View errors ({autoCategorizeResults.error_count})</summary>
+                               <ul>
+                                   {autoCategorizeResults.results
+                                       .filter(r => r.status === 'error')
+                                       .map(error => (
+                                           <li key={error.transaction_id}>
+                                               Transaction {error.transaction_id}: {error.reason}
+                                           </li>
+                                       ))
+                                   }
+                               </ul>
+                           </details>
+                       )}
+                   </div>
+                   <button 
+                       className="dismiss-results-button" 
+                       onClick={() => setAutoCategorizeResults(null)}
+                       title="Dismiss results"
+                   >
+                       <FiX />
+                   </button>
+                </div>
+             )}
+
             {/* Selection Controls */}
             <div className="selection-controls">
                 <div className="bulk-controls">
@@ -281,6 +370,16 @@ const CategoriseTransactionsPage = () => {
                 </div>
 
                 <div className="categorization-controls">
+                    <button
+                        className="auto-categorize-button"
+                        onClick={handleAutoCategorizeSelected}
+                        disabled={isAutoCategorizingSelected || selectedTransactionIds.size === 0}
+                        title="Use AI to automatically categorize selected transactions based on vendor rules"
+                    >
+                        {isAutoCategorizingSelected ? <FiLoader className="spinner-inline" /> : <FiTag />}
+                        Auto-Categorize Selected
+                    </button>
+                    
                     <button
                         className="category-select-button"
                         onClick={() => setIsCategoryModalOpen(true)}

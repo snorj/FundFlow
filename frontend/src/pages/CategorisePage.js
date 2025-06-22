@@ -91,7 +91,13 @@ const CategorisePage = () => {
     setCreateError(null);
     setDeleteError(null);
     try {
-      const newCategoryData = { name, parent: parentId };
+      // Convert parent ID to integer if provided
+      const parentIdInt = parentId ? parseInt(parentId, 10) : null;
+      if (parentId && isNaN(parentIdInt)) {
+        throw new Error('Invalid parent category ID format');
+      }
+      
+      const newCategoryData = { name, parent: parentIdInt };
       await categoryService.createCategory(newCategoryData);
       await fetchItems(); 
       setShowTopLevelInput(false);
@@ -108,7 +114,13 @@ const CategorisePage = () => {
     setDeleteError(null);
     setCreateError(null);
     try {
-      await categoryService.deleteCategory(categoryId);
+      // Convert ID to integer to match backend expectations
+      const categoryIdInt = parseInt(categoryId, 10);
+      if (isNaN(categoryIdInt)) {
+        throw new Error('Invalid category ID format');
+      }
+      
+      await categoryService.deleteCategory(categoryIdInt);
       await fetchItems(); 
       await fetchTransactions();
     } catch (err) {
@@ -118,6 +130,34 @@ const CategorisePage = () => {
       setDeletingCategoryId(null);
     }
   }, [fetchItems, fetchTransactions]);
+
+  const handleCategoryRename = useCallback(async (categoryId, newName) => {
+    try {
+      // Optimistic update
+      const updatedItems = allItems.map(item => 
+        item.id === categoryId ? { ...item, name: newName } : item
+      );
+      setAllItems(updatedItems);
+      
+      // Convert ID to integer to match backend expectations
+      const categoryIdInt = parseInt(categoryId, 10);
+      if (isNaN(categoryIdInt)) {
+        throw new Error('Invalid category ID format');
+      }
+      
+      // Perform the actual backend update
+      await categoryService.updateCategory(categoryIdInt, { name: newName });
+      
+      console.log('Category renamed successfully:', categoryId, 'to:', newName);
+      
+    } catch (error) {
+      console.error('Failed to rename category:', error);
+      
+      // On error, rollback by refetching the original data
+      await fetchItems();
+      throw error; // Re-throw to let the component handle the error display
+    }
+  }, [allItems, fetchItems]);
 
   // New handlers for category and vendor selection
   const handleCategorySelect = useCallback((category) => {
@@ -186,9 +226,21 @@ const CategorisePage = () => {
       // Optimistically update the UI
       setAllItems(updatedItems);
       
+      // Convert IDs to integers to match backend expectations
+      const draggedIdInt = parseInt(draggedCategoryId, 10);
+      const parentIdInt = newParentId ? parseInt(newParentId, 10) : null;
+      
+      // Validate that ID conversion was successful
+      if (isNaN(draggedIdInt)) {
+        throw new Error('Invalid category ID format');
+      }
+      if (newParentId && isNaN(parentIdInt)) {
+        throw new Error('Invalid parent category ID format');
+      }
+      
       // Perform the actual backend update
-      await categoryService.updateCategory(draggedCategoryId, { 
-        parent: newParentId 
+      await categoryService.updateCategory(draggedIdInt, { 
+        parent: parentIdInt 
       });
       
       // Success! No need to refetch - optimistic update is already applied
@@ -419,6 +471,7 @@ const CategorisePage = () => {
               onTransactionInfo={handleTransactionInfo}
               onCategoryCreate={handleCreateCategory}
               onCategoryDelete={handleDeleteCategory}
+              onCategoryRename={handleCategoryRename}
               onCategoryMove={handleCategoryMove}
               onDropValidation={handleDropValidation}
               selectedCategoryId={selectedCategoryId}

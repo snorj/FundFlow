@@ -8,6 +8,7 @@
   border-radius: 4px;
   overflow: hidden;
   transition: none; /* Prevent jarring transitions during data updates */
+  position: relative;
 }
 
 .tree-empty {
@@ -487,4 +488,208 @@
 
 .chevron-icon {
   transition: transform 0.15s ease;
+}
+
+/* Category Editing Styles */
+.category-edit-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.category-edit-input {
+  flex: 1;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 14px;
+  font-weight: 500;
+  background: #fff;
+  outline: none;
+}
+
+.category-edit-input:focus {
+  border-color: #2196f3;
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+}
+
+.category-edit-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.category-save-button,
+.category-cancel-button {
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 4px 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s ease;
+}
+
+.category-save-button {
+  color: #4caf50;
+  border-color: #4caf50;
+}
+
+.category-save-button:hover:not(:disabled) {
+  background-color: #4caf50;
+  color: white;
+}
+
+.category-save-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.category-cancel-button {
+  color: #f44336;
+  border-color: #f44336;
+}
+
+.category-cancel-button:hover {
+  background-color: #f44336;
+  color: white;
+}
+
+.category-edit-error {
+  color: #f44336;
+  font-size: 12px;
+  padding: 4px 8px;
+  background-color: #ffebee;
+  border-radius: 3px;
+  margin: 2px 0;
+}
+
+/* Context Menu Styles */
+.context-menu-container {
+  position: relative;
+  z-index: 10; /* Ensure container is above drag elements */
+}
+
+.context-menu-button {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 3px;
+  color: #666;
+  transition: background-color 0.1s ease, color 0.1s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative; /* Ensure proper stacking */
+  z-index: 2; /* Above other tree elements */
+}
+
+.context-menu-button:hover {
+  background-color: #e0e0e0;
+  color: #333;
+}
+
+.context-menu {
+  position: fixed; /* Changed from absolute to fixed for better positioning */
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); /* Increased shadow for better visibility */
+  z-index: 99999; /* Very high z-index to ensure it's above everything */
+  min-width: 150px;
+  padding: 4px 0;
+  pointer-events: auto; /* Ensure menu items are clickable */
+  /* Position will be set dynamically by JavaScript */
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+  transition: background-color 0.1s ease;
+  pointer-events: auto; /* Ensure individual items are clickable */
+  position: relative; /* Ensure proper stacking context */
+  z-index: 1; /* Ensure items are above other elements */
+}
+
+.context-menu-item:hover {
+  background-color: #f5f5f5;
+}
+
+.context-menu-item svg {
+  width: 14px;
+  height: 14px;
+  color: #666;
+}
+
+/* Prevent draggable elements from interfering with context menus */
+.tree-node.dragging .context-menu-container,
+.tree-node.dragging .context-menu-button {
+  pointer-events: none;
+}
+
+.tree-node:not(.dragging) .context-menu-container,
+.tree-node:not(.dragging) .context-menu-button {
+  pointer-events: auto;
+}
+
+/* Ensure context menu overlay is above tree content */
+.tree-view {
+  position: relative;
+}
+
+.context-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 99998;
+  pointer-events: none; /* Allow clicks to pass through to close menu */
+}
+
+/* Drop Zones */
+.drop-zone {
+  height: 2px;
+  margin: 1px 0;
+  border-radius: 1px;
+}
+
+.drop-zone-before,
+.drop-zone-after {
+  background-color: #4a90e2;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .tree-view {
+    font-size: 13px;
+  }
+  
+  .tree-node {
+    min-height: 32px;
+  }
+  
+  .tree-node-content {
+    padding: 6px 8px;
+  }
+  
+  .context-menu {
+    min-width: 120px;
+  }
+  
+  .context-menu-item {
+    padding: 10px 12px;
+  }
 } 

@@ -215,12 +215,79 @@ def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, sinc
     logger.info(f"[Sync User {user_id}]: Processed API data. Duplicates: {duplicate_count}. New: {len(transactions_to_create)}. Conversion errors: {skipped_conversion_error_count}.")
 
     created_count = 0
+    auto_categorized_count = 0
     if transactions_to_create: # ... (bulk create logic as before) ...
         try:
             with db_transaction.atomic():
                 created_objects = Transaction.objects.bulk_create(transactions_to_create)
                 created_count = len(created_objects)
             logger.info(f"[Sync User {user_id}]: Successfully bulk created {created_count} new Up transactions.")
+            
+            # Get the newly created transaction IDs for subsequent processing
+            new_transaction_ids = [obj.id for obj in created_objects if obj.id] if created_count > 0 else []
+            
+            # Apply vendor identification to newly created transactions
+            vendor_identified_count = 0
+            vendor_created_count = 0
+            if created_count > 0:
+                logger.info(f"[Sync User {user_id}]: Starting vendor identification for {created_count} new Up Bank transactions...")
+                try:
+                    from transactions.vendor_identification_service import identify_vendors_for_user_transactions
+                    
+                    # Create queryset of newly created transactions for vendor identification
+                    new_transactions_qs = Transaction.objects.filter(
+                        id__in=new_transaction_ids,
+                        user=user
+                    )
+                    
+                    # Apply vendor identification to the new transactions
+                    vendor_result = identify_vendors_for_user_transactions(
+                        user,
+                        transactions=new_transactions_qs
+                    )
+                    vendor_identified_count = vendor_result.identified_count
+                    vendor_created_count = vendor_result.created_vendors_count
+                    
+                    logger.info(f"[Sync User {user_id}]: Vendor identification complete. "
+                               f"Identified: {vendor_identified_count}, "
+                               f"Created: {vendor_created_count}, "
+                               f"Skipped: {vendor_result.skipped_count}, "
+                               f"Errors: {vendor_result.error_count}")
+                except Exception as e:
+                    logger.error(f"[Sync User {user_id}]: Vendor identification failed during Up Bank sync: {e}", exc_info=True)
+                    # Don't fail the entire sync if vendor identification fails
+            
+            # Apply auto-categorization to newly created transactions
+            if created_count > 0:
+                logger.info(f"[Sync User {user_id}]: Starting auto-categorization for {created_count} new Up Bank transactions...")
+                try:
+                    from transactions.auto_categorization_service import auto_categorize_user_transactions
+                    
+                    if new_transaction_ids:
+                        # Create queryset of newly created transactions for auto-categorization
+                        new_transactions_qs = Transaction.objects.filter(
+                            id__in=new_transaction_ids,
+                            user=user
+                        )
+                        
+                        # Apply auto-categorization only to the new transactions
+                        categorization_result = auto_categorize_user_transactions(
+                            user,
+                            transactions=new_transactions_qs
+                        )
+                        auto_categorized_count = categorization_result.categorized_count
+                        
+                        logger.info(f"[Sync User {user_id}]: Auto-categorized {auto_categorized_count} "
+                                   f"out of {created_count} new Up Bank transactions. "
+                                   f"Skipped: {categorization_result.skipped_count}, "
+                                   f"Errors: {categorization_result.error_count}")
+                    else:
+                        logger.warning(f"[Sync User {user_id}]: No transaction IDs available for auto-categorization")
+                        
+                except Exception as e:
+                    logger.error(f"[Sync User {user_id}]: Auto-categorization failed during Up Bank sync: {e}", exc_info=True)
+                    # Don't fail the entire sync if auto-categorization fails
+                    
         except Exception as e:
             logger.exception(f"[Sync User {user_id}]: Database error during bulk creation: {e}")
             return {'success': False, 'message': 'Database error saving new transactions.', 'created_count': 0, 'duplicate_count': duplicate_count, 'skipped_conversion_error': skipped_conversion_error_count, 'conversion_failures': conversion_failures, 'error': 'db_bulk_create_error'}
@@ -235,9 +302,16 @@ def sync_up_transactions_for_user(user_id: int, initial_sync: bool = False, sinc
 
     message = f"Up Bank sync complete. Imported {created_count} new transactions." # ... (message building as before) ...
     if duplicate_count > 0: message += f" Skipped {duplicate_count} duplicates."
+    if vendor_identified_count > 0: message += f" Identified vendors for {vendor_identified_count} transactions."
+    if vendor_created_count > 0: message += f" Created {vendor_created_count} new vendors."
+    if auto_categorized_count > 0: message += f" Auto-categorized {auto_categorized_count} transactions using vendor rules."
     if skipped_conversion_error_count > 0: message += f" {skipped_conversion_error_count} transactions could not be converted to {BASE_CURRENCY_FOR_CONVERSION} due to missing exchange rates."
     return {
         'success': True, 'message': message, 'created_count': created_count,
-        'duplicate_count': duplicate_count, 'skipped_conversion_error': skipped_conversion_error_count, 
+        'duplicate_count': duplicate_count, 
+        'vendor_identified_count': vendor_identified_count, 
+        'vendor_created_count': vendor_created_count,
+        'auto_categorized_count': auto_categorized_count,
+        'skipped_conversion_error': skipped_conversion_error_count, 
         'conversion_failures': conversion_failures, 'error': None
     }

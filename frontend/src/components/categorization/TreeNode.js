@@ -1,5 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
+import { createPortal } from 'react-dom';
 import { 
   FiChevronRight, 
   FiChevronDown, 
@@ -9,7 +10,11 @@ import {
   FiMove,
   FiPlus,
   FiTrash2,
-  FiInfo
+  FiInfo,
+  FiEdit3,
+  FiMoreVertical,
+  FiCheck,
+  FiX
 } from 'react-icons/fi';
 
 const ItemTypes = {
@@ -30,6 +35,7 @@ const TreeNode = ({
   onTransactionInfo,
   onCategoryCreate,
   onCategoryDelete,
+  onCategoryRename,
   onDrop,
   onDragStart,
   onDragEnd,
@@ -48,6 +54,34 @@ const TreeNode = ({
   const [dropPosition, setDropPosition] = useState(null);
   const [mouseDownTime, setMouseDownTime] = useState(null);
   const [mouseDownPosition, setMouseDownPosition] = useState(null);
+  
+  // Category editing state
+  const [isEditingCategory, setIsEditingCategory] = useState(false);
+  const [editedCategoryName, setEditedCategoryName] = useState('');
+  const [categoryEditError, setCategoryEditError] = useState(null);
+  
+  // Context menu state
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState({ top: 0, left: 0 });
+
+  // Add click-outside handler for context menu
+  React.useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showContextMenu) {
+        const isClickOnMenu = event.target.closest('.context-menu');
+        const isClickOnButton = event.target.closest('.context-menu-button');
+        
+        if (!isClickOnMenu && !isClickOnButton) {
+          setShowContextMenu(false);
+        }
+      }
+    };
+
+    if (showContextMenu) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showContextMenu]);
 
   // Drag functionality (only for categories)
   const [{ isDragging }, drag] = useDrag({
@@ -156,8 +190,99 @@ const TreeNode = ({
     onToggleExpand?.(node.id);
   };
 
-  const handleCreateCategory = (e) => {
+  // Category editing handlers
+  const handleEditCategoryClick = (e) => {
+    e?.stopPropagation();
+    if (node.type !== 'category' || node.is_system) return;
+    setEditedCategoryName(node.name);
+    setIsEditingCategory(true);
+    setCategoryEditError(null);
+  };
+
+  const handleSaveCategoryEdit = () => {
+    if (!editedCategoryName.trim()) {
+      setCategoryEditError('Category name cannot be empty');
+      return;
+    }
+
+    if (editedCategoryName.trim() === node.name) {
+      handleCancelCategoryEdit();
+      return;
+    }
+
+    if (onCategoryRename) {
+      onCategoryRename(node.id, editedCategoryName.trim())
+        .then(() => {
+          setIsEditingCategory(false);
+          setEditedCategoryName('');
+          setCategoryEditError(null);
+        })
+        .catch((error) => {
+          setCategoryEditError(error.message || 'Failed to rename category');
+        });
+    }
+  };
+
+  const handleCancelCategoryEdit = () => {
+    setIsEditingCategory(false);
+    setEditedCategoryName('');
+    setCategoryEditError(null);
+  };
+
+  // Context menu handlers
+  const handleContextMenuClick = (e) => {
+    e.preventDefault();
     e.stopPropagation();
+    
+    if (!showContextMenu) {
+      // Calculate position for fixed positioning
+      const buttonRect = e.currentTarget.getBoundingClientRect();
+      const position = {
+        top: buttonRect.bottom + window.scrollY,
+        left: buttonRect.left + window.scrollX - 150 + buttonRect.width // Align right edge
+      };
+      
+      // Ensure menu doesn't go off-screen
+      if (position.left < 10) {
+        position.left = 10;
+      }
+      if (position.top + 120 > window.innerHeight + window.scrollY) {
+        position.top = buttonRect.top + window.scrollY - 120; // Show above button
+      }
+      
+      setContextMenuPosition(position);
+    }
+    
+    setShowContextMenu(prev => !prev);
+  };
+
+  const handleContextMenuAction = (action) => {
+    setShowContextMenu(false);
+    
+    switch (action) {
+      case 'edit':
+        handleEditCategoryClick();
+        break;
+      case 'create':
+        handleCreateCategory();
+        break;
+      case 'delete':
+        handleDeleteCategory();
+        break;
+      case 'info':
+        if (node.type === 'vendor') {
+          onVendorSelect?.(node);
+        } else if (node.type === 'transaction') {
+          handleTransactionInfo();
+        }
+        break;
+      default:
+        console.warn('Unknown context menu action:', action);
+    }
+  };
+
+  const handleCreateCategory = (e) => {
+    e?.stopPropagation();
     setShowCreateInput(true);
   };
 
@@ -175,14 +300,14 @@ const TreeNode = ({
   };
 
   const handleDeleteCategory = (e) => {
-    e.stopPropagation();
+    e?.stopPropagation();
     if (window.confirm(`Are you sure you want to delete "${node.name}"?`)) {
       onCategoryDelete?.(node.id);
     }
   };
 
   const handleTransactionInfo = (e) => {
-    e.stopPropagation();
+    e?.stopPropagation();
     onTransactionInfo?.(node.originalTransaction || node);
   };
 
@@ -219,8 +344,31 @@ const TreeNode = ({
     return classes.join(' ');
   };
 
+  const getContextMenuItems = () => {
+    switch (node.type) {
+      case 'category':
+        if (node.is_system) return [];
+        return [
+          { id: 'edit', label: 'Rename', icon: <FiEdit3 /> },
+          { id: 'create', label: 'Add Subcategory', icon: <FiPlus /> },
+          { id: 'delete', label: 'Delete', icon: <FiTrash2 /> }
+        ];
+      case 'vendor':
+        return [
+          { id: 'info', label: 'View Transactions', icon: <FiInfo /> }
+        ];
+      case 'transaction':
+        return [
+          { id: 'info', label: 'View Details', icon: <FiInfo /> }
+        ];
+      default:
+        return [];
+    }
+  };
+
   const hasChildren = node.children && node.children.length > 0;
   const indentWidth = level * 20;
+  const contextMenuItems = getContextMenuItems();
 
   return (
     <React.Fragment>
@@ -234,7 +382,10 @@ const TreeNode = ({
         className={getNodeClassName()}
         style={{ paddingLeft: `${indentWidth}px` }}
         onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onMouseLeave={() => {
+          setIsHovered(false);
+          // Don't immediately close context menu to allow moving cursor to menu
+        }}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
       >
@@ -262,55 +413,79 @@ const TreeNode = ({
             {getIcon()}
           </div>
 
-          {/* Name */}
+          {/* Name or Edit Input */}
           <div className="tree-node-name">
-            {node.name}
-            {node.type === 'vendor' && node.transactionCount && (
-              <span className="transaction-count">
-                ({node.transactionCount})
-              </span>
-            )}
-            {node.type === 'transaction' && node.amount && (
-              <span className="transaction-amount">
-                ${Math.abs(node.amount).toFixed(2)}
-              </span>
+            {isEditingCategory ? (
+              <div className="category-edit-form">
+                <input
+                  type="text"
+                  value={editedCategoryName}
+                  onChange={(e) => setEditedCategoryName(e.target.value)}
+                  className="category-edit-input"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveCategoryEdit();
+                    if (e.key === 'Escape') handleCancelCategoryEdit();
+                  }}
+                />
+                <div className="category-edit-actions">
+                  <button 
+                    onClick={handleSaveCategoryEdit}
+                    disabled={!editedCategoryName.trim()}
+                    className="category-save-button"
+                    title="Save"
+                  >
+                    <FiCheck size="12" />
+                  </button>
+                  <button 
+                    onClick={handleCancelCategoryEdit}
+                    className="category-cancel-button"
+                    title="Cancel"
+                  >
+                    <FiX size="12" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {node.name}
+                {node.type === 'vendor' && node.transactionCount && (
+                  <span className="transaction-count">
+                    ({node.transactionCount})
+                  </span>
+                )}
+                {node.type === 'transaction' && node.amount && (
+                  <span className="transaction-amount">
+                    ${Math.abs(node.amount).toFixed(2)}
+                  </span>
+                )}
+              </>
             )}
           </div>
 
           {/* Actions */}
-          {isHovered && (
+          {(isHovered || showContextMenu) && !isEditingCategory && contextMenuItems.length > 0 && (
             <div className="tree-node-actions">
-              {node.type === 'category' && !node.is_system && (
-                <React.Fragment>
-                  <button
-                    onClick={handleCreateCategory}
-                    className="action-button"
-                    title="Add subcategory"
-                  >
-                    <FiPlus />
-                  </button>
-                  <button
-                    onClick={handleDeleteCategory}
-                    className="action-button delete"
-                    title="Delete category"
-                  >
-                    <FiTrash2 />
-                  </button>
-                </React.Fragment>
-              )}
-              {node.type === 'transaction' && (
+              <div className="context-menu-container">
                 <button
-                  onClick={handleTransactionInfo}
-                  className="action-button"
-                  title="View transaction details"
+                  onClick={handleContextMenuClick}
+                  className="context-menu-button"
+                  title="More actions"
                 >
-                  <FiInfo />
+                  <FiMoreVertical />
                 </button>
-              )}
+              </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Category editing error */}
+      {isEditingCategory && categoryEditError && (
+        <div className="category-edit-error" style={{ paddingLeft: `${(level + 1) * 20}px` }}>
+          {categoryEditError}
+        </div>
+      )}
 
       {/* Drop zone after node */}
       {isOver && canDrop && dropPosition === 'after' && (
@@ -373,6 +548,7 @@ const TreeNode = ({
               onTransactionInfo={onTransactionInfo}
               onCategoryCreate={onCategoryCreate}
               onCategoryDelete={onCategoryDelete}
+              onCategoryRename={onCategoryRename}
               onDrop={onDrop}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
@@ -386,6 +562,30 @@ const TreeNode = ({
             />
           ))}
         </div>
+      )}
+
+      {/* Portal-based context menu to avoid click interception */}
+      {showContextMenu && createPortal(
+        <div 
+          className="context-menu"
+          style={{ top: contextMenuPosition.top, left: contextMenuPosition.left }}
+        >
+          {contextMenuItems.map(item => (
+            <button
+              key={item.id}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleContextMenuAction(item.id);
+              }}
+              className="context-menu-item"
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>,
+        document.body
       )}
     </React.Fragment>
   );

@@ -15,7 +15,8 @@ import {
   FiInfo,
   FiEdit3,
   FiCheck,
-  FiX
+  FiX,
+  FiMoreVertical
 } from 'react-icons/fi';
 import { formatCurrency } from '../../utils/formatting';
 import transactionService from '../../services/transactions';
@@ -32,6 +33,7 @@ const CategoryTreeNode = ({
   onTransactionInfo,
   onCreateCategory,
   onDeleteCategory,
+  onRenameCategory,
   isCreating,
   isDeleting,
   transactions = [],
@@ -43,17 +45,26 @@ const CategoryTreeNode = ({
   enableSmartInteractions = true,
   collapseAllTrigger,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(level < 2 && item.type !== 'transaction'); 
+  // Local state for tree management
+  const [isExpanded, setIsExpanded] = useState(false);
   const [showAddInput, setShowAddInput] = useState(false);
   const [newChildName, setNewChildName] = useState('');
-  const [isSavingChild, setIsSavingChild] = useState(false);
   const [addChildError, setAddChildError] = useState(null);
-  
+  const [isSavingChild, setIsSavingChild] = useState(false);
+
   // Vendor editing state
   const [isEditingVendor, setIsEditingVendor] = useState(false);
   const [editedVendorName, setEditedVendorName] = useState('');
   const [isUpdatingVendor, setIsUpdatingVendor] = useState(false);
   const [vendorEditError, setVendorEditError] = useState(null);
+
+  // Category editing state
+  const [isEditingCategory, setIsEditingCategory] = useState(false);
+  const [editedCategoryName, setEditedCategoryName] = useState('');
+  const [categoryEditError, setCategoryEditError] = useState(null);
+  
+  // Context menu state
+  const [showContextMenu, setShowContextMenu] = useState(false);
 
   // Calculate spending total for this category (including subcategories)
   const calculateCategoryTotal = useCallback((categoryId) => {
@@ -147,72 +158,122 @@ const CategoryTreeNode = ({
 
   // Determine which children to display based on item type
   const displayChildren = useMemo(() => {
-    if (item.type === 'transaction') return []; // Transactions don't have children
-
-    if (item.type === 'vendor') {
-      // Vendors show their transactions
-      return getTransactionChildren();
-    }
+    if (!item || item.type !== 'category') return [];
     
-    if (item.type === 'category') {
-      // Categories show subcategories AND vendors
-      const subcategories = allItems.filter(child => 
-        child.parent === item.id && child.type === 'category'
-      );
-      const vendorChildren = getVendorChildren();
-      
-      const allChildren = [...subcategories, ...vendorChildren];
-      
-      if (visibleItemIds === null) {
-        return allChildren;
-      }
-      return allChildren.filter(child => visibleItemIds.has(child.id));
-    }
+    const children = allItems.filter(child => child.parent === item.id);
     
-    return [];
-  }, [allItems, item.id, item.type, visibleItemIds, getVendorChildren, getTransactionChildren]);
+    // Sort children: categories first, then vendors, then transactions
+    return children.sort((a, b) => {
+      const typeOrder = { category: 0, vendor: 1, transaction: 2 };
+      const aOrder = typeOrder[a.type] || 3;
+      const bOrder = typeOrder[b.type] || 3;
+      
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      
+      // Within the same type, sort by name
+      return (a.name || '').localeCompare(b.name || '');
+    });
+  }, [allItems, item]);
 
   // Calculate totals and vendor data
   const categoryTotal = useMemo(() => {
-    if (item.type !== 'category') return 0;
+    if (!showSpendingTotals || item.type !== 'category') return 0;
     return categorySpendingTotals[item.id] || calculateCategoryTotal(item.id);
-  }, [item.id, item.type, categorySpendingTotals, calculateCategoryTotal]);
+  }, [showSpendingTotals, item.id, item.type, categorySpendingTotals, calculateCategoryTotal]);
 
   const hasChildren = displayChildren.length > 0;
 
-  // Event handlers
-  const handleToggleExpand = useCallback((e) => { 
-    e.stopPropagation(); 
-    if (item.type !== 'transaction' && hasChildren) {
-      setIsExpanded(!isExpanded);
-    }
-  }, [item.type, hasChildren, isExpanded]);
-
-  const handleSelect = useCallback(() => { 
-    if (!enableSmartInteractions) return;
-    
-    if (item.type === 'category') {
-      onSelectNode(item.id);
-      if (onCategorySelect) onCategorySelect(item);
-    } else if (item.type === 'vendor') {
-      if (onVendorSelect) onVendorSelect(item);
-    } else if (item.type === 'transaction') {
-      if (onTransactionSelect) onTransactionSelect(item);
-    }
-  }, [item, enableSmartInteractions, onSelectNode, onCategorySelect, onVendorSelect, onTransactionSelect]);
-
-  const handleDoubleClick = useCallback((e) => {
+  // Handlers
+  const handleToggleExpand = useCallback((e) => {
     e.stopPropagation();
-    if (item.type === 'category' && hasChildren) {
-      setIsExpanded(!isExpanded);
+    setIsExpanded(!isExpanded);
+  }, [isExpanded]);
+
+  const handleSelect = useCallback(() => {
+    onSelectNode(item);
+    if (item.type === 'category' && onCategorySelect) {
+      onCategorySelect(item);
+    } else if (item.type === 'vendor' && onVendorSelect) {
+      onVendorSelect(item);
+    } else if (item.type === 'transaction' && onTransactionSelect) {
+      onTransactionSelect(item);
     }
-  }, [item.type, hasChildren, isExpanded]);
+  }, [item, onSelectNode, onCategorySelect, onVendorSelect, onTransactionSelect]);
 
   const handleTransactionInfoClick = (e) => {
     e.stopPropagation();
     if (item.type === 'transaction' && onTransactionInfo) {
       const transactionToPass = item.originalTransaction || item;
       onTransactionInfo(transactionToPass);
+    }
+  };
+
+  // Category editing handlers
+  const handleEditCategoryClick = (e) => {
+    e.stopPropagation();
+    if (item.type !== 'category' || !isUserOwnedContext) return;
+    setEditedCategoryName(item.name);
+    setIsEditingCategory(true);
+    setCategoryEditError(null);
+  };
+
+  const handleSaveCategoryEdit = async () => {
+    if (!editedCategoryName.trim()) {
+      setCategoryEditError('Category name cannot be empty');
+      return;
+    }
+
+    if (editedCategoryName.trim() === item.name) {
+      handleCancelCategoryEdit();
+      return;
+    }
+
+    try {
+      if (onRenameCategory) {
+        await onRenameCategory(item.id, editedCategoryName.trim());
+        setIsEditingCategory(false);
+        setEditedCategoryName('');
+        setCategoryEditError(null);
+      }
+    } catch (error) {
+      setCategoryEditError(error.message || 'Failed to rename category');
+    }
+  };
+
+  const handleCancelCategoryEdit = () => {
+    setIsEditingCategory(false);
+    setEditedCategoryName('');
+    setCategoryEditError(null);
+  };
+
+  // Context menu handlers
+  const handleContextMenuClick = (e) => {
+    e.stopPropagation();
+    setShowContextMenu(!showContextMenu);
+  };
+
+  const handleContextMenuAction = (action) => {
+    setShowContextMenu(false);
+    
+    switch (action) {
+      case 'edit':
+        if (item.type === 'category') {
+          handleEditCategoryClick({ stopPropagation: () => {} });
+        } else if (item.type === 'vendor') {
+          handleEditVendorClick({ stopPropagation: () => {} });
+        }
+        break;
+      case 'create':
+        handleAddChildClick({ stopPropagation: () => {} });
+        break;
+      case 'delete':
+        handleDeleteClick({ stopPropagation: () => {} });
+        break;
+      case 'info':
+        handleTransactionInfoClick({ stopPropagation: () => {} });
+        break;
+      default:
+        break;
     }
   };
 
@@ -335,6 +396,29 @@ const CategoryTreeNode = ({
     setVendorEditError(null);
   };
 
+  const getContextMenuItems = () => {
+    switch (item.type) {
+      case 'category':
+        if (!isUserOwnedContext) return [];
+        return [
+          { id: 'edit', label: 'Rename', icon: <FiEdit3 /> },
+          { id: 'create', label: 'Add Subcategory', icon: <FiPlusCircle /> },
+          { id: 'delete', label: 'Delete', icon: <FiTrash2 /> }
+        ];
+      case 'vendor':
+        return [
+          { id: 'edit', label: 'Edit Vendor Name', icon: <FiEdit3 /> },
+          { id: 'info', label: 'View Transactions', icon: <FiInfo /> }
+        ];
+      case 'transaction':
+        return [
+          { id: 'info', label: 'View Details', icon: <FiInfo /> }
+        ];
+      default:
+        return [];
+    }
+  };
+
   // Selection states
   const isSelected = (item.type === 'category' && selectedCategoryId === item.id) || 
                    (item.type === 'vendor' && selectedVendorId === item.id) ||
@@ -352,12 +436,13 @@ const CategoryTreeNode = ({
     return null; 
   }
 
+  const contextMenuItems = getContextMenuItems();
+
   return (
     <div className={`category-tree-node item-type-${item.type} ${isSelected ? 'selected' : ''}`} style={{ paddingLeft: `${level * 20}px` }}>
       <div 
         className={`node-content ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}`} 
         onClick={!isDisabled ? handleSelect : undefined}
-        onDoubleClick={!isDisabled ? handleDoubleClick : undefined}
         tabIndex={enableSmartInteractions && !isDisabled ? 0 : -1}
         role="treeitem"
         aria-expanded={item.type === 'category' ? isExpanded : undefined}
@@ -367,6 +452,7 @@ const CategoryTreeNode = ({
             ? `, spending total: ${formatCurrency(categoryTotal)}` 
             : ''
         }`}
+        onMouseLeave={() => setShowContextMenu(false)}
       >
         <span className="expand-icon" onClick={!isDisabled && hasChildren ? handleToggleExpand : undefined}>
           {hasChildren ? 
@@ -384,18 +470,51 @@ const CategoryTreeNode = ({
         {item.type === 'vendor' && <FiTag size="14" className="node-icon vendor-icon" title="Vendor"/>}
         {item.type === 'transaction' && <FiDollarSign size="14" className="node-icon transaction-icon" title="Transaction"/>}
         
+        {/* Category name with editing capability */}
+        {item.type === 'category' && !isEditingCategory && (
+          <span className="node-name category-name">
+            {item.name}
+          </span>
+        )}
+        
+        {/* Category editing input */}
+        {item.type === 'category' && isEditingCategory && (
+          <div className="category-edit-form">
+            <input
+              type="text"
+              value={editedCategoryName}
+              onChange={(e) => setEditedCategoryName(e.target.value)}
+              className="category-edit-input"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveCategoryEdit();
+                if (e.key === 'Escape') handleCancelCategoryEdit();
+              }}
+            />
+            <div className="category-edit-actions">
+              <button 
+                onClick={handleSaveCategoryEdit}
+                disabled={!editedCategoryName.trim()}
+                className="category-save-button"
+                title="Save"
+              >
+                <FiCheck size="12" />
+              </button>
+              <button 
+                onClick={handleCancelCategoryEdit}
+                className="category-cancel-button"
+                title="Cancel"
+              >
+                <FiX size="12" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Vendor name with editing capability */}
         {item.type === 'vendor' && !isEditingVendor && (
           <span className="node-name vendor-name">
             {item.name}
-            <button 
-              className="vendor-edit-button"
-              onClick={handleEditVendorClick}
-              title="Edit vendor name"
-              disabled={isUpdatingVendor || isDeleting || isCreating}
-            >
-              <FiEdit3 size="12" />
-            </button>
           </span>
         )}
         
@@ -435,76 +554,60 @@ const CategoryTreeNode = ({
           </div>
         )}
         
-        {/* Regular node name for non-vendor items and non-transaction items under vendors */}
-        {item.type !== 'vendor' && !(item.type === 'transaction' && level > 0 && allItems.find(parent => parent.id === item.parent)?.type === 'vendor') && <span className="node-name">{item.name}</span>}
+        {/* Transaction name and details */}
+        {item.type === 'transaction' && (
+          <span className="node-name transaction-name">
+            {item.name}
+            <span className={`transaction-amount ${item.direction === 'DEBIT' ? 'debit' : 'credit'}`}>
+              {formatCurrency(Math.abs(item.amount || 0))}
+            </span>
+          </span>
+        )}
         
-        {/* Amount display for different node types */}
+        {/* Spending totals for categories */}
         {item.type === 'category' && showSpendingTotals && categoryTotal !== 0 && (
-          <span className="category-amount">
-            <FiDollarSign size="12" />
+          <span className="spending-total">
             {formatCurrency(categoryTotal)}
           </span>
         )}
-        
-        {item.type === 'vendor' && (
-          <span className="vendor-amount">
-            <FiDollarSign size="12" />
-            {formatCurrency(item.totalAmount || 0)}
-            <span className="transaction-count">• {item.transactionCount || 0} txn{(item.transactionCount || 0) !== 1 ? 's' : ''}</span>
-          </span>
-        )}
-        
-        {item.type === 'transaction' && (
-          <span className="transaction-details">
-            <span className={`transaction-amount ${item.direction === 'DEBIT' ? 'debit' : 'credit'}`}>
-              {formatCurrency(item.amount || 0, item.direction)}
-            </span>
-            <span className="transaction-date">
-              {new Date(item.date).toLocaleDateString('en-AU', { 
-                day: '2-digit', 
-                month: '2-digit',
-                year: '2-digit'
-              })}
-            </span>
-            <button 
-              className="action-button-icon transaction-info-button" 
-              title={`View details for transaction`}
-              onClick={handleTransactionInfoClick} 
-              disabled={isDisabled}
-            >
-              <FiInfo size="14"/>
-            </button>
-          </span>
-        )}
-        
-        {item.type === 'category' && (
+
+        {/* Context Menu Actions */}
+        {!isEditingCategory && !isEditingVendor && contextMenuItems.length > 0 && (
           <div className="node-actions">
-            {isUserOwnedContext && !isDeleting && (
-              <button 
-                className="action-button-icon delete-category-button" 
-                title={`Delete category ${item.name}`}
-                onClick={handleDeleteClick} 
-                disabled={isDisabled}
+            <div className="context-menu-container">
+              <button
+                onClick={handleContextMenuClick}
+                className="context-menu-button"
+                title="More actions"
               >
-                <FiTrash2 size="14"/>
+                <FiMoreVertical size="14" />
               </button>
-            )}
-            {isUserOwnedContext && isDeleting && (
-              <FiLoader size="14" className="spinner-inline" title="Deleting..."/>
-            )}
-            {isUserOwnedContext && (
-                 <button 
-                    className="action-button-icon add-child-button" 
-                    title={`Add sub-category to ${item.name}`} 
-                    onClick={!isDisabled ? handleAddChildClick : undefined} 
-                    disabled={isDisabled}
-                >
-            <FiPlusCircle size="14"/>
-        </button>
-            )}
+              
+              {showContextMenu && (
+                <div className="context-menu">
+                  {contextMenuItems.map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleContextMenuAction(item.id)}
+                      className="context-menu-item"
+                    >
+                      {item.icon}
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
+
+      {/* Category editing error */}
+      {item.type === 'category' && categoryEditError && (
+        <div className="category-edit-error" style={{ paddingLeft: `${(level + 1) * 20}px` }}>
+          {categoryEditError}
+        </div>
+      )}
 
       {/* Vendor editing error */}
       {item.type === 'vendor' && vendorEditError && (
@@ -550,6 +653,7 @@ const CategoryTreeNode = ({
               onTransactionInfo={onTransactionInfo}
               onCreateCategory={onCreateCategory}
               onDeleteCategory={onDeleteCategory}
+              onRenameCategory={onRenameCategory}
               isCreating={isCreating}
               isDeleting={onDeleteCategory ? isDeleting : false}
               transactions={transactions}
@@ -587,6 +691,7 @@ CategoryTreeNode.propTypes = {
   onTransactionInfo: PropTypes.func,
   onCreateCategory: PropTypes.func,
   onDeleteCategory: PropTypes.func,
+  onRenameCategory: PropTypes.func,
   isCreating: PropTypes.bool, 
   isDeleting: PropTypes.bool,
   transactions: PropTypes.array,

@@ -177,6 +177,53 @@ class TransactionCreateView(generics.CreateAPIView):
             serializer.is_valid(raise_exception=True)
             transaction = self.perform_create(serializer)
             
+            # Apply vendor identification if the transaction doesn't already have a vendor
+            vendor_identified = False
+            if not transaction.vendor:
+                logger.info(f"User {request.user.id}: Attempting vendor identification for new manual transaction {transaction.id}")
+                try:
+                    from .vendor_identification_service import identify_vendor_for_single_transaction
+                    
+                    identified_vendor = identify_vendor_for_single_transaction(transaction)
+                    if identified_vendor:
+                        vendor_identified = True
+                        transaction.refresh_from_db()  # Refresh to get updated vendor
+                        logger.info(f"User {request.user.id}: Identified vendor {identified_vendor.name} for manual transaction {transaction.id}")
+                    else:
+                        logger.debug(f"User {request.user.id}: Could not identify vendor for manual transaction {transaction.id}")
+                        
+                except Exception as e:
+                    logger.error(f"User {request.user.id}: Vendor identification failed for manual transaction {transaction.id}: {e}", exc_info=True)
+                    # Don't fail the transaction creation if vendor identification fails
+            else:
+                logger.debug(f"User {request.user.id}: Manual transaction {transaction.id} already has vendor {transaction.vendor.name}, skipping vendor identification")
+                vendor_identified = True  # Already had a vendor
+            
+            # Apply auto-categorization if the transaction doesn't already have a category
+            auto_categorized = False
+            rule_applied = None
+            if not transaction.category:
+                logger.info(f"User {request.user.id}: Attempting auto-categorization for new manual transaction {transaction.id}")
+                try:
+                    from .auto_categorization_service import auto_categorize_single_transaction
+                    
+                    applied_rule = auto_categorize_single_transaction(transaction)
+                    if applied_rule:
+                        auto_categorized = True
+                        rule_applied = applied_rule.id
+                        transaction.refresh_from_db()  # Refresh to get updated category
+                        logger.info(f"User {request.user.id}: Auto-categorized manual transaction {transaction.id} "
+                                   f"using rule {rule_applied}")
+                    else:
+                        logger.debug(f"User {request.user.id}: Manual transaction {transaction.id} could not be auto-categorized: "
+                                    f"No matching vendor rule found")
+                        
+                except Exception as e:
+                    logger.error(f"User {request.user.id}: Auto-categorization failed for manual transaction {transaction.id}: {e}", exc_info=True)
+                    # Don't fail the transaction creation if auto-categorization fails
+            else:
+                logger.debug(f"User {request.user.id}: Manual transaction {transaction.id} already has category {transaction.category.name}, skipping auto-categorization")
+            
             # Use the standard TransactionSerializer for the response
             # to provide consistent read format (includes computed fields)
             response_serializer = TransactionSerializer(transaction, context={'request': request})
@@ -186,7 +233,10 @@ class TransactionCreateView(generics.CreateAPIView):
                 'transaction': response_serializer.data,
                 'message': 'Transaction created successfully.',
                 'currency_converted': transaction.aud_amount is not None,
-                'conversion_rate': float(transaction.exchange_rate_to_aud) if transaction.exchange_rate_to_aud else None
+                'conversion_rate': float(transaction.exchange_rate_to_aud) if transaction.exchange_rate_to_aud else None,
+                'vendor_identified': vendor_identified,
+                'auto_categorized': auto_categorized,
+                'rule_applied': rule_applied
             }
             
             return Response(response_data, status=status.HTTP_201_CREATED)
@@ -903,12 +953,79 @@ class TransactionCSVUploadView(APIView):
             # ... (Phase 4: Bulk Create and Phase 5: Prepare Response - logic remains the same) ...
             logger.info(f"User {current_user.id}: Phase 3 Complete. Dups: {duplicate_count}. New: {len(transactions_to_create)}. Convert Errors: {skipped_conversion_error_count}.")
             created_count = 0
+            auto_categorized_count = 0
             if transactions_to_create:
                 try:
                     with db_transaction.atomic():
                         created_objects = Transaction.objects.bulk_create(transactions_to_create)
                         created_count = len(created_objects)
                     logger.info(f"User {current_user.id}: Phase 4 Complete - Created {created_count} transactions from CSV.")
+                    
+                    # Get the newly created transaction IDs for subsequent processing
+                    new_transaction_ids = [obj.id for obj in created_objects if obj.id] if created_count > 0 else []
+                    
+                    # Phase 4.5: Identify and assign vendors to newly created transactions
+                    vendor_identified_count = 0
+                    vendor_created_count = 0
+                    if created_count > 0:
+                        logger.info(f"User {current_user.id}: Phase 4.5 - Starting vendor identification for {created_count} new transactions...")
+                        try:
+                            from .vendor_identification_service import identify_vendors_for_user_transactions
+                            
+                            # Create queryset of newly created transactions for vendor identification
+                            new_transactions_qs = Transaction.objects.filter(
+                                id__in=new_transaction_ids,
+                                user=current_user
+                            )
+                            
+                            # Apply vendor identification to the new transactions
+                            vendor_result = identify_vendors_for_user_transactions(
+                                current_user,
+                                transactions=new_transactions_qs
+                            )
+                            vendor_identified_count = vendor_result.identified_count
+                            vendor_created_count = vendor_result.created_vendors_count
+                            
+                            logger.info(f"User {current_user.id}: Phase 4.5 Complete - Identified vendors for {vendor_identified_count} "
+                                       f"out of {created_count} new transactions. "
+                                       f"Created {vendor_created_count} new vendors. "
+                                       f"Skipped: {vendor_result.skipped_count}, "
+                                       f"Errors: {vendor_result.error_count}")
+                        except Exception as e:
+                            logger.error(f"User {current_user.id}: Vendor identification failed during CSV upload: {e}", exc_info=True)
+                            # Don't fail the upload if vendor identification fails
+                    
+                    # Phase 5: Apply auto-categorization to newly created transactions
+                    if created_count > 0:
+                        logger.info(f"User {current_user.id}: Phase 5 - Starting auto-categorization for {created_count} new transactions...")
+                        try:
+                            from .auto_categorization_service import auto_categorize_user_transactions
+                            
+                            if new_transaction_ids:
+                                # Create queryset of newly created transactions for auto-categorization
+                                new_transactions_qs = Transaction.objects.filter(
+                                    id__in=new_transaction_ids,
+                                    user=current_user
+                                )
+                                
+                                # Apply auto-categorization only to the new transactions
+                                categorization_result = auto_categorize_user_transactions(
+                                    current_user,
+                                    transactions=new_transactions_qs
+                                )
+                                auto_categorized_count = categorization_result.categorized_count
+                                
+                                logger.info(f"User {current_user.id}: Phase 5 Complete - Auto-categorized {auto_categorized_count} "
+                                           f"out of {created_count} new transactions. "
+                                           f"Skipped: {categorization_result.skipped_count}, "
+                                           f"Errors: {categorization_result.error_count}")
+                            else:
+                                logger.warning(f"User {current_user.id}: Phase 5 - No transaction IDs available for auto-categorization")
+                                
+                        except Exception as e:
+                            logger.error(f"User {current_user.id}: Auto-categorization failed during CSV upload: {e}", exc_info=True)
+                            # Don't fail the entire upload if auto-categorization fails
+                            
                 except Exception as e:
                     errors.append(f"Database error: {str(e)}.")
                     logger.error(f"User {current_user.id}: DB error CSV txns: {e}", exc_info=True)
@@ -919,6 +1036,9 @@ class TransactionCSVUploadView(APIView):
             else: message += " No new transactions were imported."
             if duplicate_count > 0: message += f" Skipped {duplicate_count} potential duplicates."
             if applied_rules_count > 0: message += f" Applied {applied_rules_count} description rules."
+            if vendor_identified_count > 0: message += f" Identified vendors for {vendor_identified_count} transactions."
+            if vendor_created_count > 0: message += f" Created {vendor_created_count} new vendors."
+            if auto_categorized_count > 0: message += f" Auto-categorized {auto_categorized_count} transactions using vendor rules."
             if skipped_conversion_error_count > 0: message += f" Failed to convert currency for {skipped_conversion_error_count} transactions to {BASE_CURRENCY_FOR_CONVERSION}."
             if error_count > 0: message += f" Encountered {error_count} errors."
 
@@ -927,9 +1047,16 @@ class TransactionCSVUploadView(APIView):
             elif error_count > 0 and not transactions_to_create and processed_rows > 0: response_status = status.HTTP_400_BAD_REQUEST
 
             return Response({
-                'message': message, 'imported_count': created_count, 'duplicate_count': duplicate_count,
-                'auto_categorized_count': applied_rules_count, 'conversion_error_count': skipped_conversion_error_count,
-                'total_rows_processed': processed_rows, 'errors': errors
+                'message': message, 
+                'imported_count': created_count, 
+                'duplicate_count': duplicate_count,
+                'vendor_identified_count': vendor_identified_count,  # New: vendor identification count
+                'vendor_created_count': vendor_created_count,  # New: new vendors created count
+                'auto_categorized_count': auto_categorized_count,  # New: vendor rule auto-categorization count
+                'description_rules_applied_count': applied_rules_count,  # Renamed for clarity 
+                'conversion_error_count': skipped_conversion_error_count,
+                'total_rows_processed': processed_rows, 
+                'errors': errors
             }, status=response_status)
 
         except UnicodeDecodeError: # ... (exception handling as before) ...
@@ -1047,14 +1174,14 @@ class DashboardBalanceView(views.APIView):
 class VendorRuleListCreateView(generics.ListCreateAPIView):
     """
     API endpoint to list and create vendor rules for the authenticated user.
-    Supports filtering by vendor, category, and priority.
+    Supports filtering by vendor and category.
     """
     serializer_class = VendorRuleSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.DjangoFilterBackend, OrderingFilter]
-    ordering_fields = ['priority', 'created_at', 'updated_at']
-    ordering = ['priority', '-created_at']  # Default: highest priority first, then newest
+    ordering_fields = ['created_at', 'updated_at']
+    ordering = ['-created_at']  # Default: newest first (newest rule wins)
 
     def get_queryset(self):
         """
@@ -1126,3 +1253,331 @@ class VendorRuleDetailView(generics.RetrieveUpdateDestroyAPIView):
                 {"error": "An error occurred while trying to delete the vendor rule."}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+# --- Auto-Categorization Views ---
+
+class AutoCategorizeTransactionsView(APIView):
+    """
+    API endpoint to auto-categorize transactions for the authenticated user.
+    Supports both batch processing of all uncategorized transactions and 
+    force recategorization of already categorized transactions.
+    
+    POST /api/transactions/auto-categorize/
+    Body: {
+        "force_recategorize": boolean (optional, default: false),
+        "transaction_ids": [int] (optional, if provided only these transactions are processed)
+    }
+    
+    Returns: {
+        "categorized_count": int,
+        "skipped_count": int,
+        "error_count": int,
+        "total_processed": int,
+        "results": [...] (detailed results for each transaction)
+    }
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        force_recategorize = request.data.get('force_recategorize', False)
+        transaction_ids = request.data.get('transaction_ids', None)
+        
+        logger.info(f"User {user.id}: Starting auto-categorization request. "
+                   f"Force recategorize: {force_recategorize}, "
+                   f"Specific transactions: {len(transaction_ids) if transaction_ids else 'All'}")
+        
+        try:
+            # Import the service and functions 
+            from .auto_categorization_service import (
+                AutoCategorizationService,
+                auto_categorize_user_transactions
+            )
+            
+            # If specific transaction IDs provided, get only those transactions
+            if transaction_ids:
+                queryset = Transaction.objects.filter(
+                    user=user,
+                    id__in=transaction_ids
+                ).select_related('vendor', 'category')
+                
+                logger.info(f"User {user.id}: Processing {queryset.count()} specific transactions")
+            else:
+                # Use the convenience function for all user transactions
+                result = auto_categorize_user_transactions(user, force_recategorize=force_recategorize)
+                
+                logger.info(f"User {user.id}: Auto-categorization complete. "
+                           f"Categorized: {result.categorized_count}, "
+                           f"Skipped: {result.skipped_count}, "
+                           f"Errors: {result.error_count}")
+                
+                return Response({
+                    'categorized_count': result.categorized_count,
+                    'skipped_count': result.skipped_count,
+                    'error_count': result.error_count,
+                    'total_processed': result.total_processed,
+                    'results': [
+                        {
+                            'transaction_id': tx_id,
+                            'status': 'categorized',
+                            'rule_applied': rule_id,
+                            'category_name': None  # Would need to fetch from rule
+                        }
+                        for tx_id, rule_id in result.successes.items()
+                    ] + [
+                        {
+                            'transaction_id': tx_id,
+                            'status': 'skipped',
+                            'reason': reason
+                        }
+                        for tx_id, reason in result.skips.items()
+                                    ] + [
+                    {
+                        'transaction_id': tx_id,
+                        'status': 'error',
+                        'reason': str(error)
+                    }
+                    for tx_id, error in result.error_details.items()
+                ]
+                }, status=status.HTTP_200_OK)
+            
+            # Process specific transactions using the service
+            service = AutoCategorizationService(user)
+            result = service.categorize_transactions(queryset, force_recategorize=force_recategorize)
+            
+            logger.info(f"User {user.id}: Auto-categorization complete for specific transactions. "
+                       f"Categorized: {result.categorized_count}, "
+                       f"Skipped: {result.skipped_count}, "
+                       f"Errors: {result.error_count}")
+            
+            return Response({
+                'categorized_count': result.categorized_count,
+                'skipped_count': result.skipped_count,
+                'error_count': result.error_count,
+                'total_processed': result.total_processed,
+                'results': [
+                    {
+                        'transaction_id': tx_id,
+                        'status': 'categorized',
+                        'rule_applied': rule_id,
+                        'category_name': None  # Would need to fetch from rule
+                    }
+                    for tx_id, rule_id in result.successes.items()
+                ] + [
+                    {
+                        'transaction_id': tx_id,
+                        'status': 'skipped',
+                        'reason': reason
+                    }
+                    for tx_id, reason in result.skips.items()
+                ] + [
+                    {
+                        'transaction_id': tx_id,
+                        'status': 'error',
+                        'reason': str(error)
+                    }
+                    for tx_id, error in result.error_details.items()
+                ]
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            logger.error(f"User {user.id}: Error during auto-categorization: {e}", exc_info=True)
+            return Response({
+                'error': 'An error occurred during auto-categorization',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AutoCategorizeSingleTransactionView(APIView):
+    """
+    API endpoint to auto-categorize a single transaction.
+    
+    POST /api/transactions/{transaction_id}/auto-categorize/
+    Body: {
+        "force_recategorize": boolean (optional, default: false)
+    }
+    
+    Returns: {
+        "success": boolean,
+        "rule_applied": {rule details} or null,
+        "category_assigned": {category details} or null,
+        "reason": string (if not successful)
+    }
+    """
+    permission_classes = [permissions.IsAuthenticated, IsOwner]
+    parser_classes = [JSONParser]
+    lookup_field = 'pk'
+
+    def post(self, request, pk=None, *args, **kwargs):
+        user = request.user
+        force_recategorize = request.data.get('force_recategorize', False)
+        
+        try:
+            # Get the transaction
+            transaction = Transaction.objects.select_related('vendor', 'category').get(
+                id=pk, 
+                user=user
+            )
+            
+            logger.info(f"User {user.id}: Auto-categorizing single transaction {transaction.id}")
+            
+            # Import the service
+            from .auto_categorization_service import (
+                AutoCategorizationService,
+                auto_categorize_single_transaction
+            )
+            
+            # Use the convenience function
+            applied_rule = auto_categorize_single_transaction(
+                transaction, 
+                force_recategorize=force_recategorize
+            )
+            
+            if applied_rule:
+                # Refresh the transaction to get updated category
+                transaction.refresh_from_db()
+                
+                logger.info(f"User {user.id}: Successfully auto-categorized transaction {transaction.id} "
+                           f"using rule {applied_rule.id}")
+                
+                return Response({
+                    'success': True,
+                    'rule_applied': {
+                        'id': applied_rule.id,
+                        'rule_id': applied_rule.id,
+                        'vendor_name': applied_rule.vendor.name,
+                        'category_name': applied_rule.category.name,
+                        'priority': applied_rule.priority,
+                        'pattern': applied_rule.pattern
+                    },
+                    'category_assigned': {
+                        'id': transaction.category.id,
+                        'name': transaction.category.name
+                    }
+                }, status=status.HTTP_200_OK)
+            else:
+                # No rule was applied
+                if transaction.category and not force_recategorize:
+                    reason = 'Transaction already categorized'
+                elif not transaction.vendor:
+                    reason = 'Transaction has no vendor assigned'
+                else:
+                    reason = 'No matching vendor rule found'
+                
+                logger.debug(f"User {user.id}: Could not auto-categorize transaction {transaction.id}: {reason}")
+                
+                return Response({
+                    'success': False,
+                    'rule_applied': None,
+                    'category_assigned': None,
+                    'reason': reason
+                }, status=status.HTTP_200_OK)
+        
+        except Transaction.DoesNotExist:
+            return Response({
+                'error': 'Transaction not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"User {user.id}: Error during single transaction auto-categorization: {e}", exc_info=True)
+            return Response({
+                'error': 'An error occurred during auto-categorization',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class CategorizationSuggestionsView(APIView):
+    """
+    API endpoint to get categorization suggestions for a transaction.
+    Returns suggested categories and vendor rules without applying them.
+    
+    GET /api/transactions/{transaction_id}/suggestions/
+    
+    Returns: {
+        "suggestions": [
+            {
+                "rule": {rule details},
+                "category": {category details},
+                "confidence": float,
+                "reason": string
+            }
+        ],
+        "vendor": {vendor details} or null
+    }
+    """
+    permission_classes = [permissions.IsAuthenticated, IsOwner]
+    lookup_field = 'pk'
+
+    def get(self, request, pk=None, *args, **kwargs):
+        user = request.user
+        
+        try:
+            # Get the transaction
+            transaction = Transaction.objects.select_related('vendor', 'category').get(
+                id=pk, 
+                user=user
+            )
+            
+            logger.debug(f"User {user.id}: Getting categorization suggestions for transaction {transaction.id}")
+            
+            # Import the service
+            from .auto_categorization_service import AutoCategorizationService
+            
+            service = AutoCategorizationService(user)
+            suggestions = service.get_categorization_suggestions(transaction)
+            
+            # Format suggestions for API response
+            formatted_suggestions = []
+            for suggestion in suggestions:
+                formatted_suggestions.append({
+                    'rule': {
+                        'id': suggestion['rule_id'],
+                        'vendor_name': suggestion['vendor_name'],
+                        'category_name': suggestion['category_name'],
+                        'priority': suggestion['priority'],
+                        'pattern': suggestion['pattern'],
+                        'is_persistent': suggestion['is_persistent']
+                    },
+                    'category': {
+                        'id': suggestion['category_id'],
+                        'name': suggestion['category_name']
+                    },
+                    'confidence': suggestion['confidence']
+                })
+            
+            vendor_info = None
+            if transaction.vendor:
+                vendor_info = {
+                    'id': transaction.vendor.id,
+                    'name': transaction.vendor.name,
+                    'display_name': transaction.vendor.display_name,
+                    'is_system': transaction.vendor.user is None
+                }
+            
+            logger.debug(f"User {user.id}: Found {len(formatted_suggestions)} suggestions for transaction {transaction.id}")
+            
+            return Response({
+                'suggestions': formatted_suggestions,
+                'vendor': vendor_info,
+                'transaction': {
+                    'id': transaction.id,
+                    'description': transaction.description,
+                    'amount': transaction.original_amount,
+                    'currency': transaction.original_currency,
+                    'current_category': {
+                        'id': transaction.category.id,
+                        'name': transaction.category.name
+                    } if transaction.category else None
+                }
+            }, status=status.HTTP_200_OK)
+        
+        except Transaction.DoesNotExist:
+            return Response({
+                'error': 'Transaction not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"User {user.id}: Error getting categorization suggestions: {e}", exc_info=True)
+            return Response({
+                'error': 'An error occurred while getting suggestions',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

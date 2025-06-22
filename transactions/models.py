@@ -138,16 +138,9 @@ class VendorMerge(models.Model):
 
 class VendorRule(models.Model):
     """
-    Defines categorization rules for vendors, supporting pattern-based matching
-    and automatic assignment with priority handling for conflict resolution.
+    Defines categorization rules for vendors with simplified direct vendor matching
+    and unique vendor constraint for conflict-free rule management.
     """
-    PRIORITY_CHOICES = [
-        (1, 'Very High'),
-        (2, 'High'),
-        (3, 'Medium'),
-        (4, 'Low'),
-        (5, 'Very Low'),
-    ]
     
     id = models.CharField(
         max_length=36,
@@ -168,22 +161,10 @@ class VendorRule(models.Model):
         db_index=True,
         help_text="The category to assign when this rule matches."
     )
-    pattern = models.CharField(
-        max_length=500,
-        null=True,
-        blank=True,
-        help_text="Optional regex pattern for description matching. If null, rule applies to all transactions from this vendor."
-    )
     is_persistent = models.BooleanField(
         default=False,
         db_index=True,
         help_text="If true, automatically assign this category to future transactions from this vendor."
-    )
-    priority = models.IntegerField(
-        choices=PRIORITY_CHOICES,
-        default=3,
-        db_index=True,
-        help_text="Priority level for rule conflict resolution (1=highest, 5=lowest)."
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -191,23 +172,21 @@ class VendorRule(models.Model):
     class Meta:
         verbose_name = "Vendor Rule"
         verbose_name_plural = "Vendor Rules"
-        ordering = ['priority', '-created_at']
+        ordering = ['-created_at']  # Newest rule wins for conflicts
         indexes = [
-            models.Index(fields=['vendor', 'priority']),
             models.Index(fields=['category']),
             models.Index(fields=['is_persistent']),
         ]
         constraints = [
-            models.CheckConstraint(
-                condition=models.Q(priority__gte=1) & models.Q(priority__lte=5),
-                name='valid_priority_range'
+            models.UniqueConstraint(
+                fields=['vendor'],
+                name='unique_vendor_rule'
             ),
         ]
 
     def __str__(self):
-        pattern_text = f" (pattern: {self.pattern})" if self.pattern else ""
         persistent_text = " [Auto]" if self.is_persistent else ""
-        return f"{self.vendor.name} -> {self.category.name}{pattern_text}{persistent_text}"
+        return f"{self.vendor.name} -> {self.category.name}{persistent_text}"
 
 class SplitTransaction(models.Model):
     """

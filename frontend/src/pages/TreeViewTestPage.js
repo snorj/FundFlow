@@ -250,6 +250,30 @@ const TreeViewTestPage = () => {
     }, 1000);
   };
 
+  const handleCategoryRename = (categoryId, newName) => {
+    console.log('Rename category:', categoryId, 'to:', newName);
+    
+    // Simulate API call
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const updateInTree = (nodes) => {
+          return nodes.map(node => {
+            if (node.id === categoryId) {
+              return { ...node, name: newName };
+            } else if (node.children && node.children.length > 0) {
+              return { ...node, children: updateInTree(node.children) };
+            }
+            return node;
+          });
+        };
+        
+        setTreeData(updateInTree(treeData));
+        console.log('Category renamed successfully!');
+        resolve();
+      }, 500);
+    });
+  };
+
   const handleCategoryMove = (draggedCategoryId, targetCategoryId, position) => {
     console.log('Move category:', { draggedCategoryId, targetCategoryId, position });
     
@@ -380,6 +404,7 @@ const TreeViewTestPage = () => {
           onTransactionInfo={handleTransactionInfo}
           onCategoryCreate={handleCategoryCreate}
           onCategoryDelete={handleCategoryDelete}
+          onCategoryRename={handleCategoryRename}
           onCategoryMove={handleCategoryMove}
           onDropValidation={handleDropValidation}
           selectedCategoryId={selectedCategoryId}
