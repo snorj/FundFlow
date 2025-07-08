@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import './VendorRulePromptModal.css';
 import { FiX, FiLoader, FiTag, FiCheck } from 'react-icons/fi';
 
-const VendorRulePromptModal = ({ isOpen, onClose, vendors, category, onConfirm }) => {
+const VendorRulePromptModal = ({ isOpen, onClose, onDismiss, vendors, category, onConfirm }) => {
   const [isCreatingRules, setIsCreatingRules] = useState(false);
 
   if (!isOpen) return null;
@@ -19,7 +19,11 @@ const VendorRulePromptModal = ({ isOpen, onClose, vendors, category, onConfirm }
 
   const handleOverlayClick = (e) => {
     if (e.target === e.currentTarget && !isCreatingRules) {
-      onClose();
+      if (onDismiss) {
+        onDismiss();
+      } else {
+        onClose();
+      }
     }
   };
 
@@ -34,7 +38,7 @@ const VendorRulePromptModal = ({ isOpen, onClose, vendors, category, onConfirm }
           {!isCreatingRules && (
             <button 
               className="modal-close-button" 
-              onClick={onClose}
+              onClick={onDismiss || onClose}
               aria-label="Close modal"
             >
               <FiX />
@@ -75,7 +79,7 @@ const VendorRulePromptModal = ({ isOpen, onClose, vendors, category, onConfirm }
             onClick={onClose}
             disabled={isCreatingRules}
           >
-            Cancel
+            Don't Create Rule
           </button>
           <button 
             className="confirm-button" 
@@ -103,6 +107,7 @@ const VendorRulePromptModal = ({ isOpen, onClose, vendors, category, onConfirm }
 VendorRulePromptModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
+  onDismiss: PropTypes.func,
   vendors: PropTypes.arrayOf(PropTypes.string).isRequired,
   category: PropTypes.string.isRequired,
   onConfirm: PropTypes.func.isRequired,

@@ -202,6 +202,14 @@ const CategoriseTransactionsPage = () => {
         }
     };
 
+    const handleVendorRulePromptDismiss = () => {
+        if (isCreatingVendorRules) return; // Prevent closing while in progress
+        
+        // Just close the modal without doing anything
+        setIsVendorRulePromptOpen(false);
+        setVendorRulePromptData(null);
+    };
+
     const handleCategorizeSelected = async () => {
         if (!selectedCategory || selectedTransactionIds.size === 0) return;
         
@@ -605,6 +613,7 @@ const CategoriseTransactionsPage = () => {
                 <VendorRulePromptModal
                     isOpen={isVendorRulePromptOpen}
                     onClose={handleVendorRulePromptClose}
+                    onDismiss={handleVendorRulePromptDismiss}
                     vendors={vendorRulePromptData.vendors}
                     category={vendorRulePromptData.category}
                     onConfirm={handleVendorRulePromptConfirm}
