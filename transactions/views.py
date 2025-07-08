@@ -709,12 +709,19 @@ class VendorListCreateView(generics.ListCreateAPIView):
         """
         This view should return a list of all system vendors
         plus vendors owned by the currently authenticated user.
+        Supports search filtering via 'search' query parameter.
         """
         user = self.request.user
-        # Use Q objects for OR condition: user is None OR user is the current user
-        return Vendor.objects.filter(
+        queryset = Vendor.objects.filter(
             Q(user__isnull=True) | Q(user=user)
         ).distinct()
+        
+        # Add search functionality
+        search_query = self.request.query_params.get('search', None)
+        if search_query:
+            queryset = queryset.filter(name__icontains=search_query)
+            
+        return queryset
 
     def perform_create(self, serializer):
         """
@@ -779,6 +786,59 @@ class VendorDetailView(generics.RetrieveUpdateDestroyAPIView):
         except Exception as e:
             logger.error(f"User {user.id}: Error during deletion of vendor '{vendor_to_delete.name}': {e}", exc_info=True)
             return Response({"error": "An error occurred while trying to delete the vendor."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class VendorNamesSearchView(APIView):
+    """
+    API endpoint to search for vendor names for autocomplete functionality.
+    Returns only vendor names, not full vendor objects, for better performance.
+    
+    GET /api/vendors/search_names/?q=search_term
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        search_query = request.query_params.get('q', '').strip()
+        if not search_query:
+            return Response([], status=status.HTTP_200_OK)
+
+        user = request.user
+        
+        # Get vendor names from multiple sources:
+        # 1. Vendor objects, 2. VendorMapping mapped_vendor values, 3. Transaction descriptions
+        
+        # 1. Get names from Vendor objects (system + user's own)
+        vendor_names = set(
+            Vendor.objects.filter(
+                Q(user__isnull=True) | Q(user=user)
+            ).filter(
+                name__icontains=search_query
+            ).values_list('name', flat=True)
+        )
+        
+        # 2. Get mapped vendor names from VendorMapping (user's own mappings)
+        mapped_vendor_names = set(
+            VendorMapping.objects.filter(
+                user=user
+            ).filter(
+                mapped_vendor__icontains=search_query
+            ).values_list('mapped_vendor', flat=True)
+        )
+        
+        # 3. Get unique transaction descriptions that match (user's own transactions)
+        transaction_descriptions = set(
+            Transaction.objects.filter(
+                user=user
+            ).filter(
+                description__icontains=search_query
+            ).values_list('description', flat=True).distinct()
+        )
+        
+        # Combine and sort all unique names
+        all_names = sorted(vendor_names.union(mapped_vendor_names).union(transaction_descriptions))
+        
+        # Limit results to avoid overwhelming the UI
+        return Response(all_names[:20], status=status.HTTP_200_OK)
 
 class TransactionCSVUploadView(APIView):
     permission_classes = [permissions.IsAuthenticated]

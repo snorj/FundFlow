@@ -1,74 +1,61 @@
 /* VendorRenameModal.css */
 
-/* Modal Overlay */
+/* Vendor Rename Modal Overlay */
 .vendor-rename-modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  padding: 20px;
-  box-sizing: border-box;
+  backdrop-filter: blur(2px);
+  animation: vendor-rename-modal-fade-in 0.2s ease-out;
 }
 
-/* Modal Content */
+/* Modal Content Container */
 .vendor-rename-modal-content {
   background: white;
-  border-radius: 8px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+  width: 90%;
   max-width: 500px;
-  width: 100%;
   max-height: 90vh;
-  overflow: hidden;
+  overflow-y: auto;
   position: relative;
-  animation: vendor-rename-modal-enter 0.3s ease-out;
-}
-
-@keyframes vendor-rename-modal-enter {
-  from {
-    opacity: 0;
-    transform: translateY(-20px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  animation: vendor-rename-modal-slide-up 0.3s ease-out;
 }
 
 /* Header */
 .vendor-rename-modal-header {
-  padding: 20px 24px 16px;
-  border-bottom: 1px solid #e5e7eb;
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
+  padding: 24px 24px 16px;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .vendor-rename-modal-header h2 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 600;
-  color: #111827;
+  color: #1f2937;
 }
 
 .vendor-rename-modal-close-button {
   background: none;
   border: none;
-  padding: 4px;
-  cursor: pointer;
   color: #6b7280;
-  border-radius: 4px;
-  transition: all 0.2s ease;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  transition: all 0.2s;
 }
 
 .vendor-rename-modal-close-button:hover:not(:disabled) {
@@ -91,25 +78,21 @@
   padding: 24px;
 }
 
+/* Form Groups */
 .vendor-rename-form-group {
   margin-bottom: 20px;
 }
 
-.vendor-rename-form-group:last-child {
-  margin-bottom: 0;
-}
-
 .vendor-rename-form-label {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   font-weight: 500;
   color: #374151;
   font-size: 0.875rem;
 }
 
-.vendor-rename-form-label .required {
-  color: #dc2626;
-  margin-left: 2px;
+.required {
+  color: #ef4444;
 }
 
 .vendor-rename-current-name {
@@ -117,19 +100,40 @@
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   padding: 12px;
+  color: #6b7280;
   font-weight: 500;
-  color: #111827;
-  font-size: 0.875rem;
+}
+
+/* Input Container */
+.vendor-rename-input-container {
+  position: relative;
+}
+
+.vendor-rename-search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.vendor-rename-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  width: 16px;
+  height: 16px;
+  z-index: 1;
 }
 
 .vendor-rename-form-input {
   width: 100%;
-  padding: 12px;
+  padding: 12px 16px 12px 40px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
   font-size: 0.875rem;
-  transition: all 0.2s ease;
-  box-sizing: border-box;
+  transition: all 0.2s;
+  background-color: white;
 }
 
 .vendor-rename-form-input:focus {
@@ -139,8 +143,8 @@
 }
 
 .vendor-rename-form-input.error {
-  border-color: #dc2626;
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
 }
 
 .vendor-rename-form-input:disabled {
@@ -149,69 +153,200 @@
   cursor: not-allowed;
 }
 
-.vendor-rename-error-message {
-  display: flex;
-  align-items: center;
-  margin-top: 6px;
-  color: #dc2626;
-  font-size: 0.75rem;
-  gap: 4px;
+.vendor-rename-loading-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #3b82f6;
+  width: 16px;
+  height: 16px;
+  animation: vendor-rename-spin 1s linear infinite;
 }
 
-.vendor-rename-error-message svg {
+/* Search Suggestions */
+.vendor-rename-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  z-index: 1001;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.vendor-rename-suggestions-header {
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #6b7280;
+  background-color: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.vendor-rename-suggestion {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.vendor-rename-suggestion:last-child {
+  border-bottom: none;
+}
+
+.vendor-rename-suggestion:hover,
+.vendor-rename-suggestion.selected {
+  background-color: #eff6ff;
+}
+
+.vendor-rename-suggestion-icon {
   width: 14px;
   height: 14px;
+  color: #3b82f6;
+  margin-right: 8px;
   flex-shrink: 0;
 }
 
+.vendor-rename-suggestion-text {
+  font-size: 0.875rem;
+  color: #374151;
+  font-weight: 500;
+}
+
+/* Error Messages */
+.vendor-rename-error-message {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  color: #ef4444;
+  font-size: 0.875rem;
+}
+
+.vendor-rename-error-message svg {
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+/* Info Text */
 .vendor-rename-info-text {
-  background-color: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 6px;
-  padding: 12px;
   margin-top: 16px;
+  padding: 12px;
+  background-color: #eff6ff;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
 }
 
 .vendor-rename-info-text p {
   margin: 0;
+  font-size: 0.875rem;
   color: #1e40af;
-  font-size: 0.75rem;
-  line-height: 1.4;
+  line-height: 1.5;
+}
+
+/* Merge Confirmation */
+.vendor-rename-merge-confirmation {
+  text-align: center;
+  padding: 16px 0;
+}
+
+.vendor-rename-merge-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.vendor-rename-merge-icon svg {
+  width: 48px;
+  height: 48px;
+  color: #3b82f6;
+}
+
+.vendor-rename-merge-confirmation h3 {
+  margin: 0 0 16px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.vendor-rename-merge-confirmation p {
+  margin: 0 0 12px;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.vendor-rename-merge-details {
+  margin-top: 20px;
+  text-align: left;
+  background-color: #f0f9ff;
+  border: 1px solid #e0f2fe;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.vendor-rename-merge-detail {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  font-size: 0.875rem;
+  color: #0f172a;
+  line-height: 1.5;
+}
+
+.vendor-rename-merge-detail:last-child {
+  margin-bottom: 0;
+}
+
+.vendor-rename-merge-check {
+  width: 16px;
+  height: 16px;
+  color: #059669;
+  margin-right: 8px;
+  margin-top: 2px;
+  flex-shrink: 0;
 }
 
 /* Footer */
 .vendor-rename-modal-footer {
-  padding: 16px 24px 24px;
   display: flex;
-  gap: 12px;
   justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px 24px;
   border-top: 1px solid #e5e7eb;
 }
 
+/* Buttons */
 .vendor-rename-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 10px 20px;
   border-radius: 6px;
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
+  transition: all 0.2s;
+  min-width: 100px;
   gap: 6px;
-  border: 1px solid transparent;
-  min-width: 80px;
-  justify-content: center;
 }
 
 .vendor-rename-button:disabled {
-  opacity: 0.5;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
 .vendor-rename-button-secondary {
   background-color: white;
   color: #374151;
-  border-color: #d1d5db;
+  border: 1px solid #d1d5db;
 }
 
 .vendor-rename-button-secondary:hover:not(:disabled) {
@@ -222,7 +357,7 @@
 .vendor-rename-button-primary {
   background-color: #3b82f6;
   color: white;
-  border-color: #3b82f6;
+  border: 1px solid #3b82f6;
 }
 
 .vendor-rename-button-primary:hover:not(:disabled) {
@@ -230,10 +365,36 @@
   border-color: #2563eb;
 }
 
+.vendor-rename-button-icon {
+  width: 16px;
+  height: 16px;
+}
+
 .vendor-rename-button-spinner {
+  width: 16px;
+  height: 16px;
   animation: vendor-rename-spin 1s linear infinite;
-  width: 14px;
-  height: 14px;
+}
+
+/* Animations */
+@keyframes vendor-rename-modal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes vendor-rename-modal-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @keyframes vendor-rename-spin {
@@ -247,52 +408,63 @@
 
 /* Responsive Design */
 @media (max-width: 640px) {
-  .vendor-rename-modal-overlay {
-    padding: 16px;
-  }
-  
   .vendor-rename-modal-content {
-    max-width: 100%;
+    width: 95%;
+    margin: 16px;
   }
-  
+
   .vendor-rename-modal-header {
-    padding: 16px 20px 12px;
+    padding: 20px 20px 12px;
   }
-  
+
+  .vendor-rename-modal-header h2 {
+    font-size: 1.25rem;
+  }
+
   .vendor-rename-modal-body {
     padding: 20px;
   }
-  
+
   .vendor-rename-modal-footer {
     padding: 12px 20px 20px;
-    flex-direction: column-reverse;
+    flex-direction: column;
   }
-  
+
   .vendor-rename-button {
+    min-width: auto;
     width: 100%;
   }
-  
-  .vendor-rename-modal-header h2 {
-    font-size: 1.125rem;
+
+  .vendor-rename-suggestions {
+    max-height: 150px;
   }
 }
 
-/* Focus Management */
-.vendor-rename-modal-overlay:focus {
-  outline: none;
-}
-
-/* High Contrast Mode Support */
+/* High contrast mode support */
 @media (prefers-contrast: high) {
   .vendor-rename-modal-content {
     border: 2px solid #000;
   }
-  
+
   .vendor-rename-form-input {
     border-width: 2px;
   }
-  
-  .vendor-rename-button {
-    border-width: 2px;
+
+  .vendor-rename-button-primary {
+    background-color: #000;
+    border-color: #000;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .vendor-rename-modal-overlay,
+  .vendor-rename-modal-content,
+  .vendor-rename-button,
+  .vendor-rename-form-input,
+  .vendor-rename-loading-icon,
+  .vendor-rename-button-spinner {
+    animation: none;
+    transition: none;
   }
 } 

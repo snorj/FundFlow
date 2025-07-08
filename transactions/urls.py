@@ -6,6 +6,7 @@ from .views import (
     CategoryDetailView,
     VendorListCreateView,
     VendorDetailView,
+    VendorNamesSearchView,
     VendorRuleListCreateView,
     VendorRuleDetailView,
     VendorMappingViewSet,
@@ -36,6 +37,7 @@ urlpatterns = [
 
     # Vendor URLs
     path('vendors/', VendorListCreateView.as_view(), name='vendor-list-create'),
+    path('vendors/search_names/', VendorNamesSearchView.as_view(), name='vendor-names-search'),
     path('vendors/<int:pk>/', VendorDetailView.as_view(), name='vendor-detail'),
     
     # Vendor Rule URLs

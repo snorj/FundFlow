@@ -31,7 +31,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 # This now comes from the .env file, defaulting to True if not set
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver']
 
 # Email settings (for development)
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # For development, prints emails to console
@@ -187,6 +187,7 @@ REST_FRAMEWORK = {
         # 'rest_framework.authentication.SessionAuthentication',
         # 'rest_framework.authentication.BasicAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.TokenAuthentication',  # Added for vendor search API
     ],
     # Change this to allow unauthenticated requests by default
     'DEFAULT_PERMISSION_CLASSES': [

@@ -6,6 +6,7 @@ import vendorRuleService from '../services/vendorRules';
 import CategorySelectorModal from '../components/categorization/CategorySelectorModal';
 import TransactionDetailsModal from '../components/transactions/TransactionDetailsModal';
 import VendorRulePromptModal from '../components/categorization/VendorRulePromptModal';
+import VendorRenameModal from '../components/transactions/VendorRenameModal';
 import './CategoriseTransactions.css';
 import { FiLoader, FiInbox, FiAlertCircle, FiCheck, FiTag, FiSquare, FiCheckSquare, FiInfo, FiEdit3, FiX } from 'react-icons/fi';
 import { formatDate, formatCurrency } from '../utils/formatting';
@@ -23,8 +24,9 @@ const CategoriseTransactionsPage = () => {
     const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
     const [selectedTransaction, setSelectedTransaction] = useState(null);
     const [isTransactionDetailsOpen, setIsTransactionDetailsOpen] = useState(false);
-    const [editingVendor, setEditingVendor] = useState(null);
     const [isUpdatingVendor, setIsUpdatingVendor] = useState(false);
+    const [isVendorRenameModalOpen, setIsVendorRenameModalOpen] = useState(false);
+    const [vendorToRename, setVendorToRename] = useState(null);
     const [isAutoCategorizingSelected, setIsAutoCategorizingSelected] = useState(false);
     const [autoCategorizeError, setAutoCategorizeError] = useState(null);
     const [autoCategorizeResults, setAutoCategorizeResults] = useState(null);
@@ -120,55 +122,55 @@ const CategoriseTransactionsPage = () => {
     };
 
     const handleEditVendor = (groupIndex, currentDescription) => {
-        setEditingVendor({ groupIndex, newName: currentDescription });
+        const group = groupedTransactions[groupIndex];
+        setVendorToRename({
+            groupIndex,
+            currentName: currentDescription,
+            group: group
+        });
+        setIsVendorRenameModalOpen(true);
     };
 
-    const handleSaveVendor = async (groupIndex) => {
-        if (!editingVendor || editingVendor.groupIndex !== groupIndex) return;
-        
-        setIsUpdatingVendor(true);
-        setSubmitError(null);
+
+
+    const handleVendorRenameModalClose = () => {
+        setIsVendorRenameModalOpen(false);
+        setVendorToRename(null);
+    };
+
+    const handleVendorRenameSuccess = (result) => {
+        if (!vendorToRename) return;
         
         try {
-            const group = groupedTransactions[groupIndex];
-            const newDescription = editingVendor.newName.trim();
+            const { groupIndex } = vendorToRename;
+            const newVendorName = result.mapped_vendor || result.new_vendor_name;
             
-            if (!newDescription || newDescription === group.description) {
-                setEditingVendor(null);
+            if (!newVendorName) {
+                console.error('No new vendor name in result:', result);
                 return;
             }
 
-            // Update all transactions in this group
-            const promises = group.transaction_ids.map(transactionId => 
-                transactionService.updateTransactionDescription(transactionId, newDescription)
-            );
-            
-            await Promise.all(promises);
-            
-            // Update the local state
+            // Update the local state to reflect the vendor rename/merge
             setGroupedTransactions(prev => {
                 return prev.map((g, index) => {
                     if (index === groupIndex) {
                         return {
                             ...g,
-                            description: newDescription,
-                            previews: g.previews.map(preview => ({ ...preview, description: newDescription }))
+                            description: newVendorName,
+                            previews: g.previews.map(preview => ({ ...preview, description: newVendorName }))
                         };
                     }
                     return g;
                 });
             });
 
-            setEditingVendor(null);
+            setIsVendorRenameModalOpen(false);
+            setVendorToRename(null);
+            console.log('Vendor renamed/merged successfully:', result);
         } catch (error) {
-            setSubmitError(error.message || 'Failed to update vendor name. Please try again.');
-        } finally {
-            setIsUpdatingVendor(false);
+            console.error('Error updating local state after vendor rename:', error);
+            setSubmitError('Vendor was updated but display may not reflect changes. Please refresh the page.');
         }
-    };
-
-    const handleCancelVendorEdit = () => {
-        setEditingVendor(null);
     };
 
     const handleVendorRulePromptConfirm = async () => {
@@ -508,47 +510,17 @@ const CategoriseTransactionsPage = () => {
                                 </button>
                                 
                                 <div className="group-info">
-                                    {editingVendor?.groupIndex === groupIndex ? (
-                                        <div className="vendor-edit-container">
-                                            <input
-                                                type="text"
-                                                value={editingVendor.newName}
-                                                onChange={(e) => setEditingVendor(prev => ({ ...prev, newName: e.target.value }))}
-                                                className="vendor-edit-input"
-                                                placeholder="Enter vendor name"
-                                                autoFocus
-                                                disabled={isUpdatingVendor}
-                                            />
-                                            <div className="vendor-edit-actions">
-                                                <button 
-                                                    className="vendor-save-button"
-                                                    onClick={() => handleSaveVendor(groupIndex)}
-                                                    disabled={isUpdatingVendor || !editingVendor.newName.trim()}
-                                                >
-                                                    <FiCheck />
-                                                </button>
-                                                <button 
-                                                    className="vendor-cancel-button"
-                                                    onClick={handleCancelVendorEdit}
-                                                    disabled={isUpdatingVendor}
-                                                >
-                                                    <FiX />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="vendor-display">
-                                            <h3 className="group-description">{group.description}</h3>
-                                            <button
-                                                className="vendor-edit-button"
-                                                onClick={() => handleEditVendor(groupIndex, group.description)}
-                                                title="Edit vendor name"
-                                                disabled={isSubmitting || isUpdatingVendor}
-                                            >
-                                                <FiEdit3 />
-                                            </button>
-                                        </div>
-                                    )}
+                                    <div className="vendor-display">
+                                        <h3 className="group-description">{group.description}</h3>
+                                        <button
+                                            className="vendor-edit-button"
+                                            onClick={() => handleEditVendor(groupIndex, group.description)}
+                                            title="Edit vendor name"
+                                            disabled={isSubmitting || isUpdatingVendor}
+                                        >
+                                            <FiEdit3 />
+                                        </button>
+                                    </div>
                                     <span className="group-meta">
                                         {group.count} transaction(s)
                                         {group.earliest_date && ` • ${formatDate(group.earliest_date)}`}
@@ -617,6 +589,16 @@ const CategoriseTransactionsPage = () => {
                     vendors={vendorRulePromptData.vendors}
                     category={vendorRulePromptData.category}
                     onConfirm={handleVendorRulePromptConfirm}
+                />
+            )}
+
+            {/* Vendor Rename Modal */}
+            {vendorToRename && (
+                <VendorRenameModal
+                    isOpen={isVendorRenameModalOpen}
+                    onClose={handleVendorRenameModalClose}
+                    vendor={vendorToRename.currentName}
+                    onSuccess={handleVendorRenameSuccess}
                 />
             )}
         </div>

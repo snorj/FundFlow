@@ -25,7 +25,7 @@ const vendorMappingService = {
     try {
       const response = await api.post('/vendor-mappings/rename_vendor/', {
         original_name: originalName,
-        mapped_vendor: mappedVendor
+        new_name: mappedVendor
       });
       return response.data;
     } catch (error) {
@@ -128,6 +128,46 @@ const vendorMappingService = {
     } catch (error) {
       console.error('Error fetching vendor names:', error.response?.data || error.message);
       throw error.response?.data || new Error('Failed to fetch vendor names.');
+    }
+  },
+
+  /**
+   * Search for vendor names with autocomplete functionality
+   * @param {string} searchTerm - The search term for vendor names
+   * @returns {Promise<Array>} Promise resolving to array of matching vendor names
+   */
+  searchVendorNames: async (searchTerm) => {
+    try {
+      if (!searchTerm || searchTerm.trim().length < 1) {
+        return [];
+      }
+      
+      const response = await api.get(`/vendors/search_names/?q=${encodeURIComponent(searchTerm.trim())}`);
+      return response.data || [];
+    } catch (error) {
+      console.error('Error searching vendor names:', error.response?.data || error.message);
+      throw error.response?.data || new Error('Failed to search vendor names.');
+    }
+  },
+
+  /**
+   * Check if a vendor name already exists (for duplicate detection)
+   * @param {string} vendorName - The vendor name to check
+   * @returns {Promise<boolean>} Promise resolving to true if vendor exists
+   */
+  checkVendorExists: async (vendorName) => {
+    try {
+      const response = await api.get(`/vendors/?search=${encodeURIComponent(vendorName)}`);
+      const vendors = response.data.results || response.data;
+      
+      // Check for exact name match (case insensitive)
+      return vendors.some(vendor => 
+        vendor.name.toLowerCase() === vendorName.toLowerCase()
+      );
+    } catch (error) {
+      console.error('Error checking vendor existence:', error.response?.data || error.message);
+      // Return false on error to avoid blocking the UI
+      return false;
     }
   },
 
