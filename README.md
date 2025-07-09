@@ -1,68 +1,60 @@
 # FundFlow
 
-A personal finance application built with React and Django to aggregate transactions, provide flexible categorization, and offer financial insights.
+A personal finance application built with React and Django for transaction management, intelligent categorization, and financial insights.
 
 ## Problem
 
-Managing finances across multiple accounts and currencies can be difficult with standard banking apps lacking detailed categorization and analysis tools.
+Managing finances across multiple accounts and currencies is challenging with standard banking apps lacking detailed categorization and analysis tools.
 
 ## Solution
 
-FundFlow centralizes financial data from CSV uploads (and potentially bank APIs later), allowing users to:
+FundFlow centralizes financial data from CSV uploads, allowing users to:
 
-*   Clean up transaction descriptions using custom rules.
-*   Categorize spending with a flexible hierarchical system.
-*   Visualize spending patterns (planned feature).
-*   Manage budgets (planned feature).
+*   **Smart Vendor Mapping**: Automatically map vendor names and merge duplicates
+*   **Intelligent Categorization**: Auto-categorize transactions using vendor rules
+*   **Flexible Category System**: Hierarchical category management with tree view
+*   **Transaction Review**: Streamlined categorization workflow with bulk operations
+*   **Vendor Rule Management**: Create and manage rules for automatic categorization
 
 ## Tech Stack
 
 *   **Frontend:** React, React Router, Axios, CSS
-*   **Backend:** Django, Django REST Framework (DRF), Python
-*   **Database:** PostgreSQL (or SQLite for basic local dev)
+*   **Backend:** Django, Django REST Framework, Python
+*   **Database:** PostgreSQL (SQLite for development)
 *   **Authentication:** JWT (SimpleJWT)
 
-## Key Features Implemented
+## Key Features
 
-*   User Registration & Login (JWT)
-*   CSV Transaction Upload
-*   Hierarchical Category Management (API)
-*   Description Mapping/Renaming Rule Creation (API)
-*   Interactive Categorization UI (Card-based flow with modal tree selector)
-*   Backend API Tests (Authentication, Categories, Batch Categorize)
+*   **User Authentication**: Registration, login, and JWT-based sessions
+*   **CSV Transaction Upload**: Bulk import with automatic vendor mapping
+*   **Vendor Management**: Rename, merge, and map vendor names
+*   **Auto-Categorization**: Intelligent transaction categorization based on vendor rules
+*   **Category Management**: Hierarchical categories with tree-based selection
+*   **Transaction Review**: Interactive categorization with bulk operations
+*   **Vendor Rules**: Create and manage automatic categorization rules
 
-## Getting Started (Local Development)
+## Getting Started
 
-**Prerequisites:** Python 3.10+, Node.js 18+, npm/yarn, PostgreSQL (optional)
+**Prerequisites:** Python 3.10+, Node.js 18+, PostgreSQL (optional)
 
-**1. Backend:**
-
+**Backend:**
 ```bash
-# Clone repo, cd fundflow
 python -m venv venv
-source venv/bin/activate  # Or `venv\Scripts\activate` on Windows
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-# Create a .env file (see .env.example or README-FULL.md for vars)
-# Setup database (create DB/User if using PostgreSQL)
 python manage.py migrate
 python manage.py runserver
 ```
 
-**2. Frontend:**
-
+**Frontend:**
 ```bash
-# (In a separate terminal)
 cd frontend
-npm install   # or yarn install
-npm start     # or yarn start
+npm install
+npm start
 ```
 
 Access the app at `http://localhost:3000`.
 
-## TODO / Future Work
+## Project Status
 
-*   Direct Bank API Integration
-*   Budgeting Module
-*   Spending Analysis Visualizations
-*   Rule Management UI
-*   Individual Transaction Editing
+Core transaction management and categorization features are complete. The system provides intelligent vendor mapping, automatic categorization, and streamlined transaction review workflows.
