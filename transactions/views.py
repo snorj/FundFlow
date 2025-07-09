@@ -446,9 +446,31 @@ class UncategorizedTransactionGroupView(APIView):
             category__isnull=True
         ).order_by('description', '-transaction_date') # Order needed for grouping and getting max_date easily
 
+        # Get all vendor mappings for this user to apply them during grouping
+        # Apply vendor mappings before grouping
+        vendor_mappings = {}
+        mappings = VendorMapping.objects.filter(user=user).values('original_name', 'mapped_vendor')
+        for mapping in mappings:
+            vendor_mappings[mapping['original_name'].lower()] = mapping['mapped_vendor']
+        
+        logger.info(f"DEBUG: User {user.id} has {len(vendor_mappings)} vendor mappings: {vendor_mappings}")
+        
         grouped_transactions = {}
         for tx in uncategorized_txs:
-            description = tx.description # Use the actual description from the DB
+            original_description = tx.description
+            # Follow mapping chains until we reach the final mapped vendor
+            description = original_description
+            seen_mappings = set()  # Prevent infinite loops
+            
+            while description.lower() in vendor_mappings and description.lower() not in seen_mappings:
+                seen_mappings.add(description.lower())
+                new_description = vendor_mappings[description.lower()]
+                logger.info(f"DEBUG: Mapping applied - '{description}' -> '{new_description}'")
+                description = new_description
+            
+            # Final description after following the mapping chain
+            if original_description != description:
+                logger.info(f"DEBUG: Final mapping result - '{original_description}' -> '{description}'")
 
             if description not in grouped_transactions:
                 grouped_transactions[description] = {
@@ -462,7 +484,7 @@ class UncategorizedTransactionGroupView(APIView):
             grouped_transactions[description]['previews'].append({
                  'id': tx.id,
                  'date': tx.transaction_date,
-                 'description': tx.description, # Add description for vendor editing
+                 'description': original_description, # Use original description for vendor editing
                  # --- FIX: Use original_amount ---
                  'amount': tx.original_amount,
                  # --- FIX: Use original_currency ---

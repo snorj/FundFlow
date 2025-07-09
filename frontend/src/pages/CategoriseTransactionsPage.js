@@ -138,38 +138,35 @@ const CategoriseTransactionsPage = () => {
         setVendorToRename(null);
     };
 
-    const handleVendorRenameSuccess = (result) => {
+    const handleVendorRenameSuccess = async (result) => {
         if (!vendorToRename) return;
         
         try {
-            const { groupIndex } = vendorToRename;
-            const newVendorName = result.mapped_vendor || result.new_vendor_name;
+            console.log('Vendor renamed/merged successfully:', result);
             
-            if (!newVendorName) {
-                console.error('No new vendor name in result:', result);
-                return;
-            }
-
-            // Update the local state to reflect the vendor rename/merge
-            setGroupedTransactions(prev => {
-                return prev.map((g, index) => {
-                    if (index === groupIndex) {
-                        return {
-                            ...g,
-                            description: newVendorName,
-                            previews: g.previews.map(preview => ({ ...preview, description: newVendorName }))
-                        };
-                    }
-                    return g;
-                });
-            });
-
+            // Close the modal and clear the state
             setIsVendorRenameModalOpen(false);
             setVendorToRename(null);
-            console.log('Vendor renamed/merged successfully:', result);
+            
+            // Show loading state while refreshing
+            setIsLoadingGroups(true);
+            
+            // Add a small delay to ensure backend has processed the vendor mapping
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            console.log('About to refresh transaction groups after vendor merge...');
+            
+            // Re-fetch the transaction groups to show the updated/merged data
+            // This ensures that merged vendors are properly grouped together
+            await fetchData();
+            
+            console.log('Successfully refreshed transaction groups after vendor merge');
+            
         } catch (error) {
-            console.error('Error updating local state after vendor rename:', error);
-            setSubmitError('Vendor was updated but display may not reflect changes. Please refresh the page.');
+            console.error('Error refreshing transaction groups after vendor rename:', error);
+            setSubmitError('Vendor was updated but failed to refresh the display. Please refresh the page to see changes.');
+        } finally {
+            setIsLoadingGroups(false);
         }
     };
 

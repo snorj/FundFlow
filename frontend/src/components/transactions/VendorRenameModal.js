@@ -148,16 +148,19 @@ const VendorRenameModal = ({
 
   // Check if vendor exists when user finishes typing
   const checkVendorExists = useCallback(async (vendorName) => {
-    if (!vendorName || vendorName.trim() === vendor) return;
+    if (!vendorName || vendorName.trim() === vendor) return false;
 
     try {
       const exists = await vendorMappingService.checkVendorExists(vendorName.trim());
       if (exists) {
         setExistingVendor(vendorName.trim());
         setShowMergeConfirm(true);
+        return true;
       }
+      return false;
     } catch (error) {
       console.error('Error checking vendor existence:', error);
+      return false;
     }
   }, [vendor]);
 
@@ -177,11 +180,11 @@ const VendorRenameModal = ({
 
     // If not confirming a merge, check if vendor exists first
     if (!showMergeConfirm) {
-      await checkVendorExists(newName.trim());
+      const vendorExists = await checkVendorExists(newName.trim());
       
-      // If checkVendorExists found an existing vendor, it will set showMergeConfirm to true
-      // In that case, don't proceed with the rename yet
-      if (showMergeConfirm) {
+      // If checkVendorExists found an existing vendor, don't proceed with rename
+      // The state will be updated and user will see the merge confirmation dialog
+      if (vendorExists) {
         return;
       }
     }
@@ -190,7 +193,15 @@ const VendorRenameModal = ({
     setError('');
     
     try {
-      const result = await vendorMappingService.renameVendor(vendor, newName.trim());
+      let result;
+      
+      if (showMergeConfirm && existingVendor) {
+        // User confirmed merge, use assign to existing API
+        result = await vendorMappingService.assignToExisting(vendor, existingVendor);
+      } else {
+        // Regular rename operation
+        result = await vendorMappingService.renameVendor(vendor, newName.trim());
+      }
       
       // Call the onRename callback if provided (for backward compatibility)
       if (onRename) {
@@ -206,8 +217,8 @@ const VendorRenameModal = ({
       onClose();
       
     } catch (error) {
-      console.error('Error renaming vendor:', error);
-      setError(error.message || 'Failed to rename vendor. Please try again.');
+      console.error('Error processing vendor operation:', error);
+      setError(error.message || 'Failed to process vendor operation. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -215,7 +226,7 @@ const VendorRenameModal = ({
 
   // Handle merge confirmation
   const handleConfirmMerge = useCallback(() => {
-    setShowMergeConfirm(false);
+    // Don't reset showMergeConfirm here - let handleSubmit manage the state
     handleSubmit({ preventDefault: () => {} });
   }, [handleSubmit]);
 

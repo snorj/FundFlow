@@ -50,6 +50,7 @@ urlpatterns = [
     path('transactions/create/', TransactionCreateView.as_view(), name='transaction-create'),
     path('transactions/<int:pk>/', TransactionUpdateView.as_view(), name='transaction-detail-update'),
     path('transactions/uncategorized-groups/', UncategorizedTransactionGroupView.as_view(), name='transaction-uncategorized-groups'),
+    path('transactions/debug-vendor-mapping/', UncategorizedTransactionGroupView.as_view(), name='debug-vendor-mapping'),
     path('transactions/batch-categorize/', BatchCategorizeTransactionView.as_view(), name='transaction-batch-categorize'),
     
     # Auto-Categorization URLs
