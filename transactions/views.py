@@ -1774,8 +1774,25 @@ class VendorMappingViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Both original_name and existing_vendor are required'}, 
                             status=status.HTTP_400_BAD_REQUEST)
         
-        # Verify the existing vendor exists
-        if not VendorMapping.objects.filter(user=request.user, mapped_vendor=existing_vendor).exists():
+        # Verify the existing vendor exists in any of the same sources that search suggestions come from
+        vendor_exists = False
+        
+        # 1. Check if it exists as a Vendor object (system + user's own)
+        if Vendor.objects.filter(
+            Q(user__isnull=True) | Q(user=request.user),
+            name__iexact=existing_vendor
+        ).exists():
+            vendor_exists = True
+        
+        # 2. Check if it exists in VendorMapping mapped_vendor values (user's own mappings)  
+        elif VendorMapping.objects.filter(user=request.user, mapped_vendor__iexact=existing_vendor).exists():
+            vendor_exists = True
+            
+        # 3. Check if it exists in transaction descriptions (user's own transactions)
+        elif Transaction.objects.filter(user=request.user, description__iexact=existing_vendor).exists():
+            vendor_exists = True
+        
+        if not vendor_exists:
             return Response({'error': 'The specified existing vendor does not exist'}, 
                             status=status.HTTP_400_BAD_REQUEST)
         
