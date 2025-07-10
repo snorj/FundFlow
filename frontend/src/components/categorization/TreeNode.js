@@ -36,6 +36,7 @@ const TreeNode = ({
   onCategoryCreate,
   onCategoryDelete,
   onCategoryRename,
+  onVendorEdit, // Add vendor editing prop
   onDrop,
   onDragStart,
   onDragEnd,
@@ -229,6 +230,17 @@ const TreeNode = ({
     setCategoryEditError(null);
   };
 
+  // Vendor editing handler
+  const handleEditVendorClick = (e) => {
+    e?.stopPropagation();
+    if (node.type !== 'vendor') return;
+    
+    // Call the parent's onVendorEdit handler with the vendor name
+    if (onVendorEdit) {
+      onVendorEdit(node.name);
+    }
+  };
+
   // Context menu handlers
   const handleContextMenuClick = (e) => {
     e.preventDefault();
@@ -261,7 +273,11 @@ const TreeNode = ({
     
     switch (action) {
       case 'edit':
-        handleEditCategoryClick();
+        if (node.type === 'category') {
+          handleEditCategoryClick();
+        } else if (node.type === 'vendor') {
+          handleEditVendorClick();
+        }
         break;
       case 'create':
         handleCreateCategory();
@@ -355,6 +371,7 @@ const TreeNode = ({
         ];
       case 'vendor':
         return [
+          { id: 'edit', label: 'Edit Vendor Name', icon: <FiEdit3 /> },
           { id: 'info', label: 'View Transactions', icon: <FiInfo /> }
         ];
       case 'transaction':
@@ -549,6 +566,7 @@ const TreeNode = ({
               onCategoryCreate={onCategoryCreate}
               onCategoryDelete={onCategoryDelete}
               onCategoryRename={onCategoryRename}
+              onVendorEdit={onVendorEdit} // Pass vendor editing prop
               onDrop={onDrop}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}

@@ -22,6 +22,7 @@ const TreeView = ({
   onCategoryCreate,
   onCategoryDelete,
   onCategoryRename,
+  onVendorEdit, // Add vendor editing prop
   onCategoryMove,
   onDropValidation,
   selectedCategoryId,
@@ -160,6 +161,7 @@ const TreeView = ({
                 onCategoryCreate={onCategoryCreate}
                 onCategoryDelete={onCategoryDelete}
                 onCategoryRename={onCategoryRename}
+                onVendorEdit={onVendorEdit} // Pass vendor editing prop
                 onDrop={handleDrop}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}

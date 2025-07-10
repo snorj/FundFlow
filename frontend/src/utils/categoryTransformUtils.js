@@ -16,7 +16,8 @@ export const transformCategoryData = (categories = [], transactions = [], option
     includeTransactions = true,
     showSystemCategories = true,
     showUserCategories = true,
-    categorySpendingTotals = {}
+    categorySpendingTotals = {},
+    vendorMappings = [] // New option for vendor mappings
   } = options;
 
   // Defensive checks
@@ -43,7 +44,8 @@ export const transformCategoryData = (categories = [], transactions = [], option
     addVendorAndTransactionChildren(categoryTree, transactionsArray, {
       includeVendors,
       includeTransactions,
-      categorySpendingTotals
+      categorySpendingTotals,
+      vendorMappings
     });
   }
 
@@ -99,7 +101,7 @@ const buildCategoryTree = (categories) => {
  * @param {Object} options - Configuration options
  */
 const addVendorAndTransactionChildren = (categoryTree, transactions, options) => {
-  const { includeVendors, includeTransactions, categorySpendingTotals } = options;
+  const { includeVendors, includeTransactions, categorySpendingTotals, vendorMappings } = options;
 
   // Recursively process each category node
   const processNode = (node) => {
@@ -108,7 +110,8 @@ const addVendorAndTransactionChildren = (categoryTree, transactions, options) =>
       if (includeVendors) {
         const vendorChildren = getVendorChildren(node.id, transactions, {
           includeTransactions,
-          categorySpendingTotals
+          categorySpendingTotals,
+          vendorMappings
         });
         node.children.push(...vendorChildren);
       }
@@ -133,14 +136,22 @@ const addVendorAndTransactionChildren = (categoryTree, transactions, options) =>
  * @returns {Array} Array of vendor nodes
  */
 const getVendorChildren = (categoryId, transactions, options) => {
-  const { includeTransactions } = options;
+  const { includeTransactions, vendorMappings = [] } = options;
   const vendorMap = {};
+
+  // Create a mapping lookup for O(1) performance
+  const mappingLookup = {};
+  vendorMappings.forEach(mapping => {
+    mappingLookup[mapping.original_name] = mapping.mapped_vendor;
+  });
 
   // Group transactions by vendor for this category
   transactions
     .filter(t => t.category === categoryId)
     .forEach(t => {
-      const vendorName = t.description || 'Unknown Vendor';
+      const originalVendorName = t.description || 'Unknown Vendor';
+      // Use mapped vendor name if available, otherwise use original
+      const vendorName = mappingLookup[originalVendorName] || originalVendorName;
       const vendorId = `vendor_${vendorName}`;
 
       if (!vendorMap[vendorId]) {

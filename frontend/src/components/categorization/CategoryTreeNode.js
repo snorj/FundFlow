@@ -19,7 +19,6 @@ import {
   FiMoreVertical
 } from 'react-icons/fi';
 import { formatCurrency } from '../../utils/formatting';
-import transactionService from '../../services/transactions';
 
 const CategoryTreeNode = ({
   item,
@@ -34,6 +33,7 @@ const CategoryTreeNode = ({
   onCreateCategory,
   onDeleteCategory,
   onRenameCategory,
+  onVendorEdit, // New prop for vendor editing
   isCreating,
   isDeleting,
   transactions = [],
@@ -51,12 +51,6 @@ const CategoryTreeNode = ({
   const [newChildName, setNewChildName] = useState('');
   const [addChildError, setAddChildError] = useState(null);
   const [isSavingChild, setIsSavingChild] = useState(false);
-
-  // Vendor editing state
-  const [isEditingVendor, setIsEditingVendor] = useState(false);
-  const [editedVendorName, setEditedVendorName] = useState('');
-  const [isUpdatingVendor, setIsUpdatingVendor] = useState(false);
-  const [vendorEditError, setVendorEditError] = useState(null);
 
   // Category editing state
   const [isEditingCategory, setIsEditingCategory] = useState(false);
@@ -331,69 +325,15 @@ const CategoryTreeNode = ({
     }
   };
 
-  // Vendor editing handlers
+  // Vendor editing handler
   const handleEditVendorClick = (e) => {
     e.stopPropagation();
-    if (item.type !== 'vendor' || isUpdatingVendor) return;
-    setIsEditingVendor(true);
-    setEditedVendorName(item.name || '');
-    setVendorEditError(null);
-  };
-
-  const handleSaveVendor = async (e) => {
-    e.stopPropagation();
-    if (!editedVendorName.trim()) {
-      setVendorEditError('Vendor name cannot be empty');
-      return;
+    if (item.type !== 'vendor') return;
+    
+    // Call the parent's onVendorEdit handler with the vendor name
+    if (onVendorEdit) {
+      onVendorEdit(item.name);
     }
-
-    if (editedVendorName.trim() === item.name) {
-      handleCancelVendorEdit();
-      return;
-    }
-
-    setIsUpdatingVendor(true);
-    setVendorEditError(null);
-
-    try {
-      // Find all transactions for this vendor
-      const vendorTransactions = transactions.filter(t => {
-        if (t.category !== item.parent) return false;
-        const vendorName = t.description || 'Unknown Vendor';
-        const expectedVendorId = `vendor_${vendorName}`;
-        return expectedVendorId === item.id;
-      });
-
-      // Update all transactions with the new vendor name
-      const promises = vendorTransactions.map(transaction => 
-        transactionService.updateTransactionDescription(transaction.id, editedVendorName.trim())
-      );
-      
-      await Promise.all(promises);
-      
-      // Reset editing state
-      setIsEditingVendor(false);
-      setEditedVendorName('');
-      
-      // Trigger a refresh of transaction data in the parent component
-      // This will cause the vendor name to be updated in the tree
-      if (window.location.pathname === '/categorise') {
-        // For the manage categories page, we might need to refresh the data
-        window.location.reload();
-      }
-      
-    } catch (error) {
-      console.error('Failed to update vendor name:', error);
-      setVendorEditError(error.message || 'Failed to update vendor name');
-    } finally {
-      setIsUpdatingVendor(false);
-    }
-  };
-
-  const handleCancelVendorEdit = () => {
-    setIsEditingVendor(false);
-    setEditedVendorName('');
-    setVendorEditError(null);
   };
 
   const getContextMenuItems = () => {
@@ -511,47 +451,11 @@ const CategoryTreeNode = ({
           </div>
         )}
 
-        {/* Vendor name with editing capability */}
-        {item.type === 'vendor' && !isEditingVendor && (
+        {/* Vendor name */}
+        {item.type === 'vendor' && (
           <span className="node-name vendor-name">
             {item.name}
           </span>
-        )}
-        
-        {/* Vendor editing input */}
-        {item.type === 'vendor' && isEditingVendor && (
-          <div className="vendor-edit-form">
-            <input
-              type="text"
-              value={editedVendorName}
-              onChange={(e) => setEditedVendorName(e.target.value)}
-              className="vendor-edit-input"
-              disabled={isUpdatingVendor}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSaveVendor(e);
-                if (e.key === 'Escape') handleCancelVendorEdit();
-              }}
-            />
-            <div className="vendor-edit-actions">
-              <button 
-                onClick={handleSaveVendor}
-                disabled={isUpdatingVendor || !editedVendorName.trim()}
-                className="vendor-save-button"
-                title="Save"
-              >
-                {isUpdatingVendor ? <FiLoader size="12" className="spinner-inline" /> : <FiCheck size="12" />}
-              </button>
-              <button 
-                onClick={handleCancelVendorEdit}
-                disabled={isUpdatingVendor}
-                className="vendor-cancel-button"
-                title="Cancel"
-              >
-                <FiX size="12" />
-              </button>
-            </div>
-          </div>
         )}
         
         {/* Transaction name and details */}
@@ -572,7 +476,7 @@ const CategoryTreeNode = ({
         )}
 
         {/* Context Menu Actions */}
-        {!isEditingCategory && !isEditingVendor && contextMenuItems.length > 0 && (
+        {!isEditingCategory && contextMenuItems.length > 0 && (
           <div className="node-actions">
             <div className="context-menu-container">
               <button
@@ -609,12 +513,7 @@ const CategoryTreeNode = ({
         </div>
       )}
 
-      {/* Vendor editing error */}
-      {item.type === 'vendor' && vendorEditError && (
-        <div className="vendor-edit-error" style={{ paddingLeft: `${(level + 1) * 20}px` }}>
-          {vendorEditError}
-        </div>
-      )}
+
 
       {item.type === 'category' && showAddInput && (
           <div className="add-child-input-area" style={{ paddingLeft: `${(level + 1) * 10}px` }}>
@@ -654,6 +553,7 @@ const CategoryTreeNode = ({
               onCreateCategory={onCreateCategory}
               onDeleteCategory={onDeleteCategory}
               onRenameCategory={onRenameCategory}
+              onVendorEdit={onVendorEdit} // Pass the new prop
               isCreating={isCreating}
               isDeleting={onDeleteCategory ? isDeleting : false}
               transactions={transactions}
@@ -692,6 +592,7 @@ CategoryTreeNode.propTypes = {
   onCreateCategory: PropTypes.func,
   onDeleteCategory: PropTypes.func,
   onRenameCategory: PropTypes.func,
+  onVendorEdit: PropTypes.func, // Add propType for onVendorEdit
   isCreating: PropTypes.bool, 
   isDeleting: PropTypes.bool,
   transactions: PropTypes.array,

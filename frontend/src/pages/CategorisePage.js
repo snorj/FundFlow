@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import TreeView from '../components/categorization/TreeView';
 import { transformCategoryData } from '../utils/categoryTransformUtils';
 import TransactionDetailsModal from '../components/transactions/TransactionDetailsModal';
+import VendorRenameModal from '../components/transactions/VendorRenameModal';
 import categoryService from '../services/categories';
 import transactionService from '../services/transactions';
+import vendorMappingService from '../services/vendorMapping';
 import { FiPlus, FiLoader, FiAlertCircle, FiEdit, FiArrowRight, FiSearch } from 'react-icons/fi';
 import './CategorisePage.css'; // We'll create this CSS file next
 
@@ -19,6 +21,7 @@ const CategorisePage = () => {
   const [transactions, setTransactions] = useState([]);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
   const [categorySpendingTotals, setCategorySpendingTotals] = useState({});
+  const [vendorMappings, setVendorMappings] = useState([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [selectedVendorId, setSelectedVendorId] = useState(null);
   const [selectedTransactionId, setSelectedTransactionId] = useState(null);
@@ -40,6 +43,10 @@ const CategorisePage = () => {
   // Transaction details modal state
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [isTransactionDetailsOpen, setIsTransactionDetailsOpen] = useState(false);
+  
+  // Vendor rename modal state
+  const [isVendorRenameModalOpen, setIsVendorRenameModalOpen] = useState(false);
+  const [vendorToRename, setVendorToRename] = useState(null);
   
   // Collapse all functionality - removed unused state since TreeView handles this via ref
 
@@ -81,10 +88,22 @@ const CategorisePage = () => {
     }
   }, []);
 
+  // New function to fetch vendor mappings
+  const fetchVendorMappings = useCallback(async () => {
+    try {
+      const mappingsData = await vendorMappingService.getVendorMappings();
+      setVendorMappings(mappingsData || []);
+    } catch (err) {
+      console.error("Error fetching vendor mappings:", err);
+      setVendorMappings([]);
+    }
+  }, []);
+
   useEffect(() => {
     fetchItems();
     fetchTransactions();
-  }, [fetchItems, fetchTransactions]);
+    fetchVendorMappings();
+  }, [fetchItems, fetchTransactions, fetchVendorMappings]);
 
   const handleCreateCategory = useCallback(async (name, parentId = null) => {
     setIsCreating(true);
@@ -181,6 +200,34 @@ const CategorisePage = () => {
     setSelectedTransaction(transaction);
     setIsTransactionDetailsOpen(true);
   }, []);
+
+  // Vendor rename handlers
+  const handleVendorEdit = useCallback((vendorName) => {
+    setVendorToRename(vendorName);
+    setIsVendorRenameModalOpen(true);
+  }, []);
+
+  const handleVendorRenameModalClose = useCallback(() => {
+    setIsVendorRenameModalOpen(false);
+    setVendorToRename(null);
+  }, []);
+
+  const handleVendorRenameSuccess = useCallback(async (result) => {
+    try {
+      console.log('Vendor renamed/merged successfully:', result);
+      
+      // Close the modal and clear the state
+      setIsVendorRenameModalOpen(false);
+      setVendorToRename(null);
+      
+      // Refresh the data to show the updated vendor names
+      await fetchTransactions();
+      await fetchVendorMappings(); // Also fetch vendor mappings to get updated mappings
+      
+    } catch (error) {
+      console.error('Error refreshing data after vendor rename:', error);
+    }
+  }, [fetchTransactions, fetchVendorMappings]);
 
   // Handler for drag and drop validation feedback
   const handleDropValidation = useCallback((success, message, details) => {
@@ -321,9 +368,10 @@ const CategorisePage = () => {
       includeTransactions: true,
       showSystemCategories: true,
       showUserCategories: true,
-      categorySpendingTotals
+      categorySpendingTotals,
+      vendorMappings // Pass vendor mappings to apply vendor name resolution
     });
-  }, [allItems, transactions, categorySpendingTotals, visibleItemIds]);
+  }, [allItems, transactions, categorySpendingTotals, vendorMappings, visibleItemIds]);
 
   // Categories are now handled directly in treeData - no need to separate system/user
 
@@ -472,6 +520,7 @@ const CategorisePage = () => {
               onCategoryCreate={handleCreateCategory}
               onCategoryDelete={handleDeleteCategory}
               onCategoryRename={handleCategoryRename}
+              onVendorEdit={handleVendorEdit} // Pass vendor editing prop
               onCategoryMove={handleCategoryMove}
               onDropValidation={handleDropValidation}
               selectedCategoryId={selectedCategoryId}
@@ -496,6 +545,16 @@ const CategorisePage = () => {
         }}
         transaction={selectedTransaction}
       />
+
+      {/* Vendor Rename Modal */}
+      {vendorToRename && (
+        <VendorRenameModal
+          isOpen={isVendorRenameModalOpen}
+          onClose={handleVendorRenameModalClose}
+          vendor={vendorToRename}
+          onSuccess={handleVendorRenameSuccess}
+        />
+      )}
     </div>
   );
 };
