@@ -170,11 +170,11 @@ const CategoriseTransactionsPage = () => {
         }
     };
 
-    const handleVendorRulePromptConfirm = async () => {
+    const handleVendorRulePromptConfirm = async (selectedVendors) => {
         setIsCreatingVendorRules(true);
         try {
             // Create vendor rules and then perform categorization
-            await performCategorization(true);
+            await performCategorization(true, selectedVendors);
             setIsVendorRulePromptOpen(false);
             setVendorRulePromptData(null);
         } catch (error) {
@@ -239,7 +239,7 @@ const CategoriseTransactionsPage = () => {
         await performCategorization();
     };
 
-    const performCategorization = async (createRules = false) => {
+    const performCategorization = async (createRules = false, selectedVendors = null) => {
         if (!selectedCategory || selectedTransactionIds.size === 0) return;
         
         setIsSubmitting(true);
@@ -259,11 +259,16 @@ const CategoriseTransactionsPage = () => {
             // Create vendor rules if requested
             if (createRules && vendorRulePromptData) {
                 try {
-                    await vendorRuleService.createVendorRulesForVendors(
-                        vendorRulePromptData.vendors,
-                        vendorRulePromptData.categoryId,
-                        true // is_persistent
-                    );
+                    // Use selectedVendors if provided, otherwise fall back to all vendors
+                    const vendorsToCreateRulesFor = selectedVendors || vendorRulePromptData.vendors;
+                    
+                    if (vendorsToCreateRulesFor.length > 0) {
+                        await vendorRuleService.createVendorRulesForVendors(
+                            vendorsToCreateRulesFor,
+                            vendorRulePromptData.categoryId,
+                            true // is_persistent
+                        );
+                    }
                 } catch (ruleError) {
                     console.error("Error creating vendor rules:", ruleError);
                     // Continue with categorization even if rule creation fails

@@ -1,17 +1,52 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import './VendorRulePromptModal.css';
 import { FiX, FiLoader, FiTag, FiCheck } from 'react-icons/fi';
 
 const VendorRulePromptModal = ({ isOpen, onClose, onDismiss, vendors, category, onConfirm }) => {
   const [isCreatingRules, setIsCreatingRules] = useState(false);
+  const [selectedVendors, setSelectedVendors] = useState(new Set(vendors));
+
+  // Reset selectedVendors when modal opens or vendors change
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedVendors(new Set(vendors));
+    }
+  }, [isOpen, vendors]);
 
   if (!isOpen) return null;
 
+  const handleVendorToggle = (vendor) => {
+    const newSelectedVendors = new Set(selectedVendors);
+    if (newSelectedVendors.has(vendor)) {
+      newSelectedVendors.delete(vendor);
+    } else {
+      newSelectedVendors.add(vendor);
+    }
+    setSelectedVendors(newSelectedVendors);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedVendors.size === vendors.length) {
+      // If all are selected, deselect all
+      setSelectedVendors(new Set());
+    } else {
+      // If not all are selected, select all
+      setSelectedVendors(new Set(vendors));
+    }
+  };
+
   const handleConfirm = async () => {
+    if (selectedVendors.size === 0) {
+      // If no vendors are selected, just close the modal
+      onClose();
+      return;
+    }
+
     setIsCreatingRules(true);
     try {
-      await onConfirm();
+      // Pass only the selected vendors to the confirm handler
+      await onConfirm(Array.from(selectedVendors));
     } finally {
       setIsCreatingRules(false);
     }
@@ -48,27 +83,61 @@ const VendorRulePromptModal = ({ isOpen, onClose, onDismiss, vendors, category, 
 
         <div className="modal-body">
           {vendors.length === 1 ? (
-            <p className="rule-description">
-              Always assign <strong>"{vendors[0]}"</strong> to category <strong>"{category}"</strong>?
-            </p>
+            <div className="rule-description">
+              <div className="vendor-selection-item">
+                <label className="vendor-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={selectedVendors.has(vendors[0])}
+                    onChange={() => handleVendorToggle(vendors[0])}
+                    className="vendor-checkbox"
+                  />
+                  <span className="vendor-checkbox-text">
+                    Always assign <strong>"{vendors[0]}"</strong> to category <strong>"{category}"</strong>
+                  </span>
+                </label>
+              </div>
+            </div>
           ) : (
             <div className="rule-description">
-              <p>Always assign these vendors to category <strong>"{category}"</strong>?</p>
-              <ul className="vendor-list">
+              <div className="vendor-selection-header">
+                <p>Select which vendors should be automatically assigned to category <strong>"{category}"</strong>:</p>
+                <button 
+                  className="select-all-button"
+                  onClick={handleSelectAll}
+                  type="button"
+                >
+                  {selectedVendors.size === vendors.length ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              <div className="vendor-selection-list">
                 {vendors.map(vendor => (
-                  <li key={vendor} className="vendor-item">
-                    <FiTag className="vendor-icon" />
-                    {vendor}
-                  </li>
+                  <div key={vendor} className="vendor-selection-item">
+                    <label className="vendor-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={selectedVendors.has(vendor)}
+                        onChange={() => handleVendorToggle(vendor)}
+                        className="vendor-checkbox"
+                      />
+                      <FiTag className="vendor-icon" />
+                      <span className="vendor-checkbox-text">{vendor}</span>
+                    </label>
+                  </div>
                 ))}
-              </ul>
+              </div>
             </div>
           )}
           
           <div className="rule-explanation">
             <p>
-              This will create {vendors.length === 1 ? 'a vendor rule' : 'vendor rules'} that will 
-              automatically categorize future transactions from {vendors.length === 1 ? 'this vendor' : 'these vendors'}.
+              {selectedVendors.size === 0 ? (
+                "No vendors selected. No rules will be created."
+              ) : selectedVendors.size === 1 ? (
+                "This will create a vendor rule that will automatically categorize future transactions from this vendor."
+              ) : (
+                `This will create ${selectedVendors.size} vendor rules that will automatically categorize future transactions from the selected vendors.`
+              )}
             </p>
           </div>
         </div>
@@ -79,7 +148,7 @@ const VendorRulePromptModal = ({ isOpen, onClose, onDismiss, vendors, category, 
             onClick={onClose}
             disabled={isCreatingRules}
           >
-            Don't Create Rule
+            {selectedVendors.size === 0 ? 'Close' : 'Don\'t Create Rules'}
           </button>
           <button 
             className="confirm-button" 
@@ -89,12 +158,14 @@ const VendorRulePromptModal = ({ isOpen, onClose, onDismiss, vendors, category, 
             {isCreatingRules ? (
               <>
                 <FiLoader className="spinner" />
-                Creating Rule{vendors.length > 1 ? 's' : ''}...
+                Creating {selectedVendors.size === 1 ? 'Rule' : 'Rules'}...
               </>
+            ) : selectedVendors.size === 0 ? (
+              'Close'
             ) : (
               <>
                 <FiCheck />
-                Create Rule{vendors.length > 1 ? 's' : ''}
+                Create {selectedVendors.size === 1 ? 'Rule' : `${selectedVendors.size} Rules`}
               </>
             )}
           </button>
