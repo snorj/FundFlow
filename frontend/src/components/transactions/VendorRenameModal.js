@@ -210,7 +210,14 @@ const VendorRenameModal = ({
       
       // Call the onSuccess callback if provided
       if (onSuccess) {
-        onSuccess(result);
+        // Enhance the result with merge information for the success handler
+        const enhancedResult = {
+          ...result,
+          operation: showMergeConfirm ? 'merge' : 'rename',
+          originalVendor: vendor,
+          targetVendor: showMergeConfirm ? existingVendor : newName.trim()
+        };
+        onSuccess(enhancedResult);
       }
       
       // Close the modal

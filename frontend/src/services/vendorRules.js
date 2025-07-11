@@ -16,6 +16,40 @@ const vendorRuleService = {
   },
 
   /**
+   * Get vendor rules for a specific vendor by name
+   * @param {string} vendorName - The vendor name
+   * @returns {Promise<Array>} Promise resolving to array of vendor rule objects for this vendor
+   */
+  getVendorRulesByVendor: async (vendorName) => {
+    try {
+      const response = await api.get(`/vendor-rules/?vendor=${encodeURIComponent(vendorName)}`);
+      return response.data.results || response.data;
+    } catch (error) {
+      console.error(`Error fetching vendor rules for ${vendorName}:`, error.response?.data || error.message);
+      throw error.response?.data || new Error(`Failed to fetch vendor rules for ${vendorName}.`);
+    }
+  },
+
+  /**
+   * Apply existing vendor rules to specific transactions
+   * @param {Array<number>} transactionIds - Array of transaction IDs to apply rules to
+   * @param {string} vendorName - The vendor name whose rules should be applied
+   * @returns {Promise<object>} Promise resolving to the categorization result
+   */
+  applyVendorRulesToTransactions: async (transactionIds, vendorName) => {
+    try {
+      const response = await api.post('/vendor-rules/apply-to-transactions/', {
+        transaction_ids: transactionIds,
+        vendor_name: vendorName
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error applying vendor rules to transactions:', error.response?.data || error.message);
+      throw error.response?.data || new Error('Failed to apply vendor rules to transactions.');
+    }
+  },
+
+  /**
    * Get a specific vendor rule by ID
    * @param {string} id - The vendor rule ID
    * @returns {Promise<object>} Promise resolving to the vendor rule object

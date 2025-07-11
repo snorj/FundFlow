@@ -154,8 +154,50 @@ const CategoriseTransactionsPage = () => {
             
             console.log('About to refresh transaction groups after vendor merge...');
             
+            // Check if this was a merge operation and if the target vendor has rules
+            if (result && result.operation === 'merge' && result.targetVendor) {
+                console.log(`Vendor merge detected: "${result.originalVendor}" merged into "${result.targetVendor}". Checking for existing rules...`);
+                
+                try {
+                    // Check if the target vendor has existing rules
+                    const vendorRules = await vendorRuleService.getVendorRulesByVendor(result.targetVendor);
+                    
+                    if (vendorRules && vendorRules.length > 0) {
+                        console.log(`Found ${vendorRules.length} vendor rule(s) for "${result.targetVendor}". Applying to merged transactions...`);
+                        
+                        // Get the affected transaction IDs from the vendor group before refresh
+                        const affectedTransactionIds = vendorToRename.group?.transaction_ids || [];
+                        
+                        if (affectedTransactionIds.length > 0) {
+                            // Apply the vendor rules to the affected transactions
+                            for (const rule of vendorRules) {
+                                try {
+                                    await transactionService.batchCategorizeTransactions(
+                                        affectedTransactionIds,
+                                        rule.category_id,
+                                        result.targetVendor // Use target vendor name for rule tracking
+                                    );
+                                    
+                                    console.log(`Applied rule: categorized ${affectedTransactionIds.length} transactions from "${result.originalVendor}" to category ${rule.category_id}`);
+                                    break; // Only apply the first rule (vendors should typically have one primary category)
+                                } catch (ruleError) {
+                                    console.error('Error applying vendor rule:', ruleError);
+                                }
+                            }
+                        } else {
+                            console.log('No transaction IDs found to apply rules to');
+                        }
+                    } else {
+                        console.log(`No vendor rules found for "${result.targetVendor}"`);
+                    }
+                } catch (ruleError) {
+                    console.error('Error checking/applying vendor rules:', ruleError);
+                    // Continue with normal flow even if rule application fails
+                }
+            }
+            
             // Re-fetch the transaction groups to show the updated/merged data
-            // This ensures that merged vendors are properly grouped together
+            // This ensures that merged vendors are properly grouped together and categorized transactions are removed
             await fetchData();
             
             console.log('Successfully refreshed transaction groups after vendor merge');
