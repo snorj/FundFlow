@@ -215,7 +215,7 @@
   border-top: 1px solid #e2e8f0;
   display: flex;
   gap: 12px;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 .cancel-button {

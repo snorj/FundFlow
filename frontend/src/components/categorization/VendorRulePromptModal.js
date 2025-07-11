@@ -144,13 +144,6 @@ const VendorRulePromptModal = ({ isOpen, onClose, onDismiss, vendors, category, 
 
         <div className="modal-footer">
           <button 
-            className="cancel-button" 
-            onClick={onClose}
-            disabled={isCreatingRules}
-          >
-            {selectedVendors.size === 0 ? 'Close' : 'Don\'t Create Rules'}
-          </button>
-          <button 
             className="confirm-button" 
             onClick={handleConfirm}
             disabled={isCreatingRules}
@@ -161,11 +154,16 @@ const VendorRulePromptModal = ({ isOpen, onClose, onDismiss, vendors, category, 
                 Creating {selectedVendors.size === 1 ? 'Rule' : 'Rules'}...
               </>
             ) : selectedVendors.size === 0 ? (
-              'Close'
+              "Don't Create Rules"
+            ) : selectedVendors.size === 1 ? (
+              <>
+                <FiCheck />
+                Create Rule
+              </>
             ) : (
               <>
                 <FiCheck />
-                Create {selectedVendors.size === 1 ? 'Rule' : `${selectedVendors.size} Rules`}
+                Create {selectedVendors.size} Rules
               </>
             )}
           </button>

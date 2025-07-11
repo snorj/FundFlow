@@ -126,9 +126,8 @@ describe('VendorRulePromptModal', () => {
     const selectAllButton = screen.getByText('Deselect All');
     fireEvent.click(selectAllButton);
     
-    // Both buttons show "Close" when no vendors are selected
-    const closeButtons = screen.getAllByText('Close');
-    expect(closeButtons).toHaveLength(2);
+    // Button shows "Don't Create Rules" when no vendors are selected
+    expect(screen.getByText("Don't Create Rules")).toBeInTheDocument();
     
     // Select one vendor
     const checkboxes = screen.getAllByRole('checkbox');
@@ -160,14 +159,42 @@ describe('VendorRulePromptModal', () => {
     const selectAllButton = screen.getByText('Deselect All');
     fireEvent.click(selectAllButton);
     
-    // Click the confirm button (second "Close" button in the modal footer)
-    const closeButtons = screen.getAllByText('Close');
-    expect(closeButtons).toHaveLength(2);
-    fireEvent.click(closeButtons[1]); // Second button is the confirm button
+    // Click the "Don't Create Rules" button
+    const dontCreateButton = screen.getByText("Don't Create Rules");
+    fireEvent.click(dontCreateButton);
     
     await waitFor(() => {
       expect(mockOnClose).toHaveBeenCalled();
     });
+  });
+
+  test('shows correct button text for single vendor selection', () => {
+    render(<VendorRulePromptModal {...defaultProps} />);
+    
+    // Deselect all first
+    const selectAllButton = screen.getByText('Deselect All');
+    fireEvent.click(selectAllButton);
+    
+    // Select exactly one vendor
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[0]);
+    
+    // Should show "Create Rule" (singular)
+    expect(screen.getByText('Create Rule')).toBeInTheDocument();
+  });
+
+  test('shows correct button text for multiple vendor selection', () => {
+    render(<VendorRulePromptModal {...defaultProps} />);
+    
+    // All vendors should be selected by default
+    expect(screen.getByText('Create 3 Rules')).toBeInTheDocument();
+    
+    // Deselect one vendor (leaving 2)
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[0]);
+    
+    // Should show "Create 2 Rules"
+    expect(screen.getByText('Create 2 Rules')).toBeInTheDocument();
   });
 
   test('does not render when isOpen is false', () => {

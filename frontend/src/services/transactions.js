@@ -71,14 +71,7 @@ const transactionService = {
         return response.data;
     },
 
-    // Auto-categorize selected transactions using AI
-    autoCategorizeTransactions: async (transactionIds, forceRecategorize = false) => {
-        const response = await api.post('/transactions/auto-categorize/', {
-            transaction_ids: transactionIds,
-            force_recategorize: forceRecategorize
-        });
-        return response.data;
-    },
+
 
     getUncategorizedGroups: async () => {
         const response = await api.get('/transactions/uncategorized-groups/');
