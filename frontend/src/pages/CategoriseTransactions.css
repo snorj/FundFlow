@@ -472,6 +472,20 @@
       font-size: 14px;
   }
 
+  .categorization-success.success-message {
+      background-color: #f0f9ff;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+      padding: 12px 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+  }
+
 
 
 

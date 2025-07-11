@@ -21,6 +21,7 @@ const CategoriseTransactionsPage = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState(null);
     const [submitError, setSubmitError] = useState(null);
+    const [successMessage, setSuccessMessage] = useState(null);
     const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
     const [selectedTransaction, setSelectedTransaction] = useState(null);
     const [isTransactionDetailsOpen, setIsTransactionDetailsOpen] = useState(false);
@@ -154,39 +155,55 @@ const CategoriseTransactionsPage = () => {
             
             console.log('About to refresh transaction groups after vendor merge...');
             
-            // Check if this was a merge operation - trigger auto-categorization if so
+            // Check if this was a merge operation and if the target vendor has rules
             if (result && result.operation === 'merge' && result.targetVendor) {
-                console.log(`Vendor merge detected: "${result.originalVendor}" merged into "${result.targetVendor}". The backend should auto-apply any existing vendor rules during refresh.`);
+                console.log(`Vendor merge detected: "${result.originalVendor}" merged into "${result.targetVendor}". Checking for existing rules...`);
                 
                 try {
-                    // Get the affected transaction IDs from the vendor group 
-                    const affectedTransactionIds = vendorToRename.group?.transaction_ids || [];
+                    // Check if the target vendor has existing rules
+                    const vendorRules = await vendorRuleService.getVendorRulesByVendor(result.targetVendor);
                     
-                    if (affectedTransactionIds.length > 0) {
-                        console.log(`${affectedTransactionIds.length} transactions affected by merge. Auto-categorization will be attempted during data refresh if "${result.targetVendor}" has vendor rules.`);
+                    if (vendorRules && vendorRules.length > 0) {
+                        console.log(`Found ${vendorRules.length} vendor rule(s) for "${result.targetVendor}". Applying to merged transactions...`);
                         
-                        // Give the backend a moment to process the vendor mapping
-                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        // Get the affected transaction IDs from the vendor group before refresh
+                        const affectedTransactionIds = vendorToRename.group?.transaction_ids || [];
                         
-                        // Try to trigger auto-categorization for the affected transactions
-                        try {
-                            const autoCatResult = await transactionService.autoCategorizeTransactions(
-                                affectedTransactionIds,
-                                true // force_recategorize = true 
-                            );
-                            
-                            if (autoCatResult && autoCatResult.categorized_count > 0) {
-                                console.log(`✅ Successfully auto-categorized ${autoCatResult.categorized_count} out of ${affectedTransactionIds.length} transactions after vendor merge to "${result.targetVendor}"`);
-                            } else {
-                                console.log(`ℹ️ No transactions were auto-categorized after vendor merge. This means "${result.targetVendor}" likely has no vendor rules.`);
+                        console.log('Vendor group data:', vendorToRename.group);
+                        console.log('Affected transaction IDs:', affectedTransactionIds);
+                        
+                        if (affectedTransactionIds.length > 0) {
+                            // Apply the vendor rules to the affected transactions
+                            for (const rule of vendorRules) {
+                                try {
+                                    console.log('Attempting to categorize transactions with params:', {
+                                        transactionIds: affectedTransactionIds,
+                                        categoryId: rule.category_id,
+                                        originalDescription: result.targetVendor
+                                    });
+                                    
+                                    await transactionService.batchCategorizeTransactions(
+                                        affectedTransactionIds,
+                                        rule.category_id,
+                                        result.targetVendor // Use target vendor name for rule tracking
+                                    );
+                                    
+                                    console.log(`Applied rule: categorized ${affectedTransactionIds.length} transactions from "${result.originalVendor}" to category ${rule.category_id}`);
+                                    break; // Only apply the first rule (vendors should typically have one primary category)
+                                } catch (ruleError) {
+                                    console.error('Error applying vendor rule:', ruleError);
+                                    console.error('Error response data:', ruleError.response?.data);
+                                }
                             }
-                        } catch (autoCatError) {
-                            console.log(`⚠️ Auto-categorization attempt failed: ${autoCatError.message}. Will rely on normal data refresh.`);
+                        } else {
+                            console.log('No transaction IDs found to apply rules to');
                         }
+                    } else {
+                        console.log(`No vendor rules found for "${result.targetVendor}"`);
                     }
-                } catch (error) {
-                    console.error('Error during post-merge processing:', error);
-                    // Continue with normal flow
+                } catch (ruleError) {
+                    console.error('Error checking/applying vendor rules:', ruleError);
+                    // Continue with normal flow even if rule application fails
                 }
             }
             
@@ -195,6 +212,27 @@ const CategoriseTransactionsPage = () => {
             await fetchData();
             
             console.log('Successfully refreshed transaction groups after vendor merge');
+            
+            // If transactions were auto-categorized, show success message
+            if (result && result.operation === 'merge' && result.targetVendor) {
+                try {
+                    const vendorRules = await vendorRuleService.getVendorRulesByVendor(result.targetVendor);
+                    if (vendorRules && vendorRules.length > 0) {
+                        const rule = vendorRules[0]; // Get first rule for category info
+                        const category = availableCategories.find(cat => cat.id === rule.category_id);
+                        const categoryName = category ? category.name : `Category ${rule.category_id}`;
+                        
+                        setSubmitError(null); // Clear any existing errors
+                        const message = `✅ Vendor merged successfully! ${vendorToRename.group?.count || 0} transactions automatically categorized to "${categoryName}".`;
+                        setSuccessMessage(message);
+                        
+                        // Clear the success message after 5 seconds
+                        setTimeout(() => setSuccessMessage(null), 5000);
+                    }
+                } catch (navError) {
+                    console.log('Error showing success message:', navError);
+                }
+            }
             
         } catch (error) {
             console.error('Error refreshing transaction groups after vendor rename:', error);
@@ -392,6 +430,12 @@ const CategoriseTransactionsPage = () => {
              {submitError && (
                 <div className="categorization-error error-message">
                    <FiAlertCircle /> {submitError}
+                </div>
+             )}
+
+             {successMessage && (
+                <div className="categorization-success success-message">
+                   <FiCheck /> {successMessage}
                 </div>
              )}
 

@@ -513,7 +513,7 @@ class VendorRuleSerializer(serializers.ModelSerializer):
     """
     # Make foreign key fields writeable using IDs
     vendor_id = serializers.IntegerField(write_only=True, source='vendor.id')
-    category_id = serializers.IntegerField(write_only=True, source='category.id')
+    category_id = serializers.IntegerField(source='category.id')  # Removed write_only=True to make it readable
     
     # Read-only fields to show related object details
     vendor_name = serializers.CharField(source='vendor.name', read_only=True)
