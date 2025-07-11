@@ -154,45 +154,39 @@ const CategoriseTransactionsPage = () => {
             
             console.log('About to refresh transaction groups after vendor merge...');
             
-            // Check if this was a merge operation and if the target vendor has rules
+            // Check if this was a merge operation - trigger auto-categorization if so
             if (result && result.operation === 'merge' && result.targetVendor) {
-                console.log(`Vendor merge detected: "${result.originalVendor}" merged into "${result.targetVendor}". Checking for existing rules...`);
+                console.log(`Vendor merge detected: "${result.originalVendor}" merged into "${result.targetVendor}". The backend should auto-apply any existing vendor rules during refresh.`);
                 
                 try {
-                    // Check if the target vendor has existing rules
-                    const vendorRules = await vendorRuleService.getVendorRulesByVendor(result.targetVendor);
+                    // Get the affected transaction IDs from the vendor group 
+                    const affectedTransactionIds = vendorToRename.group?.transaction_ids || [];
                     
-                    if (vendorRules && vendorRules.length > 0) {
-                        console.log(`Found ${vendorRules.length} vendor rule(s) for "${result.targetVendor}". Applying to merged transactions...`);
+                    if (affectedTransactionIds.length > 0) {
+                        console.log(`${affectedTransactionIds.length} transactions affected by merge. Auto-categorization will be attempted during data refresh if "${result.targetVendor}" has vendor rules.`);
                         
-                        // Get the affected transaction IDs from the vendor group before refresh
-                        const affectedTransactionIds = vendorToRename.group?.transaction_ids || [];
+                        // Give the backend a moment to process the vendor mapping
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                         
-                        if (affectedTransactionIds.length > 0) {
-                            // Apply the vendor rules to the affected transactions
-                            for (const rule of vendorRules) {
-                                try {
-                                    await transactionService.batchCategorizeTransactions(
-                                        affectedTransactionIds,
-                                        rule.category_id,
-                                        result.targetVendor // Use target vendor name for rule tracking
-                                    );
-                                    
-                                    console.log(`Applied rule: categorized ${affectedTransactionIds.length} transactions from "${result.originalVendor}" to category ${rule.category_id}`);
-                                    break; // Only apply the first rule (vendors should typically have one primary category)
-                                } catch (ruleError) {
-                                    console.error('Error applying vendor rule:', ruleError);
-                                }
+                        // Try to trigger auto-categorization for the affected transactions
+                        try {
+                            const autoCatResult = await transactionService.autoCategorizeTransactions(
+                                affectedTransactionIds,
+                                true // force_recategorize = true 
+                            );
+                            
+                            if (autoCatResult && autoCatResult.categorized_count > 0) {
+                                console.log(`✅ Successfully auto-categorized ${autoCatResult.categorized_count} out of ${affectedTransactionIds.length} transactions after vendor merge to "${result.targetVendor}"`);
+                            } else {
+                                console.log(`ℹ️ No transactions were auto-categorized after vendor merge. This means "${result.targetVendor}" likely has no vendor rules.`);
                             }
-                        } else {
-                            console.log('No transaction IDs found to apply rules to');
+                        } catch (autoCatError) {
+                            console.log(`⚠️ Auto-categorization attempt failed: ${autoCatError.message}. Will rely on normal data refresh.`);
                         }
-                    } else {
-                        console.log(`No vendor rules found for "${result.targetVendor}"`);
                     }
-                } catch (ruleError) {
-                    console.error('Error checking/applying vendor rules:', ruleError);
-                    // Continue with normal flow even if rule application fails
+                } catch (error) {
+                    console.error('Error during post-merge processing:', error);
+                    // Continue with normal flow
                 }
             }
             
