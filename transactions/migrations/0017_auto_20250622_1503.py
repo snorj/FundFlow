@@ -6,18 +6,11 @@ from django.db import migrations, models
 def remove_constraint_if_exists(apps, schema_editor):
     """
     Safely remove the valid_priority_range constraint if it exists.
+    SQLite doesn't support CHECK constraints in the same way as PostgreSQL.
     """
-    with schema_editor.connection.cursor() as cursor:
-        # Check if the constraint exists before trying to remove it
-        cursor.execute("""
-            SELECT constraint_name 
-            FROM information_schema.table_constraints 
-            WHERE table_name = 'transactions_vendorrule' 
-            AND constraint_name = 'valid_priority_range'
-            AND constraint_type = 'CHECK'
-        """)
-        if cursor.fetchone():
-            cursor.execute("ALTER TABLE transactions_vendorrule DROP CONSTRAINT valid_priority_range")
+    # For SQLite, we'll skip this operation as CHECK constraints are not supported
+    # in the same way as PostgreSQL
+    pass
 
 
 def clean_duplicate_vendor_rules(apps, schema_editor):
@@ -25,16 +18,30 @@ def clean_duplicate_vendor_rules(apps, schema_editor):
     Remove duplicate vendor rules, keeping only the newest rule for each vendor.
     This implements the 'newest-rule-wins' logic.
     """
+    # For SQLite, we'll use a simpler approach since DISTINCT ON is not supported
     with schema_editor.connection.cursor() as cursor:
-        # Find and delete duplicate rules, keeping only the most recent one for each vendor
+        # Get all vendor rules with their IDs and updated_at timestamps
         cursor.execute("""
-            DELETE FROM transactions_vendorrule 
-            WHERE id NOT IN (
-                SELECT DISTINCT ON (vendor_id) id
-                FROM transactions_vendorrule
-                ORDER BY vendor_id, updated_at DESC
-            )
+            SELECT vendor_id, id, updated_at
+            FROM transactions_vendorrule
+            ORDER BY vendor_id, updated_at DESC
         """)
+        
+        # Group by vendor_id and keep only the first (most recent) for each vendor
+        seen_vendors = set()
+        ids_to_delete = []
+        
+        for row in cursor.fetchall():
+            vendor_id, rule_id, updated_at = row
+            if vendor_id not in seen_vendors:
+                seen_vendors.add(vendor_id)
+            else:
+                ids_to_delete.append(rule_id)
+        
+        # Delete the duplicate rules
+        if ids_to_delete:
+            placeholders = ','.join(['?' for _ in ids_to_delete])
+            cursor.execute(f"DELETE FROM transactions_vendorrule WHERE id IN ({placeholders})", ids_to_delete)
 
 
 def reverse_operations(apps, schema_editor):
