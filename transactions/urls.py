@@ -20,7 +20,9 @@ from .views import (
     DashboardBalanceView,
     AutoCategorizeTransactionsView,
     AutoCategorizeSingleTransactionView,
-    CategorizationSuggestionsView
+    CategorizationSuggestionsView,
+    HiddenTransactionGroupView,
+    BatchHideTransactionView
 )
 
 # Create a router and register our ViewSets with it
@@ -50,8 +52,10 @@ urlpatterns = [
     path('transactions/create/', TransactionCreateView.as_view(), name='transaction-create'),
     path('transactions/<int:pk>/', TransactionUpdateView.as_view(), name='transaction-detail-update'),
     path('transactions/uncategorized-groups/', UncategorizedTransactionGroupView.as_view(), name='transaction-uncategorized-groups'),
+    path('transactions/hidden-groups/', HiddenTransactionGroupView.as_view(), name='transaction-hidden-groups'),
     path('transactions/debug-vendor-mapping/', UncategorizedTransactionGroupView.as_view(), name='debug-vendor-mapping'),
     path('transactions/batch-categorize/', BatchCategorizeTransactionView.as_view(), name='transaction-batch-categorize'),
+    path('transactions/batch-hide/', BatchHideTransactionView.as_view(), name='transaction-batch-hide'),
     
     # Auto-Categorization URLs
     path('transactions/auto-categorize/', AutoCategorizeTransactionsView.as_view(), name='auto-categorize-transactions'),

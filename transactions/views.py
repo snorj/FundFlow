@@ -274,153 +274,185 @@ class BatchCategorizeTransactionView(APIView):
     parser_classes = [JSONParser] # Explicitly use JSONParser
 
     def patch(self, request, *args, **kwargs):
+        """
+        Batch categorize transactions by assigning them to a category.
+        """
         user = request.user
-        logger.info(f"User {user.id}: Received PATCH request for batch categorization.")
-        logger.info(f"Request data CONTENT: {request.data}")
-
-        # --- Extract Data ---
-        transaction_ids = request.data.get('transaction_ids')
+        transaction_ids = request.data.get('transaction_ids', [])
         category_id = request.data.get('category_id')
         original_description = request.data.get('original_description')
         clean_name = request.data.get('clean_name') # Optional
 
-        # --- Input Validation ---
-        if not isinstance(transaction_ids, list) or not transaction_ids:
-            logger.error(f"Validation failed: 'transaction_ids' is not a non-empty list. Value received: {transaction_ids} (Type: {type(transaction_ids)})")
-            return Response({'error': 'A non-empty list of "transaction_ids" is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if category_id is None: # Check for None specifically, 0 might be valid?
-            return Response({'error': '"category_id" is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if not original_description or not isinstance(original_description, str):
-             logger.error(f"Validation failed: 'original_description' is required and must be a string. Value received: {original_description}")
-             return Response({'error': '"original_description" (string) is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if clean_name is not None and not isinstance(clean_name, str):
-             logger.error(f"Validation failed: 'clean_name' must be a string if provided. Value received: {clean_name}")
-             return Response({'error': 'If provided, "clean_name" must be a string.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Validate required fields
+        if not transaction_ids:
+            return Response(
+                {'error': 'transaction_ids is required and must be a non-empty list.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not category_id:
+            return Response(
+                {'error': 'category_id is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not original_description:
+            return Response(
+                {'error': 'original_description is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # Determine the final name to use for transactions and the rule
-        final_clean_name = clean_name.strip() if clean_name and clean_name.strip() else original_description.strip()
-        if not final_clean_name:
-             return Response({'error': 'Resulting transaction description cannot be empty.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # --- Validate IDs ---
         try:
-            transaction_ids = [int(tid) for tid in transaction_ids]
-            category_id = int(category_id)
-        except (ValueError, TypeError):
-            return Response({'error': 'Invalid ID format provided for transaction_ids or category_id.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        logger.info(f"User {user.id}: Validated input for categorizing {len(transaction_ids)} transactions (Orig Desc: '{original_description}') with Cat ID {category_id} and Clean Name '{final_clean_name}'.")
-
-        # --- Validate Category ---
-        try:
-            category_to_assign = Category.objects.get( Q(pk=category_id), Q(user__isnull=True) | Q(user=user) )
-            logger.debug(f"Found category to assign: {category_to_assign.name}")
+            # Verify the category exists and user has access to it
+            category = Category.objects.get(
+                Q(user__isnull=True) | Q(user=user),
+                id=category_id
+            )
         except Category.DoesNotExist:
-            logger.warning(f"User {user.id}: Category ID {category_id} not found or not accessible.")
-            return Response({'error': f'Category with ID {category_id} not found or access denied.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {'error': f'Category with id {category_id} not found or not accessible.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        # --- Update Transactions FIRST ---
-        updated_count = 0
-        # Retrieve the full transaction objects to call the model method later
-        transactions_to_update = list(Transaction.objects.filter(
+        # Get the transactions that belong to the user and are uncategorized
+        transactions = Transaction.objects.filter(
             user=user,
-            id__in=transaction_ids
-        ))
+            id__in=transaction_ids,
+            category__isnull=True
+        )
 
-        if not transactions_to_update:
-            logger.warning(f"User {user.id}: No transactions found for IDs: {transaction_ids}. Nothing to update.")
-            return Response({'error': 'No matching transactions found to update.'}, status=status.HTTP_404_NOT_FOUND)
+        if not transactions.exists():
+            return Response(
+                {'error': 'No valid uncategorized transactions found to categorize.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
+        updated_count = 0
+        errors = []
 
-        update_fields_dict = {
-            'category': category_to_assign,
-            'description': final_clean_name # Update description to the clean name
-        }
-        try:
-            with db_transaction.atomic():
-                # Update the category and description using a queryset update for efficiency
-                updated_rows_count = Transaction.objects.filter(
-                    id__in=[t.id for t in transactions_to_update]
-                ).update(**update_fields_dict)
-                
-                updated_count = updated_rows_count # Keep track of how many rows were affected by the UPDATE SQL
-
-                # Now, iterate through the Python objects to update their state and call the new method
-                # This ensures the Python objects reflect the changes before calling update_aud_amount_if_needed
-                successful_conversion_attempts = 0
-                failed_conversion_attempts = 0
-                for tx_instance in transactions_to_update:
-                    # Manually update the fields on the instance if the queryset update succeeded for its ID
-                    # (This assumes the filter for update matched these instances)
-                    tx_instance.category = category_to_assign
-                    tx_instance.description = final_clean_name
-                    # No need to save here as the main fields were updated by queryset.update()
-                    
-                    # Call the new method to update AUD amount if needed
-                    logger.debug(f"User {user.id}: Calling update_aud_amount_if_needed for transaction {tx_instance.id}")
-                    if tx_instance.update_aud_amount_if_needed():
-                        successful_conversion_attempts += 1
-                    else:
-                        # This means aud_amount is still None or save failed for it
-                        failed_conversion_attempts += 1
-                        logger.warning(f"User {user.id}: update_aud_amount_if_needed did not result in a populated AUD amount for transaction {tx_instance.id}.")
-
-        except Exception as e:
-             logger.error(f"Database error during transaction batch update or AUD amount calculation for user {user.id}: {e}", exc_info=True)
-             return Response({"error": "Failed to update transactions due to a database error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        # --- Create/Update Description Mapping Rule ONLY IF transactions were successfully updated ---
-        mapping_rule = None
-        created = False
-        rule_processed_status = "not processed" # For logging/response message
-
-        if updated_count > 0: # Only process rule if relevant transactions were actually found and updated
-            mapping_defaults = {
-                'clean_name': final_clean_name,
-                'assigned_category': category_to_assign
-            }
+        # Process each transaction
+        for transaction in transactions:
             try:
-                # Ensure we use the original description from the request payload for the rule key
-                mapping_rule, created = DescriptionMapping.objects.update_or_create(
-                    user=user,
-                    original_description=original_description, # Use original description for the rule key
-                    defaults=mapping_defaults # Fields to set/update
-                )
-                if created:
-                    logger.info(f"User {user.id}: Created new DescriptionMapping rule for '{original_description}'.")
-                    rule_processed_status = "created"
-                else:
-                    logger.info(f"User {user.id}: Updated existing DescriptionMapping rule for '{original_description}'.")
-                    rule_processed_status = "updated"
+                # Update the transaction
+                transaction.category = category
+                transaction.save(update_fields=['category', 'updated_at'])
+                updated_count += 1
+
+                # Optionally create/update a DescriptionMapping rule
+                if clean_name and clean_name.strip():
+                    # Check if a mapping already exists for this description
+                    mapping, created = DescriptionMapping.objects.get_or_create(
+                        user=user,
+                        original_description=original_description,
+                        defaults={
+                            'clean_name': clean_name.strip(),
+                            'assigned_category': category
+                        }
+                    )
+                    
+                    if not created:
+                        # Update existing mapping
+                        mapping.clean_name = clean_name.strip()
+                        mapping.assigned_category = category
+                        mapping.save()
 
             except Exception as e:
-                # Log this error, but don't fail the *entire* request since transactions were updated.
-                # Include a warning in the response.
-                logger.error(f"Database error during DescriptionMapping update/create (transactions WERE updated) for user {user.id}, original desc '{original_description}': {e}")
-                rule_processed_status = "failed" # Update status for response message
+                errors.append(f"Error updating transaction {transaction.id}: {str(e)}")
 
-        # --- Verification and Logging ---
-        if updated_count != len(transaction_ids):
-            logger.warning(f"User {user.id}: Mismatch in updated count. Requested {len(transaction_ids)}, updated {updated_count}.")
-            # Log which ones failed if needed (requires extra query)
-
-        logger.info(f"User {user.id}: Completed batch categorization. Updated {updated_count} transactions with category '{category_to_assign.name}' and description '{final_clean_name}'. Rule status: {rule_processed_status}. AUD conversion attempts: {successful_conversion_attempts} success, {failed_conversion_attempts} failed/pending.")
-
-        # --- Prepare Response ---
-        message = f'Successfully updated {updated_count} transaction(s).'
-        if rule_processed_status == "created":
-             message += f' Rule for "{original_description}" created.'
-        elif rule_processed_status == "updated":
-             message += f' Rule for "{original_description}" updated.'
-        elif rule_processed_status == "failed":
-             message += f' WARNING: Failed to create/update rule for "{original_description}".'
-
+        # Prepare response
+        message = f"Successfully categorized {updated_count} transaction(s)."
+        if errors:
+            message += f" {len(errors)} transaction(s) had errors."
 
         return Response({
             'message': message,
             'updated_count': updated_count,
-        }, status=status.HTTP_200_OK) # Return 200 OK as long as transaction update didn't fail
-    
+            'errors': errors if errors else None
+        }, status=status.HTTP_200_OK)
+
+
+class BatchHideTransactionView(APIView):
+    """
+    API endpoint to hide multiple transactions at once.
+    Expects: {
+        "transaction_ids": [int],
+        "action": "hide" or "unhide"
+    }
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def patch(self, request, *args, **kwargs):
+        """
+        Batch hide or unhide transactions.
+        """
+        user = request.user
+        transaction_ids = request.data.get('transaction_ids', [])
+        action = request.data.get('action', 'hide')
+
+        # Validate required fields
+        if not transaction_ids:
+            return Response(
+                {'error': 'transaction_ids is required and must be a non-empty list.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if action not in ['hide', 'unhide']:
+            return Response(
+                {'error': 'action must be either "hide" or "unhide".'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Determine the filter based on action
+        if action == 'hide':
+            # For hiding, we want uncategorized transactions that are not already hidden
+            transactions = Transaction.objects.filter(
+                user=user,
+                id__in=transaction_ids,
+                category__isnull=True,
+                is_hidden=False
+            )
+            is_hidden_value = True
+        else:  # unhide
+            # For unhiding, we want hidden transactions
+            transactions = Transaction.objects.filter(
+                user=user,
+                id__in=transaction_ids,
+                is_hidden=True
+            )
+            is_hidden_value = False
+
+        if not transactions.exists():
+            return Response(
+                {'error': f'No valid transactions found to {action}.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        updated_count = 0
+        errors = []
+
+        # Process each transaction
+        for transaction in transactions:
+            try:
+                # Update the transaction
+                transaction.is_hidden = is_hidden_value
+                transaction.save(update_fields=['is_hidden', 'updated_at'])
+                updated_count += 1
+
+            except Exception as e:
+                errors.append(f"Error updating transaction {transaction.id}: {str(e)}")
+
+        # Prepare response
+        message = f"Successfully {action}d {updated_count} transaction(s)."
+        if errors:
+            message += f" {len(errors)} transaction(s) had errors."
+
+        return Response({
+            'message': message,
+            'updated_count': updated_count,
+            'errors': errors if errors else None
+        }, status=status.HTTP_200_OK)
+
 class UncategorizedTransactionGroupView(APIView):
     """
     API endpoint to list uncategorized transactions for the authenticated user,
@@ -520,6 +552,99 @@ class UncategorizedTransactionGroupView(APIView):
                  group['earliest_date'] = None
 
         logger.info(f"Found {len(sorted_groups)} groups of uncategorized transactions for user {user.id}, sorted by most recent.")
+        return Response(sorted_groups, status=status.HTTP_200_OK)
+
+
+class HiddenTransactionGroupView(APIView):
+    """
+    API endpoint to list hidden transactions for the authenticated user,
+    grouped by description. Returns groups ordered by the *most recent* transaction
+    date within each group descending (newest groups first).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+
+        check_existence_only = request.query_params.get('check_existence', 'false').lower() == 'true'
+        if check_existence_only:
+             exists = Transaction.objects.filter(user=user, is_hidden=True).exists()
+             return Response({'has_hidden': exists}, status=status.HTTP_200_OK)
+
+        logger.info(f"Fetching hidden transaction groups for user: {user.username} ({user.id})")
+
+        hidden_txs = Transaction.objects.filter(
+            user=user,
+            is_hidden=True
+        ).order_by('description', '-transaction_date')
+
+        # Get all vendor mappings for this user to apply them during grouping
+        vendor_mappings = {}
+        mappings = VendorMapping.objects.filter(user=user).values('original_name', 'mapped_vendor')
+        for mapping in mappings:
+            vendor_mappings[mapping['original_name'].lower()] = mapping['mapped_vendor']
+        
+        logger.info(f"DEBUG: User {user.id} has {len(vendor_mappings)} vendor mappings: {vendor_mappings}")
+        
+        grouped_transactions = {}
+        for tx in hidden_txs:
+            original_description = tx.description
+            # Follow mapping chains until we reach the final mapped vendor
+            description = original_description
+            seen_mappings = set()  # Prevent infinite loops
+            
+            while description.lower() in vendor_mappings and description.lower() not in seen_mappings:
+                seen_mappings.add(description.lower())
+                new_description = vendor_mappings[description.lower()]
+                logger.info(f"DEBUG: Mapping applied - '{description}' -> '{new_description}'")
+                description = new_description
+            
+            # Final description after following the mapping chain
+            if original_description != description:
+                logger.info(f"DEBUG: Final mapping result - '{original_description}' -> '{description}'")
+
+            if description not in grouped_transactions:
+                grouped_transactions[description] = {
+                    'description': description,
+                    'max_date': tx.transaction_date,
+                    'transaction_ids': [],
+                    'previews': []
+                }
+
+            # --- Build Preview Data ---
+            grouped_transactions[description]['previews'].append({
+                 'id': tx.id,
+                 'date': tx.transaction_date,
+                 'description': original_description,
+                 'amount': tx.original_amount,
+                 'currency': tx.original_currency,
+                 'direction': tx.direction,
+                 'signed_amount': tx.signed_original_amount,
+                 'source_account': tx.source_account_identifier,
+                 'counterparty': tx.counterparty_identifier,
+                 'code': tx.source_code,
+                 'type': tx.source_type,
+                 'notifications': tx.source_notifications,
+            })
+
+            grouped_transactions[description]['transaction_ids'].append(tx.id)
+
+        # Convert dict to list and sort by date
+        sorted_groups = sorted(
+            grouped_transactions.values(),
+            key=lambda group: group['max_date'],
+            reverse=True
+        )
+
+        # Add counts and earliest date
+        for group in sorted_groups:
+            group['count'] = len(group['transaction_ids'])
+            if group['previews']:
+                 group['earliest_date'] = min(p['date'] for p in group['previews'])
+            else:
+                 group['earliest_date'] = None
+
+        logger.info(f"Found {len(sorted_groups)} groups of hidden transactions for user {user.id}, sorted by most recent.")
         return Response(sorted_groups, status=status.HTTP_200_OK)
     
 class CategoryListCreateView(generics.ListCreateAPIView):

@@ -634,6 +634,13 @@ class Transaction(models.Model):
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='csv', db_index=True, help_text="Source from which this transaction was created.")
     bank_transaction_id = models.CharField(max_length=255, null=True, blank=True, db_index=True, help_text="Unique transaction ID provided by the bank API (if applicable).")
 
+    # Hidden transactions field
+    is_hidden = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Whether this transaction has been hidden from the review page."
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     last_modified = models.DateTimeField(auto_now=True)

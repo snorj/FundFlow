@@ -8,6 +8,7 @@ import NewDashboardPage from './pages/NewDashboardPage';
 import UploadPage from './pages/UploadPage';
 import CategorisePage from './pages/CategorisePage';
 import CategoriseTransactionsPage from './pages/CategoriseTransactionsPage';
+import HiddenTransactionsPage from './pages/HiddenTransactionsPage';
 import VisualisePage from './pages/VisualisePage';
 import VendorRulesPage from './pages/VendorRulesPage';
 import MainLayout from './components/layout/MainLayout';
@@ -33,6 +34,7 @@ function App() {
               <Route path="/upload" element={<UploadPage />} />
               <Route path="/categorise" element={<CategorisePage />} />
               <Route path="/categorise/transactions" element={<CategoriseTransactionsPage />} />
+              <Route path="/categorise/hidden" element={<HiddenTransactionsPage />} />
               <Route path="/visualise" element={<VisualisePage />} />
               <Route path="/vendor-rules" element={<VendorRulesPage />} />
               <Route path="/settings" element={<Settings />} />

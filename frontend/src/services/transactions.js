@@ -78,6 +78,32 @@ const transactionService = {
         return response.data;
     },
 
+    getHiddenGroups: async () => {
+        const response = await api.get('/transactions/hidden-groups/');
+        return response.data;
+    },
+
+    checkHiddenExists: async () => {
+        try {
+            const response = await api.get('/transactions/hidden-groups/', {
+                params: { check_existence: true }
+            });
+            console.log("[checkHiddenExists service] API response:", response.data);
+            return response.data?.has_hidden || false;
+        } catch (error) {
+            console.error("Error checking hidden existence:", error.response?.data || error.message);
+            return false;
+        }
+    },
+
+    batchHideTransactions: async (transactionIds, action = 'hide') => {
+        const response = await api.patch('/transactions/batch-hide/', {
+            transaction_ids: transactionIds,
+            action: action
+        });
+        return response.data;
+    },
+
     createTransaction: async (transactionData) => {
         const response = await api.post('/transactions/create/', transactionData);
         return response.data;

@@ -8,7 +8,7 @@ import TransactionDetailsModal from '../components/transactions/TransactionDetai
 import VendorRulePromptModal from '../components/categorization/VendorRulePromptModal';
 import VendorRenameModal from '../components/transactions/VendorRenameModal';
 import './CategoriseTransactions.css';
-import { FiLoader, FiInbox, FiAlertCircle, FiCheck, FiTag, FiSquare, FiCheckSquare, FiInfo, FiEdit3, FiX } from 'react-icons/fi';
+import { FiLoader, FiInbox, FiAlertCircle, FiCheck, FiTag, FiSquare, FiCheckSquare, FiInfo, FiEdit3, FiX, FiEye, FiArrowRight } from 'react-icons/fi';
 import { formatDate, formatCurrency } from '../utils/formatting';
 
 const CategoriseTransactionsPage = () => {
@@ -311,6 +311,39 @@ const CategoriseTransactionsPage = () => {
         await performCategorization();
     };
 
+    const handleHideSelected = async () => {
+        if (selectedTransactionIds.size === 0) return;
+
+        setIsSubmitting(true);
+        setSubmitError(null);
+
+        try {
+            await transactionService.batchHideTransactions(Array.from(selectedTransactionIds), 'hide');
+            
+            // Remove hidden transactions from the view
+            setGroupedTransactions(prev => {
+                return prev.map(group => ({
+                    ...group,
+                    transaction_ids: group.transaction_ids.filter(id => !selectedTransactionIds.has(id)),
+                    previews: group.previews.filter(preview => !selectedTransactionIds.has(preview.id)),
+                    count: group.transaction_ids.filter(id => !selectedTransactionIds.has(id)).length
+                })).filter(group => group.count > 0); // Remove empty groups
+            });
+            
+            // Clear selections
+            setSelectedTransactionIds(new Set());
+            
+            setSuccessMessage(`Successfully hid ${selectedTransactionIds.size} transaction(s).`);
+            setTimeout(() => setSuccessMessage(null), 5000);
+            
+        } catch (err) {
+            console.error("Error hiding transactions:", err);
+            setSubmitError(err.message || 'Failed to hide transactions. Please try again.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const performCategorization = async (createRules = false, selectedVendors = null) => {
         if (!selectedCategory || selectedTransactionIds.size === 0) return;
         
@@ -425,6 +458,9 @@ const CategoriseTransactionsPage = () => {
             <div className="categorization-header">
                 <h1>Review Uncategorized Transactions</h1> 
                 <p className="transaction-count">{totalTransactions} transactions in {groupedTransactions.length} groups</p>
+                <button onClick={() => navigate('/categorise/hidden')} className="action-button teal-button navigate-button" disabled={isSubmitting}>
+                    <FiEye className="button-icon"/> View Hidden Transactions <FiArrowRight className="button-icon-right"/>
+                </button>
             </div>
 
              {submitError && (
@@ -475,6 +511,15 @@ const CategoriseTransactionsPage = () => {
                     >
                         {isSubmitting ? <FiLoader className="spinner-inline" /> : <FiCheck />}
                         Categorize Selected
+                    </button>
+
+                    <button
+                        className="hide-button"
+                        onClick={handleHideSelected}
+                        disabled={isSubmitting || selectedTransactionIds.size === 0}
+                    >
+                        {isSubmitting ? <FiLoader className="spinner-inline" /> : <FiX />}
+                        Hide Transactions
                     </button>
                 </div>
             </div>
