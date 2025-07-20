@@ -103,6 +103,9 @@ class AutoCategorizationService:
         if not force_recategorize:
             transactions = transactions.filter(category__isnull=True)
             
+        # Filter out hidden transactions
+        transactions = transactions.filter(is_hidden=False)
+            
         transactions = transactions.select_related('vendor', 'category').order_by('transaction_date', 'id')
         
         transaction_count = transactions.count()

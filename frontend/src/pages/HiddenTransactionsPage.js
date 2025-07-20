@@ -4,7 +4,7 @@ import transactionService from '../services/transactions';
 import TransactionDetailsModal from '../components/transactions/TransactionDetailsModal';
 import VendorRenameModal from '../components/transactions/VendorRenameModal';
 import './CategoriseTransactions.css';
-import { FiLoader, FiInbox, FiAlertCircle, FiCheck, FiEye, FiSquare, FiCheckSquare, FiInfo, FiEdit3, FiX } from 'react-icons/fi';
+import { FiLoader, FiInbox, FiAlertCircle, FiCheck, FiEye, FiSquare, FiCheckSquare, FiInfo, FiEdit3, FiX, FiArrowLeft } from 'react-icons/fi';
 import { formatDate, formatCurrency } from '../utils/formatting';
 
 const HiddenTransactionsPage = () => {
@@ -195,9 +195,11 @@ const HiddenTransactionsPage = () => {
                  <FiInbox />
                  <h2>No Hidden Transactions</h2>
                  <p>There are no hidden transactions to display.</p>
-                 <button onClick={() => navigate('/categorise/transactions')} className="action-button teal-button">
-                     Back to Review Page
-                 </button>
+                 <div className="empty-state-actions">
+                     <button onClick={() => navigate('/categorise/transactions')} className="action-button teal-button">
+                         Back to Review Page
+                     </button>
+                 </div>
             </div>
          );
     }
@@ -205,8 +207,19 @@ const HiddenTransactionsPage = () => {
     return (
         <div className="categorization-page">
             <div className="categorization-header">
-                <h1>Hidden Transactions</h1> 
-                <p className="transaction-count">{totalTransactions} transactions in {groupedTransactions.length} groups</p>
+                <div className="header-with-back">
+                    <button 
+                        onClick={() => navigate('/categorise/transactions')} 
+                        className="back-button"
+                        disabled={isSubmitting}
+                    >
+                        <FiArrowLeft className="button-icon"/> Back to Review
+                    </button>
+                    <div className="header-content">
+                        <h1>Hidden Transactions</h1> 
+                        <p className="transaction-count">{totalTransactions} transactions in {groupedTransactions.length} groups</p>
+                    </div>
+                </div>
             </div>
 
              {submitError && (

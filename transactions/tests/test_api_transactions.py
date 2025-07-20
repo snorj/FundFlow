@@ -61,8 +61,8 @@ class TransactionAPITests(APITestCase):
         # Verification
         user1_tx_count = Transaction.objects.filter(user=cls.user1).count()
         assert user1_tx_count == 6, f"Expected 6 transactions for user1, found {user1_tx_count}"
-        user1_uncategorized_count = Transaction.objects.filter(user=cls.user1, category__isnull=True).count()
-        assert user1_uncategorized_count == 4, f"Expected 4 uncategorized transactions for user1, found {user1_uncategorized_count}"
+        user1_uncategorized_count = Transaction.objects.filter(user=cls.user1, category__isnull=True, is_hidden=False).count()
+        assert user1_uncategorized_count == 4, f"Expected 4 uncategorized non-hidden transactions for user1, found {user1_uncategorized_count}"
 
 
         # URLs
@@ -108,7 +108,7 @@ class TransactionAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_list_uncategorized_groups_no_uncategorized(self):
-        Transaction.objects.filter(user=self.user1, category__isnull=True).update(category=self.cat_food)
+        Transaction.objects.filter(user=self.user1, category__isnull=True, is_hidden=False).update(category=self.cat_food)
         response = self.client.get(self.uncategorized_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsInstance(response.data, list)
@@ -122,7 +122,7 @@ class TransactionAPITests(APITestCase):
 
     def test_check_uncategorized_groups_existence_false(self):
         """Test check_existence=true when no groups exist."""
-        Transaction.objects.filter(user=self.user1, category__isnull=True).update(category=self.cat_food)
+        Transaction.objects.filter(user=self.user1, category__isnull=True, is_hidden=False).update(category=self.cat_food)
         response = self.client.get(self.uncategorized_url, {'check_existence': 'true'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data, {'has_uncategorized': False})

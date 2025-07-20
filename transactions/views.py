@@ -467,7 +467,7 @@ class UncategorizedTransactionGroupView(APIView):
         check_existence_only = request.query_params.get('check_existence', 'false').lower() == 'true'
         if check_existence_only:
              # ... (Keep existence check logic) ...
-             exists = Transaction.objects.filter(user=user, category__isnull=True).exists()
+             exists = Transaction.objects.filter(user=user, category__isnull=True, is_hidden=False).exists()
              return Response({'has_uncategorized': exists}, status=status.HTTP_200_OK)
 
 
@@ -475,7 +475,8 @@ class UncategorizedTransactionGroupView(APIView):
 
         uncategorized_txs = Transaction.objects.filter(
             user=user,
-            category__isnull=True
+            category__isnull=True,
+            is_hidden=False
         ).order_by('description', '-transaction_date') # Order needed for grouping and getting max_date easily
 
         # Get all vendor mappings for this user to apply them during grouping

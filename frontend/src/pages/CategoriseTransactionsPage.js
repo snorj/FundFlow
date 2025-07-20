@@ -446,9 +446,14 @@ const CategoriseTransactionsPage = () => {
                  <FiInbox />
                  <h2>All Caught Up!</h2>
                  <p>There are no transactions waiting for categorization.</p>
-                 <button onClick={() => navigate('/dashboard')} className="action-button teal-button">
-                     Back to Dashboard
-                 </button>
+                 <div className="empty-state-actions">
+                     <button onClick={() => navigate('/dashboard')} className="action-button teal-button">
+                         Back to Dashboard
+                     </button>
+                     <button onClick={() => navigate('/categorise/hidden')} className="action-button secondary-button">
+                         <FiEye className="button-icon"/> Hidden Transactions
+                     </button>
+                 </div>
             </div>
          );
     }
