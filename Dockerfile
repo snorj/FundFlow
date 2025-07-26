@@ -29,12 +29,18 @@ RUN npm run build
 # =============================================================================
 FROM python:3.10-slim AS backend
 
+# Build arguments for version tracking
+ARG BUILD_DATE
+ARG GIT_COMMIT
+
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    BUILD_DATE=${BUILD_DATE} \
+    GIT_COMMIT=${GIT_COMMIT}
 
 # Create app directory
 WORKDIR /app

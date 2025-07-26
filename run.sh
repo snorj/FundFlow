@@ -77,25 +77,38 @@ download_files() {
     
     cd "$INSTALL_DIR"
     
-    # Download main script (for now, copy from current directory)
-    # In production, this would download from GitHub
+    # For now, use local development files (in production, these would come from GitHub)
     if [ -f "/home/peter/Desktop/Projects/FundFlow/fundflow.sh" ]; then
-        print_info "Copying fundflow.sh from local development..."
+        print_info "Setting up FundFlow from development files..."
+        
+        # Copy only the essential files needed for Docker Hub deployment
         cp "/home/peter/Desktop/Projects/FundFlow/fundflow.sh" .
         cp "/home/peter/Desktop/Projects/FundFlow/docker-compose.yml" .
-        cp "/home/peter/Desktop/Projects/FundFlow/Dockerfile" .
-        cp "/home/peter/Desktop/Projects/FundFlow/.dockerignore" .
         
-        # Copy entire project structure for now (in production, this would be a git clone or Docker image)
-        print_info "Setting up FundFlow directory structure..."
-        rsync -av --exclude='.git' --exclude='venv' --exclude='node_modules' --exclude='__pycache__' \
-              /home/peter/Desktop/Projects/FundFlow/ ./ 2>/dev/null || {
-            print_warning "Could not copy full project structure"
-            print_info "Continuing with basic setup..."
-        }
+        # Create a minimal .env.example for users
+        cat > .env.example << 'EOF'
+# FundFlow Configuration
+# Copy this file to .env and modify as needed
+
+DATABASE_NAME=fundflow_db
+DATABASE_USER=fundflow_user
+DATABASE_PASSWORD=fundflow_password
+DATABASE_URL=postgresql://fundflow_user:fundflow_password@db:5432/fundflow_db
+
+DJANGO_SECRET_KEY=your-secret-key-here
+DJANGO_DEBUG=False
+DJANGO_SETTINGS_MODULE=FundFlow.settings
+
+ALLOWED_HOSTS=localhost,127.0.0.1
+CORS_ALLOWED_ORIGINS=http://localhost:8000
+
+DOCKER_IMAGE=fundfl0w/fundflow:latest
+EOF
+        
+        print_success "Essential files downloaded"
     else
         print_error "Development files not found"
-        print_info "In production, this would download from GitHub"
+        print_info "In production, this would download from GitHub releases"
         exit 1
     fi
     

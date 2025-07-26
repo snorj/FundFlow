@@ -12,7 +12,7 @@ SCRIPT_VERSION="1.0.0"
 FUNDFLOW_PORT="${FUNDFLOW_PORT:-8000}"
 COMPOSE_PROJECT_NAME="fundflow"
 LOG_FILE="$HOME/.fundflow.log"
-DOCKER_IMAGE="fundflow-web"  # Will be changed to Docker Hub image later
+DOCKER_IMAGE="${DOCKER_IMAGE:-fundfl0w/fundflow:latest}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -180,7 +180,21 @@ EOF
 # Docker Operations
 # =============================================================================
 
-build_image() {
+pull_image() {
+    print_info "Pulling FundFlow Docker image from Docker Hub..."
+    
+    if docker pull "$DOCKER_IMAGE"; then
+        print_success "Docker image pulled successfully"
+    else
+        print_error "Failed to pull Docker image: $DOCKER_IMAGE"
+        print_info "This might be a network issue or the image doesn't exist yet."
+        print_info "You can build locally by running: docker compose build"
+        exit 1
+    fi
+}
+
+build_image_fallback() {
+    print_warning "Falling back to local build..."
     print_info "Building FundFlow Docker image (this may take a few minutes)..."
     
     if $DOCKER_COMPOSE build --no-cache; then
@@ -290,9 +304,22 @@ cmd_start() {
         create_env_file
     fi
     
-    # Build image if it doesn't exist
-    if ! docker image inspect $DOCKER_IMAGE > /dev/null 2>&1; then
-        build_image
+    # Pull image if it doesn't exist locally
+    if ! docker image inspect "$DOCKER_IMAGE" > /dev/null 2>&1; then
+        # Try to pull from Docker Hub first
+        if ! pull_image 2>/dev/null; then
+            # If pull fails, check if we have docker-compose.yml for local build
+            if [ -f "docker-compose.yml" ] && [ -f "Dockerfile" ]; then
+                print_warning "Could not pull pre-built image, building locally instead"
+                export DOCKER_IMAGE="fundflow-web"  # Use local build name
+                build_image_fallback
+            else
+                print_error "Cannot pull image and no local build files found"
+                exit 1
+            fi
+        fi
+    else
+        print_info "Using existing Docker image: $DOCKER_IMAGE"
     fi
     
     start_services
@@ -382,19 +409,35 @@ cmd_logs() {
 
 cmd_update() {
     print_header
-    print_info "Updating FundFlow..."
+    print_info "Updating FundFlow to latest version..."
     
-    print_info "Pulling latest changes..."
-    git pull origin main 2>/dev/null || print_warning "Git pull failed - continuing with rebuild"
+    # Stop current services
+    print_info "Stopping current services..."
+    $DOCKER_COMPOSE down 2>/dev/null || true
     
-    print_info "Rebuilding with latest code..."
-    build_image
+    # Remove old image to force fresh pull
+    print_info "Removing old image..."
+    docker rmi "$DOCKER_IMAGE" 2>/dev/null || true
     
-    print_info "Restarting services..."
-    $DOCKER_COMPOSE up -d
+    # Pull latest image from Docker Hub
+    print_info "Pulling latest image from Docker Hub..."
+    if docker pull "$DOCKER_IMAGE"; then
+        print_success "Latest image downloaded successfully"
+    else
+        print_error "Failed to pull latest image"
+        print_info "Falling back to current version..."
+        return 1
+    fi
+    
+    # Restart services with new image
+    print_info "Starting services with updated image..."
+    start_services
     
     wait_for_services
-    print_success "FundFlow updated successfully!"
+    print_success "🎉 FundFlow updated to latest version!"
+    
+    # Show version info if available
+    docker image inspect "$DOCKER_IMAGE" --format '{{range .Config.Env}}{{if eq (index (split . "=") 0) "BUILD_DATE"}}Build Date: {{index (split . "=") 1}}{{end}}{{end}}' 2>/dev/null || true
 }
 
 cmd_uninstall() {
@@ -409,8 +452,10 @@ cmd_uninstall() {
         # Stop services
         $DOCKER_COMPOSE down -v 2>/dev/null || true
         
-        # Remove images
-        docker rmi $DOCKER_IMAGE 2>/dev/null || true
+        # Remove images (both Docker Hub and local fallback versions)
+        docker rmi "$DOCKER_IMAGE" 2>/dev/null || true
+        docker rmi "fundflow-web" 2>/dev/null || true  # Local build fallback
+        docker rmi "fundfl0w/fundflow:latest" 2>/dev/null || true
         docker rmi postgres:15-alpine 2>/dev/null || true
         
         # Remove volumes

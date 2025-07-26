@@ -47,9 +47,7 @@ services:
   # Django Web Application Service
   # =============================================================================
   web:
-    build: 
-      context: .
-      dockerfile: Dockerfile
+    image: ${DOCKER_IMAGE:-fundfl0w/fundflow:latest}
     container_name: fundflow-web
     restart: unless-stopped
     

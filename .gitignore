@@ -5,6 +5,7 @@
 .env.dev
 .env.local
 .env.*.local
+!.env.example  # Allow the example file to be tracked
 
 # Dont track csv data
 *.csv
