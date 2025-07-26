@@ -2,6 +2,9 @@
 
 # Environment variables
 .env
+.env.dev
+.env.local
+.env.*.local
 
 # Dont track csv data
 *.csv
@@ -40,6 +43,7 @@ var/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+staticfiles/
 media
 
 # Virtual Environment
@@ -78,3 +82,13 @@ tasks/
 .cursor/
 .taskmasterconfig
 scripts/
+
+# Docker
+docker-compose.override.yml
+docker-compose.override.yaml
+.docker/
+docker-volumes/
+*.dockerignore.bak
+
+# Container logs and runtime files
+docker-compose.logs
