@@ -128,9 +128,7 @@ const AddTransactionModal = ({
       errors.direction = 'Transaction direction is required';
     }
     
-    if (showCategoryField && !selectionState.selectedCategory) {
-      errors.category = 'Please select a category';
-    }
+    // Category is optional - no validation needed
     
     return errors;
   }, [formState, selectionState, showCategoryField]);
@@ -372,14 +370,14 @@ const AddTransactionModal = ({
                 <div className="form-group">
                   <label className="form-label">
                     <FiTag className="form-icon" />
-                    Category *
+                    Category (Optional)
                   </label>
                   <div className="selector-field">
                     <input
                       type="text"
                       className={`form-input ${uiState.errors.category ? 'form-input--error' : ''}`}
                       value={selectionState.selectedCategory?.name || ''}
-                      placeholder="Select a category"
+                      placeholder="Select a category (optional)"
                       readOnly
                       disabled={uiState.loading}
                     />
