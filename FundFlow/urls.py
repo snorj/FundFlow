@@ -2,11 +2,12 @@
 URL configuration for FundFlow project.
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 # Remove: from finance.views import dashboard_view
 # Import the specific URL lists from accounts.urls
 from accounts.urls import api_urlpatterns as accounts_api_urls
 from accounts.urls import password_urls as accounts_password_urls
+from .views import serve_react_app
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -22,9 +23,9 @@ urlpatterns = [
 
     # Include integration app URLs
     path('api/integrations/', include('integrations.urls')),
+    
+    # Catch-all route to serve React app for client-side routing
+    # This should be last to avoid overriding API routes
+    re_path(r'^.*/$', serve_react_app, name='react-app'),
+    path('', serve_react_app, name='react-app-root'),
 ]
-
-# Note: You might want a catch-all route later to serve your React app's index.html
-# for client-side routing to work correctly on page refresh, but that depends
-# on your deployment setup (often handled by webserver config or Django middleware).
-# For development with separate frontend/backend servers, this is usually okay.
