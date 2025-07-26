@@ -72,6 +72,25 @@ const categoryService = {
       throw new Error(errorMessages);
     }
   },
+
+  /**
+   * Search for category names with autocomplete functionality
+   * @param {string} searchTerm - The search term for category names
+   * @returns {Promise<Array>} Promise resolving to array of matching category names
+   */
+  searchCategoryNames: async (searchTerm) => {
+    try {
+      if (!searchTerm || searchTerm.trim().length < 1) {
+        return [];
+      }
+      
+      const response = await api.get(`/categories/search_names/?q=${encodeURIComponent(searchTerm.trim())}`);
+      return response.data || [];
+    } catch (error) {
+      console.error('Error searching category names:', error.response?.data || error.message);
+      throw error.response?.data || new Error('Failed to search category names.');
+    }
+  },
 };
 
 export default categoryService;

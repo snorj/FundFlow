@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import dashboardService from '../services/dashboardService'; // Changed to default import
 import transactionService from '../services/transactions'; // Corrected import path
 import EditTransactionModal from '../components/transactions/EditTransactionModal'; // Import the modal
+import TransactionSearchBar from '../components/dashboard/TransactionSearchBar';
 
 // Helper function to get currency symbols
 const getCurrencySymbol = (currencyCode) => {
@@ -41,6 +42,10 @@ const NewDashboardPage = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
 
+  // Search state
+  const [searchParams, setSearchParams] = useState(null);
+  const [totalResultsCount, setTotalResultsCount] = useState(0);
+
   const availableCurrencies = ['AUD', 'USD', 'GBP', 'EUR']; // Define available currencies
 
   const fetchBalanceData = useCallback(async () => {
@@ -61,28 +66,61 @@ const NewDashboardPage = () => {
     fetchBalanceData();
   }, [fetchBalanceData]);
 
-  const fetchTransactionsData = useCallback(async (page) => {
+  const fetchTransactionsData = useCallback(async (page, search = null) => {
     setTransactionsLoading(true);
     setTransactionsError(null);
     try {
-      const response = await transactionService.getTransactions({ page: page, page_size: pageSize });
-      console.log('📊 Dashboard: Fetched transaction response:', response);
+      // Build query parameters
+      const queryParams = {
+        page: search ? 1 : page, // Always use page 1 when searching
+        page_size: search ? 1000 : pageSize, // Get more results when searching (ignore pagination)
+      };
+
+      // Add search parameters if provided
+      if (search) {
+        if (search.vendor) {
+          queryParams.vendor__name__icontains = search.vendor;
+        }
+        if (search.category) {
+          queryParams.category__name__icontains = search.category;
+        }
+        if (search.dateFrom) {
+          queryParams.start_date = search.dateFrom;
+        }
+        if (search.dateTo) {
+          queryParams.end_date = search.dateTo;
+        }
+      }
+
+      console.log('📊 Dashboard: Fetching transactions with params:', queryParams);
+      const response = await transactionService.getTransactions(queryParams);
       
       // Handle DRF paginated response properly
       if (response && response.results) {
         // Paginated response from DRF
         setTransactions(response.results || []); 
-        setTotalPages(Math.ceil(response.count / pageSize));
-        console.log('📋 Dashboard: Set', response.results.length, 'transactions, total pages:', Math.ceil(response.count / pageSize));
+        setTotalResultsCount(response.count || 0);
+        
+        if (search) {
+          // When searching, ignore pagination
+          setTotalPages(1);
+          console.log('📋 Dashboard: Search results:', response.results.length, 'transactions, total matching:', response.count);
+        } else {
+          // Normal pagination
+          setTotalPages(Math.ceil(response.count / pageSize));
+          console.log('📋 Dashboard: Set', response.results.length, 'transactions, total pages:', Math.ceil(response.count / pageSize));
+        }
       } else if (Array.isArray(response)) {
         // Direct array response (non-paginated)
         setTransactions(response);
+        setTotalResultsCount(response.length);
         setTotalPages(1);
         console.log('📋 Dashboard: Set', response.length, 'transactions (non-paginated)');
       } else {
         // Unexpected response format
         console.warn('⚠️ Dashboard: Unexpected response format:', response);
         setTransactions([]);
+        setTotalResultsCount(0);
         setTotalPages(0);
       }
 
@@ -90,15 +128,37 @@ const NewDashboardPage = () => {
       console.error('❌ Dashboard: Failed to fetch transactions:', err);
       setTransactionsError(err.message || 'Failed to fetch transactions. Please try again.');
       setTransactions([]);
+      setTotalResultsCount(0);
       setTotalPages(0);
     } finally {
       setTransactionsLoading(false);
     }
-  }, [pageSize]); // Removed currentPage from dependencies since it's passed as parameter
+  }, [pageSize]);
 
+  // Initial load and pagination changes (only when not searching)
   useEffect(() => {
-    fetchTransactionsData(currentPage);
-  }, [fetchTransactionsData, currentPage]);
+    if (!searchParams) {
+      fetchTransactionsData(currentPage, null);
+    }
+  }, [fetchTransactionsData, currentPage, searchParams]);
+
+  // Handle search
+  const handleSearch = useCallback((newSearchParams) => {
+    console.log('🔍 Dashboard: Search params:', newSearchParams);
+    setSearchParams(newSearchParams);
+    setCurrentPage(1); // Reset to first page when searching
+    // Immediately fetch search results
+    fetchTransactionsData(1, newSearchParams);
+  }, [fetchTransactionsData]);
+
+  // Handle clear search
+  const handleClearSearch = useCallback(() => {
+    console.log('🧹 Dashboard: Clearing search');
+    setSearchParams(null);
+    setCurrentPage(1); // Reset to first page when clearing
+    // Immediately fetch normal results
+    fetchTransactionsData(1, null);
+  }, [fetchTransactionsData]);
 
   const handleEditTransaction = (transactionId) => {
     // Find the transaction from the list
@@ -273,7 +333,34 @@ const NewDashboardPage = () => {
 
       {/* Transaction List Section */}
       <div style={{ marginTop: '30px' }}>
-        <h2>Recent Transactions</h2>
+        <h2>{searchParams ? 'Search Results' : 'Recent Transactions'}</h2>
+        
+        {/* Search Bar */}
+        <TransactionSearchBar 
+          onSearch={handleSearch}
+          onClear={handleClearSearch}
+        />
+        
+        {/* Results Count */}
+        {searchParams && (
+          <div style={{ 
+            marginBottom: '15px', 
+            padding: '10px', 
+            backgroundColor: '#e3f2fd', 
+            borderRadius: '6px',
+            fontSize: '14px',
+            color: '#1565c0'
+          }}>
+            {transactionsLoading ? (
+              'Searching...'
+            ) : (
+              <>
+                <strong>Search Results:</strong> Found {totalResultsCount} transaction{totalResultsCount !== 1 ? 's' : ''} matching your search criteria
+              </>
+            )}
+          </div>
+        )}
+
         {transactionsLoading && <p>Loading transactions...</p>}
         {transactionsError && <p style={{ color: 'red' }}>Error: {transactionsError}</p>}
         {!transactionsLoading && !transactionsError && transactions.length === 0 && (
@@ -321,8 +408,8 @@ const NewDashboardPage = () => {
             </tbody>
           </table>
         )}
-        {/* Pagination Controls */}
-        {!transactionsLoading && !transactionsError && totalPages > 0 && (
+        {/* Pagination Controls - Hidden when searching */}
+        {!transactionsLoading && !transactionsError && totalPages > 0 && !searchParams && (
           <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <button 
               onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}

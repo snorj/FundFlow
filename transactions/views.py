@@ -46,10 +46,15 @@ class TransactionFilter(filters.FilterSet):
     # The 'exclude=True' with 'isnull' means:
     #   - If True is passed to is_categorized: category IS NOT NULL (isnull=False)
     #   - If False is passed to is_categorized: category IS NULL (isnull=True)
+    
+    # Search filters for dashboard search bar
+    vendor__name__icontains = filters.CharFilter(field_name="vendor__name", lookup_expr='icontains')
+    category__name__icontains = filters.CharFilter(field_name="category__name", lookup_expr='icontains')
 
     class Meta:
         model = Transaction
-        fields = ['start_date', 'end_date', 'category', 'is_categorized', 'original_currency']
+        fields = ['start_date', 'end_date', 'category', 'is_categorized', 'original_currency', 
+                 'vendor__name__icontains', 'category__name__icontains']
 
 # --- Transaction List View ---
 class TransactionListView(generics.ListAPIView):
@@ -839,6 +844,42 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
         except Exception as e:
             logger.error(f"User {user.id}: Error during deletion of category '{category_to_delete.name}': {e}", exc_info=True)
             return Response({"error": "An error occurred while trying to delete the category."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class CategoryNamesSearchView(generics.ListAPIView):
+    """
+    API endpoint to search category names for autocomplete functionality.
+    Similar to VendorNamesSearchView but for categories.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None  # Disable pagination for autocomplete
+
+    def get_queryset(self):
+        """
+        Return categories accessible to the user (system + their own)
+        filtered by search query.
+        """
+        user = self.request.user
+        search_query = self.request.query_params.get('q', '')
+        
+        if not search_query or len(search_query.strip()) < 1:
+            return Category.objects.none()
+        
+        # Search in both system categories and user's categories
+        queryset = Category.objects.filter(
+            Q(user__isnull=True) | Q(user=user)
+        ).filter(
+            name__icontains=search_query.strip()
+        ).distinct()
+        
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        """
+        Return a simple list of category names for autocomplete.
+        """
+        queryset = self.get_queryset()
+        category_names = list(queryset.values_list('name', flat=True).order_by('name'))
+        return Response(category_names)
 
 # --- Vendor Views ---
 class VendorListCreateView(generics.ListCreateAPIView):

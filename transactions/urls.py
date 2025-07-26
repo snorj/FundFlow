@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CategoryListCreateView,
     CategoryDetailView,
+    CategoryNamesSearchView,
     VendorListCreateView,
     VendorDetailView,
     VendorNamesSearchView,
@@ -35,6 +36,7 @@ urlpatterns = [
     
     # Category URLs
     path('categories/', CategoryListCreateView.as_view(), name='category-list-create'),
+    path('categories/search_names/', CategoryNamesSearchView.as_view(), name='category-names-search'),
     path('categories/<int:pk>/', CategoryDetailView.as_view(), name='category-detail'),
 
     # Vendor URLs
