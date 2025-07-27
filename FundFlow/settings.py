@@ -320,3 +320,24 @@ if not DEBUG:
     # SECURE_SSL_REDIRECT = True
     # SESSION_COOKIE_SECURE = True
     # CSRF_COOKIE_SECURE = True
+
+# Demo Mode Configuration
+DEMO_MODE = os.getenv('DEMO_MODE', 'false').lower() == 'true'
+
+if DEMO_MODE:
+    print("🧪 FundFlow Demo Mode Enabled - Don't use real financial data!")
+    
+    # Demo-specific settings
+    ENABLE_USER_REGISTRATION = True
+    REQUIRE_EMAIL_VERIFICATION = False
+    DEMO_DATA_RETENTION_HOURS = 24
+    DEMO_RESET_SCHEDULE = "Daily at 12:00 AM UTC"
+    
+    # Use dummy email backend for demo
+    EMAIL_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
+    
+    # Add demo mode context processor
+    TEMPLATES[0]['OPTIONS']['context_processors'].append('FundFlow.context_processors.demo_mode')
+    
+    # Add demo mode middleware at the beginning
+    MIDDLEWARE.insert(0, 'FundFlow.middleware.DemoModeMiddleware')
