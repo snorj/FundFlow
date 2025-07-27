@@ -1,0 +1,30 @@
+app = "fundflow-demo"
+primary_region = "sea"
+
+[build]
+  image = "fundfl0w/fundflow:latest"
+
+[env]
+  DJANGO_SETTINGS_MODULE = "FundFlow.demo_settings"
+  DJANGO_DEBUG = "False"
+  ALLOWED_HOSTS = "app.fundflow.app"
+  DATABASE_URL = "postgresql://postgres:password@fundflow-demo-db.flycast:5432/fundflow_demo"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "15s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/"
+
+[postgres]
+  shared_cpu_count = 1
+  shared_memory = "256mb" 
