@@ -16,7 +16,10 @@ WORKDIR /frontend
 COPY frontend/package*.json ./
 
 # Install npm dependencies (including dev deps needed for build)
-RUN npm install
+RUN npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-retries 3 && \
+    npm install --network-timeout 600000
 
 # Copy frontend source code
 COPY frontend/ ./
