@@ -104,7 +104,7 @@ main() {
     echo "   2. ./fundflow.sh start"
     echo ""
     echo "📊 Sample data available at: https://fundflow.dev/#sample-data"
-    echo "📚 Documentation: https://github.com/fundfl0w/fundflow"
+    echo "📚 Documentation: https://github.com/snorj/FundFlow"
     echo ""
     echo "🔒 Your financial data stays completely private and local."
 }

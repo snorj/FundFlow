@@ -142,7 +142,7 @@ FundFlow includes a powerful management script:
 
 ### Local Development
 ```bash
-git clone https://github.com/fundfl0w/fundflow.git
+git clone https://github.com/snorj/FundFlow.git
 cd fundflow
 docker compose up --build
 ```
@@ -192,8 +192,8 @@ Download from [fundflow.dev](https://fundflow.dev)
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ### Quick Links
-- **Issues**: [Report bugs or request features](https://github.com/fundfl0w/fundflow/issues)
-- **Discussions**: [Community discussions](https://github.com/fundfl0w/fundflow/discussions)
+- **Issues**: [Report bugs or request features](https://github.com/snorj/FundFlow/issues)
+- **Discussions**: [Community discussions](https://github.com/snorj/FundFlow/discussions)
 - **Security**: [Report security issues](SECURITY.md)
 
 ---
@@ -218,4 +218,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **⭐ If FundFlow helps manage your finances, please star this repository!**
 
-[**🚀 Try Live Demo**](https://app.fundflow.dev) • [**📥 Download**](https://fundflow.dev) • [**📚 Documentation**](https://github.com/fundfl0w/fundflow/wiki)
+[**🚀 Try Live Demo**](https://app.fundflow.dev) • [**📥 Download**](https://fundflow.dev) • [**📚 Documentation**](https://github.com/snorj/FundFlow/wiki)
