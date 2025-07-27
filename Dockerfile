@@ -15,8 +15,8 @@ WORKDIR /frontend
 # Copy package files first (for better layer caching)
 COPY frontend/package*.json ./
 
-# Install npm dependencies
-RUN npm ci --only=production --silent
+# Install npm dependencies (including dev deps needed for build)
+RUN npm install
 
 # Copy frontend source code
 COPY frontend/ ./

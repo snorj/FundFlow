@@ -7,7 +7,7 @@ from django.urls import path, include, re_path
 # Import the specific URL lists from accounts.urls
 from accounts.urls import api_urlpatterns as accounts_api_urls
 from accounts.urls import password_urls as accounts_password_urls
-from .views import serve_react_app
+from .views import index, health_check
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -24,8 +24,11 @@ urlpatterns = [
     # Include integration app URLs
     path('api/integrations/', include('integrations.urls')),
     
+    # Health check endpoint
+    path('api/health/', health_check, name='health-check'),
+    
     # Catch-all route to serve React app for client-side routing
     # This should be last to avoid overriding API routes
-    re_path(r'^.*/$', serve_react_app, name='react-app'),
-    path('', serve_react_app, name='react-app-root'),
+    re_path(r'^.*/$', index, name='react-app'),
+    path('', index, name='react-app-root'),
 ]

@@ -1,23 +1,33 @@
 from django.shortcuts import render
-from django.http import HttpResponse
+from django.http import JsonResponse
 from django.conf import settings
 import os
 
-def serve_react_app(request):
-    """
-    Serve the React app's index.html for client-side routing
-    """
-    try:
-        # Path to the React build index.html
-        index_path = os.path.join(settings.REACT_BUILD_DIR, 'index.html')
+def health_check(request):
+    """Health check endpoint for monitoring"""
+    return JsonResponse({'status': 'healthy'})
+
+def index(request):
+    """Serves the React app"""
+    # Add demo mode banner via JavaScript injection if demo mode is enabled
+    demo_mode = os.getenv('DEMO_MODE', 'false').lower() == 'true'
+    
+    if demo_mode:
+        # Inject demo banner script
+        demo_script = """
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const banner = document.createElement('div');
+            banner.innerHTML = '🧪 Demo Mode - Don\\'t use real financial data • Data resets daily • <a href="https://fundflow.dev" style="color: white; text-decoration: underline;">Download FundFlow</a>';
+            banner.style.cssText = 'background: linear-gradient(90deg, #ff9500, #ff6b00); color: white; text-align: center; padding: 8px; font-size: 14px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: fixed; top: 0; left: 0; right: 0; z-index: 1000; margin: 0;';
+            document.body.style.paddingTop = '40px';
+            document.body.insertBefore(banner, document.body.firstChild);
+        });
+        </script>
+        """
         
-        with open(index_path, 'r') as f:
-            html_content = f.read()
-        
-        return HttpResponse(html_content, content_type='text/html')
-    except FileNotFoundError:
-        return HttpResponse(
-            "<h1>FundFlow</h1><p>React build not found. Please build the frontend first.</p>", 
-            content_type='text/html',
-            status=404
-        ) 
+        context = {'demo_script': demo_script}
+    else:
+        context = {'demo_script': ''}
+    
+    return render(request, 'index.html', context) 
