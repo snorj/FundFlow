@@ -14,11 +14,11 @@ ENABLE_USER_REGISTRATION = True
 REQUIRE_EMAIL_VERIFICATION = False
 
 # Demo-specific hosts and security
-ALLOWED_HOSTS = ['app.fundflow.app', 'fundflow-demo.fly.dev']
+ALLOWED_HOSTS = ['app.fundflow.dev', 'fundflow-demo.fly.dev']
 CORS_ALLOWED_ORIGINS = [
-    'https://app.fundflow.app',
+    'https://app.fundflow.dev',
     'https://fundflow-demo.fly.dev',
-    'https://fundflow.app',
+    'https://fundflow.dev',
 ]
 
 # Demo database retention (24 hours)

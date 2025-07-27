@@ -169,6 +169,36 @@ push_image() {
     print_success "All images pushed successfully"
 }
 
+deploy_to_fly() {
+    print_info "Deploying to Fly.io demo site..."
+    
+    # Check if flyctl is available
+    if ! command -v flyctl &> /dev/null; then
+        if ! PATH="$HOME/.fly/bin:$PATH" command -v flyctl &> /dev/null; then
+            print_warning "flyctl not found - skipping Fly.io deployment"
+            print_info "Install flyctl to enable automatic demo deployment"
+            return 0
+        fi
+        export PATH="$HOME/.fly/bin:$PATH"
+    fi
+    
+    # Check if we're in the right directory/app context
+    if [ ! -f "fly.toml" ]; then
+        print_warning "fly.toml not found - skipping Fly.io deployment"
+        print_info "Run from project root to enable demo deployment"
+        return 0
+    fi
+    
+    # Deploy to Fly.io (this pulls the latest image from Docker Hub)
+    print_info "Triggering deployment of latest Docker image..."
+    if PATH="$HOME/.fly/bin:$PATH" flyctl deploy --image "$DOCKER_IMAGE:latest" --remote-only; then
+        print_success "Demo site updated: https://app.fundflow.dev"
+    else
+        print_warning "Fly.io deployment failed, but Docker Hub push succeeded"
+        print_info "You can manually deploy with: flyctl deploy --image $DOCKER_IMAGE:latest"
+    fi
+}
+
 show_image_info() {
     echo ""
     echo "🎉 Deployment Complete!"
@@ -216,6 +246,11 @@ deploy() {
     # Push to Docker Hub
     push_image
     
+    echo ""
+    
+    # Deploy to Fly.io demo
+    deploy_to_fly
+    
     # Show final information
     show_image_info
 }
@@ -256,14 +291,19 @@ case "${1:-deploy}" in
             exit 1
         fi
         ;;
+    "fly")
+        print_header
+        deploy_to_fly
+        ;;
     *)
-        echo "Usage: $0 [deploy|build|test|push]"
+        echo "Usage: $0 [deploy|build|test|push|fly]"
         echo ""
         echo "Commands:"
-        echo "  deploy  - Full deployment (build + test + push)"
+        echo "  deploy  - Full deployment (build + test + push + fly)"
         echo "  build   - Build image only"
         echo "  test    - Test existing image"
         echo "  push    - Push existing image to Docker Hub"
+        echo "  fly     - Deploy latest image to Fly.io demo"
         exit 1
         ;;
 esac 

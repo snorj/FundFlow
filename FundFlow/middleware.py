@@ -36,7 +36,7 @@ class DemoModeMiddleware(MiddlewareMixin):
                     position: relative;
                     z-index: 1000;
                 ">
-                    🧪 Demo Mode - Don't use real financial data • Data resets daily • <a href="https://fundflow.app" style="color: white; text-decoration: underline;">Download FundFlow</a>
+                    🧪 Demo Mode - Don't use real financial data • Data resets daily • <a href="https://fundflow.dev" style="color: white; text-decoration: underline;">Download FundFlow</a>
                 </div>
                 '''
                 
