@@ -1448,6 +1448,419 @@ class DashboardBalanceView(views.APIView):
             }
         })
 
+# --- NEW: Analytics API Views for Visualization Page ---
+
+class BalanceOverTimeView(views.APIView):
+    """
+    API endpoint to return balance progression over time for charting.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        target_currency = request.GET.get('target_currency', BASE_CURRENCY_FOR_CONVERSION).upper()
+        
+        # Get date range parameters
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        logger.info(f"User {user.id}: Getting balance over time for {target_currency}")
+        
+        # Get transactions within date range
+        transactions = Transaction.objects.filter(user=user).order_by('transaction_date', 'id')
+        
+        if start_date:
+            try:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                transactions = transactions.filter(transaction_date__gte=start_date)
+            except ValueError:
+                return Response({'error': 'Invalid start_date format. Use YYYY-MM-DD'}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+        
+        if end_date:
+            try:
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+                transactions = transactions.filter(transaction_date__lte=end_date)
+            except ValueError:
+                return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+        
+        # Calculate running balance by date
+        balance_data = []
+        running_balance = Decimal('0.00')
+        current_date = None
+        daily_balance = Decimal('0.00')
+        
+        for tx in transactions:
+            # If we've moved to a new date, record the previous day's balance
+            if current_date and tx.transaction_date != current_date:
+                balance_data.append({
+                    'date': current_date.isoformat(),
+                    'balance': running_balance.quantize(Decimal('0.01')),
+                    'formatted_balance': f"{target_currency} {running_balance:.2f}"
+                })
+                daily_balance = Decimal('0.00')
+            
+            current_date = tx.transaction_date
+            
+            # Add transaction amount to running balance
+            if tx.source == 'up_bank':
+                amount = tx.signed_aud_amount or Decimal('0.00')
+            else:
+                amount = tx.signed_account_amount or Decimal('0.00')
+                
+            # Convert to target currency if needed
+            if tx.account_base_currency != target_currency and tx.source != 'up_bank':
+                rate = get_current_exchange_rate(tx.account_base_currency, target_currency)
+                if rate:
+                    amount = amount * rate
+                    
+            running_balance += amount
+            daily_balance += amount
+        
+        # Don't forget the last date
+        if current_date:
+            balance_data.append({
+                'date': current_date.isoformat(),
+                'balance': running_balance.quantize(Decimal('0.01')),
+                'formatted_balance': f"{target_currency} {running_balance:.2f}"
+            })
+        
+        return Response({
+            'balance_over_time': balance_data,
+            'currency': target_currency,
+            'start_date': start_date.isoformat() if start_date else None,
+            'end_date': end_date.isoformat() if end_date else None,
+            'final_balance': running_balance.quantize(Decimal('0.01')),
+            'total_transactions': transactions.count()
+        })
+
+
+class CategorySpendingView(views.APIView):
+    """
+    API endpoint to return spending breakdown by category for pie charts.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        target_currency = request.GET.get('target_currency', BASE_CURRENCY_FOR_CONVERSION).upper()
+        
+        # Get date range parameters
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        category_level = request.GET.get('level', 'subcategory')  # 'category' or 'subcategory'
+        
+        logger.info(f"User {user.id}: Getting category spending breakdown")
+        
+        # Get categorized transactions only (exclude uncategorized and hidden)
+        transactions = Transaction.objects.filter(
+            user=user,
+            category__isnull=False,
+            is_hidden=False,
+            direction='DEBIT'  # Only expenses
+        ).select_related('category', 'category__parent')
+        
+        if start_date:
+            try:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                transactions = transactions.filter(transaction_date__gte=start_date)
+            except ValueError:
+                return Response({'error': 'Invalid start_date format. Use YYYY-MM-DD'}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+        
+        if end_date:
+            try:
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+                transactions = transactions.filter(transaction_date__lte=end_date)
+            except ValueError:
+                return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+        
+        # Aggregate spending by category
+        category_totals = defaultdict(Decimal)
+        category_details = {}
+        
+        for tx in transactions:
+            # Determine which category level to use
+            if category_level == 'category':
+                # Use parent category if it exists, otherwise the category itself
+                category = tx.category.parent if tx.category.parent else tx.category
+            else:
+                # Use the actual category (subcategory level)
+                category = tx.category
+            
+            category_name = category.name
+            
+            # Get transaction amount in target currency
+            if tx.source == 'up_bank':
+                amount = abs(tx.aud_amount or Decimal('0.00'))
+            else:
+                amount = abs(tx.original_amount or Decimal('0.00'))
+                # Convert to target currency if needed
+                if tx.account_base_currency != target_currency:
+                    rate = get_current_exchange_rate(tx.account_base_currency, target_currency)
+                    if rate:
+                        amount = amount * rate
+            
+            category_totals[category_name] += amount
+            
+            # Store category details for frontend
+            category_details[category_name] = {
+                'id': category.id,
+                'name': category.name,
+                'parent_name': category.parent.name if category.parent else None,
+                'level': 'parent' if not category.parent else 'child'
+            }
+        
+        # Convert to list format for pie chart
+        spending_data = []
+        total_spending = sum(category_totals.values())
+        
+        for category_name, amount in sorted(category_totals.items(), key=lambda x: x[1], reverse=True):
+            percentage = (amount / total_spending * 100) if total_spending > 0 else 0
+            spending_data.append({
+                'category': category_name,
+                'amount': amount.quantize(Decimal('0.01')),
+                'percentage': round(percentage, 1),
+                'formatted_amount': f"{target_currency} {amount:.2f}",
+                **category_details[category_name]
+            })
+        
+        return Response({
+            'category_spending': spending_data,
+            'total_spending': total_spending.quantize(Decimal('0.01')),
+            'currency': target_currency,
+            'category_level': category_level,
+            'start_date': start_date.isoformat() if start_date else None,
+            'end_date': end_date.isoformat() if end_date else None,
+            'transaction_count': transactions.count()
+        })
+
+
+class IncomeVsExpensesView(views.APIView):
+    """
+    API endpoint to return monthly income vs expenses data for bar charts.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        target_currency = request.GET.get('target_currency', BASE_CURRENCY_FOR_CONVERSION).upper()
+        
+        # Get date range parameters
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        logger.info(f"User {user.id}: Getting income vs expenses breakdown")
+        
+        # Get categorized transactions only
+        transactions = Transaction.objects.filter(
+            user=user,
+            category__isnull=False,
+            is_hidden=False
+        ).select_related('category')
+        
+        if start_date:
+            try:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                transactions = transactions.filter(transaction_date__gte=start_date)
+            except ValueError:
+                return Response({'error': 'Invalid start_date format. Use YYYY-MM-DD'}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+        
+        if end_date:
+            try:
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+                transactions = transactions.filter(transaction_date__lte=end_date)
+            except ValueError:
+                return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+        
+        # Group by month and calculate income/expenses
+        monthly_data = defaultdict(lambda: {'income': Decimal('0.00'), 'expenses': Decimal('0.00')})
+        
+        for tx in transactions:
+            month_key = f"{tx.transaction_date.year}-{tx.transaction_date.month:02d}"
+            
+            # Get transaction amount in target currency
+            if tx.source == 'up_bank':
+                amount = abs(tx.aud_amount or Decimal('0.00'))
+            else:
+                amount = abs(tx.original_amount or Decimal('0.00'))
+                # Convert to target currency if needed
+                if tx.account_base_currency != target_currency:
+                    rate = get_current_exchange_rate(tx.account_base_currency, target_currency)
+                    if rate:
+                        amount = amount * rate
+            
+            # Categorize as income or expense
+            if tx.direction == 'CREDIT':
+                monthly_data[month_key]['income'] += amount
+            else:  # DEBIT
+                monthly_data[month_key]['expenses'] += amount
+        
+        # Convert to list format for bar chart
+        comparison_data = []
+        for month_key in sorted(monthly_data.keys()):
+            year, month = month_key.split('-')
+            month_name = datetime(int(year), int(month), 1).strftime('%B %Y')
+            
+            income = monthly_data[month_key]['income']
+            expenses = monthly_data[month_key]['expenses']
+            net_savings = income - expenses
+            savings_rate = (net_savings / income * 100) if income > 0 else 0
+            
+            comparison_data.append({
+                'month': month_key,
+                'month_name': month_name,
+                'income': income.quantize(Decimal('0.01')),
+                'expenses': expenses.quantize(Decimal('0.01')),
+                'net_savings': net_savings.quantize(Decimal('0.01')),
+                'savings_rate': round(savings_rate, 1),
+                'formatted_income': f"{target_currency} {income:.2f}",
+                'formatted_expenses': f"{target_currency} {expenses:.2f}",
+                'formatted_savings': f"{target_currency} {net_savings:.2f}"
+            })
+        
+        # Calculate overall totals
+        total_income = sum(item['income'] for item in comparison_data)
+        total_expenses = sum(item['expenses'] for item in comparison_data)
+        overall_savings_rate = ((total_income - total_expenses) / total_income * 100) if total_income > 0 else 0
+        
+        return Response({
+            'monthly_comparison': comparison_data,
+            'currency': target_currency,
+            'start_date': start_date.isoformat() if start_date else None,
+            'end_date': end_date.isoformat() if end_date else None,
+            'totals': {
+                'income': total_income.quantize(Decimal('0.01')),
+                'expenses': total_expenses.quantize(Decimal('0.01')),
+                'net_savings': (total_income - total_expenses).quantize(Decimal('0.01')),
+                'savings_rate': round(overall_savings_rate, 1)
+            }
+        })
+
+
+class SankeyFlowView(views.APIView):
+    """
+    API endpoint to return Sankey flow data showing income -> categories -> subcategories.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        target_currency = request.GET.get('target_currency', BASE_CURRENCY_FOR_CONVERSION).upper()
+        
+        # Get date range parameters
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        logger.info(f"User {user.id}: Getting Sankey flow data")
+        
+        # Get categorized transactions only
+        transactions = Transaction.objects.filter(
+            user=user,
+            category__isnull=False,
+            is_hidden=False
+        ).select_related('category', 'category__parent')
+        
+        if start_date:
+            try:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                transactions = transactions.filter(transaction_date__gte=start_date)
+            except ValueError:
+                return Response({'error': 'Invalid start_date format. Use YYYY-MM-DD'}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+        
+        if end_date:
+            try:
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+                transactions = transactions.filter(transaction_date__lte=end_date)
+            except ValueError:
+                return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+        
+        # Calculate flows: Income -> Parent Categories -> Subcategories
+        nodes = set()
+        links = []
+        
+        # Track income and spending by category
+        income_total = Decimal('0.00')
+        parent_category_totals = defaultdict(Decimal)
+        subcategory_totals = defaultdict(Decimal)
+        
+        for tx in transactions:
+            # Get transaction amount in target currency
+            if tx.source == 'up_bank':
+                amount = abs(tx.aud_amount or Decimal('0.00'))
+            else:
+                amount = abs(tx.original_amount or Decimal('0.00'))
+                # Convert to target currency if needed
+                if tx.account_base_currency != target_currency:
+                    rate = get_current_exchange_rate(tx.account_base_currency, target_currency)
+                    if rate:
+                        amount = amount * rate
+            
+            if tx.direction == 'CREDIT':
+                # Income
+                income_total += amount
+                nodes.add('Total Income')
+            else:
+                # Expenses - track by category hierarchy
+                parent_category = tx.category.parent if tx.category.parent else tx.category
+                subcategory = tx.category
+                
+                parent_name = parent_category.name
+                subcategory_name = subcategory.name
+                
+                parent_category_totals[parent_name] += amount
+                subcategory_totals[f"{parent_name} > {subcategory_name}"] += amount
+                
+                nodes.add(parent_name)
+                nodes.add(subcategory_name)
+        
+        # Create flows from Income to Parent Categories
+        for parent_name, amount in parent_category_totals.items():
+            proportion = amount / income_total if income_total > 0 else 0
+            allocated_income = income_total * proportion
+            
+            links.append({
+                'source': 'Total Income',
+                'target': parent_name,
+                'value': float(allocated_income.quantize(Decimal('0.01'))),
+                'formatted_value': f"{target_currency} {allocated_income:.2f}"
+            })
+        
+        # Create flows from Parent Categories to Subcategories
+        for subcategory_key, amount in subcategory_totals.items():
+            parent_name, subcategory_name = subcategory_key.split(' > ')
+            
+            links.append({
+                'source': parent_name,
+                'target': subcategory_name,
+                'value': float(amount.quantize(Decimal('0.01'))),
+                'formatted_value': f"{target_currency} {amount:.2f}"
+            })
+        
+        # Convert nodes to list with metadata
+        node_list = []
+        for node in nodes:
+            node_list.append({
+                'id': node,
+                'name': node
+            })
+        
+        return Response({
+            'nodes': node_list,
+            'links': links,
+            'currency': target_currency,
+            'start_date': start_date.isoformat() if start_date else None,
+            'end_date': end_date.isoformat() if end_date else None,
+            'total_income': income_total.quantize(Decimal('0.01')),
+            'total_expenses': sum(parent_category_totals.values()).quantize(Decimal('0.01'))
+        })
+
 # --- VendorRule Views ---
 class VendorRuleListCreateView(generics.ListCreateAPIView):
     """

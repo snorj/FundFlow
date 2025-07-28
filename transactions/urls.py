@@ -19,6 +19,10 @@ from .views import (
     UncategorizedTransactionGroupView,
     BatchCategorizeTransactionView,
     DashboardBalanceView,
+    BalanceOverTimeView,
+    CategorySpendingView,
+    IncomeVsExpensesView,
+    SankeyFlowView,
     AutoCategorizeTransactionsView,
     AutoCategorizeSingleTransactionView,
     CategorizationSuggestionsView,
@@ -66,4 +70,8 @@ urlpatterns = [
     
     # Dashboard URLs
     path('dashboard/balance/', DashboardBalanceView.as_view(), name='dashboard-balance'),
+    path('analytics/balance-over-time/', BalanceOverTimeView.as_view(), name='analytics-balance-over-time'),
+    path('analytics/category-spending/', CategorySpendingView.as_view(), name='analytics-category-spending'),
+    path('analytics/income-vs-expenses/', IncomeVsExpensesView.as_view(), name='analytics-income-vs-expenses'),
+    path('analytics/sankey-flow/', SankeyFlowView.as_view(), name='analytics-sankey-flow'),
 ]
