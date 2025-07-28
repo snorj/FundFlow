@@ -1193,7 +1193,8 @@ class TransactionCSVUploadView(APIView):
 
                 # --- NEW VENDOR MAPPING LOGIC ---
                 # Extract original vendor name from CSV data
-                original_vendor_name = data_item.get('counterparty_identifier', '').strip()
+                counterparty = data_item.get('counterparty_identifier') or ''
+                original_vendor_name = counterparty.strip()
                 if not original_vendor_name:
                     # Fallback to description if no counterparty
                     original_vendor_name = final_description.split(' - ')[0].split(' | ')[0].strip()
