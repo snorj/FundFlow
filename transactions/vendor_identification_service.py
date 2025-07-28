@@ -177,7 +177,7 @@ class VendorIdentificationService:
     def _get_applicable_vendors(self) -> QuerySet:
         """Get vendors applicable to this user."""
         return Vendor.objects.filter(
-            Q(user__isnull=True) | Q(user=self.user)  # System or user's vendors
+            user=self.user  # Only user's vendors
         ).order_by('-created_at')
         
     def _process_transaction_batch(self, transactions: QuerySet, vendors: QuerySet, 

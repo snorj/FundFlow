@@ -606,9 +606,10 @@ const CategoriseTransactionsPage = () => {
                 onClose={() => setIsCategoryModalOpen(false)}
                 onSelectCategory={handleCategorySelect}
                 categories={availableCategories}
-                            onCategoriesUpdate={handleCategoriesUpdate}
+                onCategoriesUpdate={handleCategoriesUpdate}
                 selectionMode="confirm"
                 modalTitle="Select Category for Transactions"
+                showVendors={true}
             />
 
             {/* Transaction Details Modal */}

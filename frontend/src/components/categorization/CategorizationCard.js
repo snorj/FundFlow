@@ -262,6 +262,7 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
                 availableCategories={availableCategories}
                 onCategoriesUpdate={onCategoriesUpdate}
                 currentSelectedId={selectedCategoryId || null}
+                showVendors={true}
             />
 
             {/* --- NEW: Transaction Detail Modal --- */}

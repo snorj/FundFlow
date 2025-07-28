@@ -315,7 +315,8 @@ const TreeNode = ({
 
   const handleMoveClick = (e) => {
     e?.stopPropagation();
-    if (node.type !== 'category' || node.is_system) return;
+    if (node.type === 'category' && node.is_system) return;
+    if (node.type !== 'category' && node.type !== 'vendor') return;
     onStartMove?.(node);
   };
 
@@ -398,10 +399,16 @@ const TreeNode = ({
         }
         return items;
       case 'vendor':
-        return [
+        const vendorItems = [
           { id: 'edit', label: 'Edit Vendor Name', icon: <FiEdit3 /> },
+          { id: 'move', label: 'Move', icon: <FiMove /> },
           { id: 'info', label: 'View Transactions', icon: <FiInfo /> }
         ];
+        // Disable move option if already in move mode
+        if (moveMode?.isActive) {
+          return vendorItems.filter(item => item.id !== 'move');
+        }
+        return vendorItems;
       case 'transaction':
         return [
           { id: 'info', label: 'View Details', icon: <FiInfo /> }

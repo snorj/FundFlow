@@ -24,25 +24,39 @@ export const transformCategoryData = (categories = [], transactions = [], option
   const categoriesArray = Array.isArray(categories) ? categories : [];
   const transactionsArray = Array.isArray(transactions) ? transactions : [];
 
-  // Filter categories based on options
-  let filteredCategories = categoriesArray.filter(cat => {
-    // Filter out non-category items (if any)
-    if (cat.type && cat.type !== 'category') return false;
+  // Separate categories and vendors from the input
+  let filteredCategories = categoriesArray.filter(item => {
+    if (item.type && item.type !== 'category') return false;
     
     // Filter based on system/user preferences
-    if (!showSystemCategories && !cat.is_custom) return false;
-    if (!showUserCategories && cat.is_custom) return false;
+    if (!showSystemCategories && !item.is_custom) return false;
+    if (!showUserCategories && item.is_custom) return false;
     
     return true;
   });
 
+  let vendorNodes = categoriesArray.filter(item => item.type === 'vendor');
+  
+  // DEBUG: Log vendor data
+  console.log('🐛 DEBUG - transformCategoryData:');
+  console.log('  Total items:', categoriesArray.length);
+  console.log('  Categories:', filteredCategories.length);
+  console.log('  Vendor nodes:', vendorNodes.length, vendorNodes);
+  console.log('  includeVendors:', includeVendors);
+
   // Build category tree
   const categoryTree = buildCategoryTree(filteredCategories);
 
-  // Add vendor and transaction children if requested
+  // Add vendor nodes from API (if any) and transaction children if requested
   if (includeVendors || includeTransactions) {
+    // First add vendor nodes from API if they exist
+    if (vendorNodes.length > 0) {
+      addVendorNodesFromAPI(categoryTree, vendorNodes);
+    }
+    
+    // Then add vendor/transaction children from transaction data
     addVendorAndTransactionChildren(categoryTree, transactionsArray, {
-      includeVendors,
+      includeVendors: vendorNodes.length === 0, // Only create from transactions if no API vendors
       includeTransactions,
       categorySpendingTotals,
       vendorMappings
@@ -50,6 +64,53 @@ export const transformCategoryData = (categories = [], transactions = [], option
   }
 
   return categoryTree;
+};
+
+/**
+ * Add vendor nodes from API to the category tree
+ * @param {Array} categoryTree - The category tree to add vendors to
+ * @param {Array} vendorNodes - Vendor nodes from the API
+ */
+const addVendorNodesFromAPI = (categoryTree, vendorNodes) => {
+  console.log('🐛 DEBUG - addVendorNodesFromAPI called with:');
+  console.log('  vendorNodes count:', vendorNodes.length);
+  console.log('  vendorNodes data:', vendorNodes);
+  
+  // Create a map for quick category lookup
+  const categoryMap = new Map();
+  
+  const mapCategories = (nodes) => {
+    nodes.forEach(node => {
+      categoryMap.set(node.id, node);
+      if (node.children) {
+        mapCategories(node.children);
+      }
+    });
+  };
+  
+  mapCategories(categoryTree);
+  
+  console.log('  categoryMap size:', categoryMap.size);
+  console.log('  categoryMap keys:', Array.from(categoryMap.keys()));
+  
+  // Add vendor nodes to their parent categories
+  // Only include vendors that have a parent category
+  vendorNodes.forEach(vendor => {
+    const parentId = vendor.parent;
+    console.log(`  Processing vendor ${vendor.name}: parent=${parentId}, hasParent=${categoryMap.has(parentId)}`);
+    
+    if (parentId && categoryMap.has(parentId)) {
+      // Add to specific parent category
+      const parentCategory = categoryMap.get(parentId);
+      if (!parentCategory.children) {
+        parentCategory.children = [];
+      }
+      parentCategory.children.push({...vendor});
+      console.log(`    ✅ Added ${vendor.name} to ${parentCategory.name}`);
+    } else {
+      console.log(`    ❌ Skipped ${vendor.name} - no valid parent (${parentId})`);
+    }
+  });
 };
 
 /**

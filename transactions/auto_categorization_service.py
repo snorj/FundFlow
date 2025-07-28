@@ -198,11 +198,9 @@ class AutoCategorizationService:
         from django.db.models import Q
         
         return VendorRule.objects.filter(
-            # User can only access rules where both vendor and category are either:
-            # 1. System-level (user=None) OR 2. Owned by the current user
-            Q(vendor__user__isnull=True) | Q(vendor__user=self.user),  # System or user's vendors
-            Q(category__user__isnull=True) | Q(category__user=self.user),  # System or user's categories
-            is_persistent=True  # Only apply persistent rules automatically
+            Q(vendor__user=self.user) &  # User's vendors only
+            (Q(category__user__isnull=True) | Q(category__user=self.user)) &  # System or user's categories
+            Q(is_persistent=True)  # Only apply persistent rules automatically
         ).select_related('vendor', 'category').order_by('-updated_at').distinct()  # Newest rule wins
         
     def _process_transaction_batch(self, transactions: QuerySet, vendor_rules: QuerySet, 

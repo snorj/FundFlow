@@ -218,24 +218,34 @@ class VendorSerializer(serializers.ModelSerializer):
     # User field should not be directly set by API client, set internally in view
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     
-    # Add a derived field to show if it's a system-wide vendor
-    is_system_vendor = serializers.SerializerMethodField(read_only=True)
+    # Add parent_category field for tree structure
+    parent_category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.none(),  # Default empty queryset, will be set in __init__
+        required=False,
+        allow_null=True,
+        help_text="Parent category for this vendor in the tree structure."
+    )
 
     class Meta:
         model = Vendor
         fields = [
             'id',
             'name',
+            'display_name',
+            'parent_category',
             'user',
-            'is_system_vendor',
             'created_at',
             'updated_at',
         ]
         read_only_fields = ['id', 'user', 'created_at', 'updated_at']
 
-    def get_is_system_vendor(self, obj):
-        """Determine if the vendor is system-wide (no specific user)."""
-        return obj.user is None
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Set parent_category queryset to user's categories
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            from .models import Category
+            self.fields['parent_category'].queryset = Category.objects.filter(user=request.user)
 
     def validate_name(self, value):
         """
@@ -262,6 +272,22 @@ class VendorSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"A vendor named '{value}' already exists.")
 
         return value.strip()  # Return cleaned value
+
+    def validate_parent_category(self, value):
+        """
+        Ensure parent_category belongs to the user if provided.
+        """
+        if value is None:
+            return value
+            
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("User context not available.")
+            
+        if value.user != request.user:
+            raise serializers.ValidationError("Parent category must belong to the current user.")
+            
+        return value
 
 class TransactionCreateSerializer(serializers.ModelSerializer):
     """

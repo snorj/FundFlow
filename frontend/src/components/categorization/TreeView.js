@@ -51,6 +51,7 @@ const TreeView = ({
   onCategoryRename,
   onVendorEdit,
   onCategoryMove,
+  onVendorMove,
   selectedCategoryId,
   selectedVendorId,
   selectedTransactionId,
@@ -96,21 +97,21 @@ const TreeView = ({
   }, [setExpandedNodes]);
 
   // Move mode handlers
-  const handleStartMove = useCallback((category) => {
+  const handleStartMove = useCallback((node) => {
     setMoveMode({
       isActive: true,
-      movingCategory: category
+      movingCategory: node  // Keep same name for compatibility
     });
     
     // Auto-expand all categories to show move destinations
     setExpandedNodes(prev => {
       const newSet = new Set(prev);
       const expandAllCategories = (nodes) => {
-        nodes.forEach(node => {
-          if (node.type === 'category' && node.id !== category.id) {
-            newSet.add(node.id);
-            if (node.children) {
-              expandAllCategories(node.children);
+        nodes.forEach(treeNode => {
+          if (treeNode.type === 'category' && treeNode.id !== node.id) {
+            newSet.add(treeNode.id);
+            if (treeNode.children) {
+              expandAllCategories(treeNode.children);
             }
           }
         });
@@ -130,44 +131,53 @@ const TreeView = ({
   const handleMoveToRoot = useCallback(() => {
     if (!moveMode.movingCategory) return;
     
-    const confirmMessage = `Move "${moveMode.movingCategory.name}" to the top level?`;
+    const movingItem = moveMode.movingCategory;
+    const confirmMessage = `Move "${movingItem.name}" to the top level?`;
     if (window.confirm(confirmMessage)) {
-      if (onCategoryMove) {
-        onCategoryMove(moveMode.movingCategory.id, null, 'root');
+      if (movingItem.type === 'category' && onCategoryMove) {
+        onCategoryMove(movingItem.id, null, 'root');
+      } else if (movingItem.type === 'vendor' && onVendorMove) {
+        onVendorMove(movingItem.vendor_id, null, 'root');
       }
       handleCancelMove();
     }
-  }, [moveMode.movingCategory, onCategoryMove, handleCancelMove]);
+  }, [moveMode.movingCategory, onCategoryMove, onVendorMove, handleCancelMove]);
 
   const handleMoveToCategory = useCallback((targetCategory, position) => {
     if (!moveMode.movingCategory) return;
     
+    const movingItem = moveMode.movingCategory;
+    
     // Prevent moving to self
-    if (moveMode.movingCategory.id === targetCategory.id) return;
+    if (movingItem.id === targetCategory.id) return;
     
-    // Prevent circular dependencies
-    const isDescendant = (target, source) => {
-      if (!target.children || target.children.length === 0) return false;
-      return target.children.some(child => 
-        child.id === source.id || isDescendant(child, source)
-      );
-    };
-    
-    if (position === 'inside' && isDescendant(targetCategory, moveMode.movingCategory)) {
-      alert('Cannot move a category into its own subcategory.');
-      return;
+    // For categories, prevent circular dependencies
+    if (movingItem.type === 'category') {
+      const isDescendant = (target, source) => {
+        if (!target.children || target.children.length === 0) return false;
+        return target.children.some(child => 
+          child.id === source.id || isDescendant(child, source)
+        );
+      };
+      
+      if (position === 'inside' && isDescendant(targetCategory, movingItem)) {
+        alert('Cannot move a category into its own subcategory.');
+        return;
+      }
     }
     
     const positionText = position === 'inside' ? 'inside' : position === 'before' ? 'above' : 'below';
-    const confirmMessage = `Move "${moveMode.movingCategory.name}" ${positionText} "${targetCategory.name}"?`;
+    const confirmMessage = `Move "${movingItem.name}" ${positionText} "${targetCategory.name}"?`;
     
     if (window.confirm(confirmMessage)) {
-      if (onCategoryMove) {
-        onCategoryMove(moveMode.movingCategory.id, targetCategory.id, position);
+      if (movingItem.type === 'category' && onCategoryMove) {
+        onCategoryMove(movingItem.id, targetCategory.id, position);
+      } else if (movingItem.type === 'vendor' && onVendorMove) {
+        onVendorMove(movingItem.vendor_id, targetCategory.id, position);
       }
       handleCancelMove();
     }
-  }, [moveMode.movingCategory, onCategoryMove, handleCancelMove]);
+  }, [moveMode.movingCategory, onCategoryMove, onVendorMove, handleCancelMove]);
 
   // Enhanced bulk operations
   const handleBulkSelect = useCallback((nodeId, selected) => {

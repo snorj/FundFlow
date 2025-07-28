@@ -697,22 +697,18 @@ class CategoryListCreateView(generics.ListCreateAPIView):
             for cat_data in categories_data:
                 cat_data['type'] = 'category'
             
-            # Vendor nodes are not part of the main paginated queryset.
-            # They are added to the response *after* categories for the current page are fetched.
-            # This means vendor nodes will appear on every page if this logic is kept as is.
-            # If vendors should also be paginated or only appear with the first page, this needs more thought.
-            # For now, let's keep the existing vendor logic, it will append to the paginated category list.
-            mappings = DescriptionMapping.objects.filter(user=user, assigned_category__isnull=False)
+            # Add vendor nodes to the tree
+            vendors = Vendor.objects.filter(user=user)
             vendor_nodes = []
-            for dm in mappings:
+            for vendor in vendors:
                 vendor_nodes.append({
-                    'id': f"vendor-{dm.id}", 
-                    'name': dm.clean_name, 
-                    'original_description': dm.original_description, 
+                    'id': f"vendor-{vendor.id}", 
+                    'name': vendor.display_name or vendor.name,
                     'type': 'vendor',
-                    'parent': dm.assigned_category_id, 
+                    'parent': vendor.parent_category_id, 
                     'user': user.id, 
-                    'is_custom': True, 
+                    'is_custom': True,
+                    'vendor_id': vendor.id,  # Include actual vendor ID for operations
                 })
             
             # The response from get_paginated_response will include the categories_data
@@ -753,9 +749,19 @@ class CategoryListCreateView(generics.ListCreateAPIView):
         categories_data = category_serializer.data
         for cat_data in categories_data:
             cat_data['type'] = 'category'
-        mappings = DescriptionMapping.objects.filter(user=user, assigned_category__isnull=False)
-        vendor_nodes = [] # As above
-        # ... populate vendor_nodes ...
+        # Add vendor nodes for non-paginated response
+        vendors = Vendor.objects.filter(user=user)
+        vendor_nodes = []
+        for vendor in vendors:
+            vendor_nodes.append({
+                'id': f"vendor-{vendor.id}", 
+                'name': vendor.display_name or vendor.name,
+                'type': 'vendor',
+                'parent': vendor.parent_category_id, 
+                'user': user.id, 
+                'is_custom': True,
+                'vendor_id': vendor.id,
+            })
         combined_data = categories_data + vendor_nodes
         return Response(combined_data)
 
@@ -934,13 +940,29 @@ class VendorDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         """
-        Return vendors accessible to the user (system vendors + their own).
+        Return vendors accessible to the user (only their own vendors).
         """
         user = self.request.user
-        return Vendor.objects.filter(Q(user__isnull=True) | Q(user=user)).distinct()
+        return Vendor.objects.filter(user=user)
 
     def perform_update(self, serializer):
-        """Ensure user context is available for serializer validation during update."""
+        """Handle vendor updates, including vendor rule handling when moving vendors."""
+        vendor = self.get_object()
+        old_parent_category = vendor.parent_category
+        new_parent_category = serializer.validated_data.get('parent_category')
+        
+        # Check if vendor is being moved (parent_category changed)
+        if old_parent_category != new_parent_category:
+            from .models import VendorRule
+            # Check if vendor has existing rules
+            existing_rule = VendorRule.objects.filter(vendor=vendor).first()
+            
+            if existing_rule:
+                # If vendor has rules and is being moved, we need to handle this
+                # For now, we'll allow the move but the frontend should prompt the user
+                # The actual rule handling logic will be in a separate endpoint
+                logger.info(f"Vendor {vendor.id} with existing rule {existing_rule.id} is being moved from category {old_parent_category} to {new_parent_category}")
+        
         serializer.save()  # User field is read-only, won't be changed
 
     def get_serializer_context(self):

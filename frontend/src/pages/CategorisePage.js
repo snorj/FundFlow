@@ -7,6 +7,9 @@ import VendorRenameModal from '../components/transactions/VendorRenameModal';
 import categoryService from '../services/categories';
 import transactionService from '../services/transactions';
 import vendorMappingService from '../services/vendorMapping';
+import vendorService from '../services/vendors';
+import vendorRuleService from '../services/vendorRules';
+import VendorRuleConflictModal from '../components/transactions/VendorRuleConflictModal';
 import { FiPlus, FiLoader, FiAlertCircle, FiEdit, FiArrowRight, FiSearch } from 'react-icons/fi';
 import './CategorisePage.css'; // We'll create this CSS file next
 
@@ -39,6 +42,15 @@ const CategorisePage = () => {
   // Error states  
   const [createError, setCreateError] = useState(null);
   const [deleteError, setDeleteError] = useState(null);
+  
+  // Vendor rule conflict modal state
+  const [vendorRuleConflictModal, setVendorRuleConflictModal] = useState({
+    isOpen: false,
+    vendor: null,
+    currentRule: null,
+    newParentCategory: null,
+    pendingMove: null
+  });
 
   // Transaction details modal state
   const [selectedTransaction, setSelectedTransaction] = useState(null);
@@ -294,6 +306,156 @@ const CategorisePage = () => {
     }
   }, [allItems, categoryService, setAllItems, fetchItems]);
 
+  // Handler for vendor move operations
+  const handleVendorMove = useCallback(async (vendorId, targetCategoryId, position) => {
+    try {
+      // Find the vendor being moved
+      const vendorIndex = allItems.findIndex(item => 
+        item.type === 'vendor' && item.vendor_id === vendorId
+      );
+      
+      if (vendorIndex === -1) {
+        throw new Error('Vendor not found');
+      }
+      
+      const vendor = allItems[vendorIndex];
+      
+      // Determine the new parent based on position
+      let newParentId = null;
+      if (position === 'inside') {
+        newParentId = targetCategoryId;
+      } else if (position === 'before' || position === 'after') {
+        const targetCategory = allItems.find(item => item.id === targetCategoryId);
+        newParentId = targetCategory?.parent || null;
+      } else if (position === 'root') {
+        newParentId = null;
+      }
+      
+      // Check if vendor has existing rules
+      const vendorRules = await vendorRuleService.getVendorRulesByVendor(vendor.name);
+      
+      if (vendorRules.length > 0) {
+        // Show modal for rule conflict resolution
+        const newParentCategory = newParentId ? 
+          allItems.find(item => item.id === newParentId && item.type === 'category') : 
+          null;
+          
+        setVendorRuleConflictModal({
+          isOpen: true,
+          vendor: vendor,
+          currentRule: vendorRules[0], // Assuming one rule per vendor
+          newParentCategory: newParentCategory,
+          pendingMove: { vendorId, targetCategoryId, position, newParentId }
+        });
+        return; // Don't proceed with move until user decides
+      }
+      
+      // No rules, proceed with normal move
+      await performVendorMove(vendorId, newParentId, position);
+      
+    } catch (error) {
+      console.error('Failed to move vendor:', error);
+      alert('Failed to move vendor: ' + (error.message || 'Unknown error'));
+    }
+  }, [allItems, vendorRuleService, setVendorRuleConflictModal]);
+
+  // Actual vendor move operation
+  const performVendorMove = useCallback(async (vendorId, newParentId, position) => {
+    try {
+      // Perform optimistic update
+      const updatedItems = [...allItems];
+      const vendorIndex = updatedItems.findIndex(item => 
+        item.type === 'vendor' && item.vendor_id === vendorId
+      );
+      
+      if (vendorIndex === -1) {
+        throw new Error('Vendor not found');
+      }
+      
+      const vendor = { ...updatedItems[vendorIndex] };
+      vendor.parent = newParentId;
+      updatedItems[vendorIndex] = vendor;
+      
+      // Optimistically update the UI
+      setAllItems(updatedItems);
+      
+      // Convert IDs to integers to match backend expectations
+      const parentIdInt = newParentId ? parseInt(newParentId, 10) : null;
+      
+      // Validate that ID conversion was successful
+      if (newParentId && isNaN(parentIdInt)) {
+        throw new Error('Invalid parent category ID format');
+      }
+      
+      // Perform the actual backend update
+      await vendorService.patchVendor(vendorId, { 
+        parent_category: parentIdInt 
+      });
+      
+      // Success! No need to refetch - optimistic update is already applied
+      console.log('Vendor moved successfully:', vendorId, 'to position:', position);
+      
+    } catch (error) {
+      console.error('Failed to move vendor:', error);
+      
+      // On error, rollback by refetching the original data
+      await fetchItems();
+      
+      // Show error feedback
+      console.error('Failed to move vendor:', error.message || 'Failed to move vendor');
+      alert('Failed to move vendor: ' + (error.message || 'Unknown error'));
+    }
+  }, [allItems, vendorService, setAllItems, fetchItems]);
+
+  // Vendor rule conflict modal handlers
+  const handleKeepCurrentRule = useCallback(async () => {
+    // Keep the current rule and proceed with vendor move
+    const { pendingMove } = vendorRuleConflictModal;
+    if (pendingMove) {
+      await performVendorMove(pendingMove.vendorId, pendingMove.newParentId, pendingMove.position);
+    }
+  }, [vendorRuleConflictModal, performVendorMove]);
+
+  const handleInheritFromParent = useCallback(async () => {
+    // Update the rule to use the new parent category and proceed with move
+    const { currentRule, newParentCategory, pendingMove } = vendorRuleConflictModal;
+    if (currentRule && newParentCategory && pendingMove) {
+      try {
+        await vendorRuleService.updateVendorRule(currentRule.id, {
+          category_id: newParentCategory.id
+        });
+        await performVendorMove(pendingMove.vendorId, pendingMove.newParentId, pendingMove.position);
+      } catch (error) {
+        console.error('Failed to update vendor rule:', error);
+        throw error;
+      }
+    }
+  }, [vendorRuleConflictModal, vendorRuleService, performVendorMove]);
+
+  const handleRemoveRule = useCallback(async () => {
+    // Remove the rule and proceed with vendor move
+    const { currentRule, pendingMove } = vendorRuleConflictModal;
+    if (currentRule && pendingMove) {
+      try {
+        await vendorRuleService.deleteVendorRule(currentRule.id);
+        await performVendorMove(pendingMove.vendorId, pendingMove.newParentId, pendingMove.position);
+      } catch (error) {
+        console.error('Failed to delete vendor rule:', error);
+        throw error;
+      }
+    }
+  }, [vendorRuleConflictModal, vendorRuleService, performVendorMove]);
+
+  const closeVendorRuleModal = useCallback(() => {
+    setVendorRuleConflictModal({
+      isOpen: false,
+      vendor: null,
+      currentRule: null,
+      newParentCategory: null,
+      pendingMove: null
+    });
+  }, []);
+
   const itemsById = useMemo(() => 
     new Map(allItems.map(item => [item.id, item]))
   , [allItems]);
@@ -349,7 +511,17 @@ const CategorisePage = () => {
       (visibleItemIds === null || visibleItemIds.has(item.id))
     );
 
-    return transformCategoryData(filteredCategories, transactions, {
+    // Filter vendor nodes based on search
+    let filteredVendors = allItems.filter(item => 
+      item.type === 'vendor' &&
+      (visibleItemIds === null || visibleItemIds.has(item.id))
+    );
+
+    // Pass both categories and vendors to the transform function
+    // The transform function will build the tree structure correctly
+    const combinedItems = [...filteredCategories, ...filteredVendors];
+    
+    return transformCategoryData(combinedItems, transactions, {
       includeVendors: true,
       includeTransactions: true,
       showSystemCategories: true,
@@ -508,6 +680,7 @@ const CategorisePage = () => {
               onCategoryRename={handleCategoryRename}
               onVendorEdit={handleVendorEdit} // Pass vendor editing prop
               onCategoryMove={handleCategoryMove}
+              onVendorMove={handleVendorMove}
               selectedCategoryId={selectedCategoryId}
               selectedVendorId={selectedVendorId}
               selectedTransactionId={selectedTransactionId}
@@ -540,6 +713,18 @@ const CategorisePage = () => {
           onSuccess={handleVendorRenameSuccess}
         />
       )}
+
+      {/* Vendor Rule Conflict Modal */}
+      <VendorRuleConflictModal
+        isOpen={vendorRuleConflictModal.isOpen}
+        onClose={closeVendorRuleModal}
+        vendor={vendorRuleConflictModal.vendor}
+        currentRule={vendorRuleConflictModal.currentRule}
+        newParentCategory={vendorRuleConflictModal.newParentCategory}
+        onKeepCurrentRule={handleKeepCurrentRule}
+        onInheritFromParent={handleInheritFromParent}
+        onRemoveRule={handleRemoveRule}
+      />
     </div>
   );
 };

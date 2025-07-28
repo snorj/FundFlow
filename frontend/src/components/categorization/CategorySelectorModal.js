@@ -63,11 +63,17 @@ const CategorySelectorModal = ({
 
   // Transform categories to tree format and calculate spending totals
   const processedData = useMemo(() => {
-    let filtered = normalizedCategories.filter(item => !item.type || item.type === 'category');
+    // Keep both categories and vendors if showVendors is true
+    let filtered = normalizedCategories.filter(item => {
+      if (!item.type || item.type === 'category') return true;
+      if (showVendors && item.type === 'vendor') return true;
+      return false;
+    });
     
-    // Calculate spending totals if transactions are provided
+    // Calculate spending totals if transactions are provided (only for categories)
+    const categoriesOnly = filtered.filter(item => !item.type || item.type === 'category');
     const categorySpendingTotals = transactions.length > 0 
-      ? calculateCategorySpendingTotals(transactions, filtered)
+      ? calculateCategorySpendingTotals(transactions, categoriesOnly)
       : {};
 
     // Transform to tree format for TreeView

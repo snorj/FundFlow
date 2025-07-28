@@ -74,9 +74,15 @@ class Vendor(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
+        help_text="User who owns this vendor."
+    )
+    parent_category = models.ForeignKey(
+        'Category',
+        on_delete=models.CASCADE,
         null=True,
         blank=True,
-        help_text="User who owns this vendor. Null for system-wide vendors."
+        related_name='vendors',
+        help_text="Parent category for this vendor in the tree structure."
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -87,6 +93,7 @@ class Vendor(models.Model):
         indexes = [
             models.Index(fields=['user']),
             models.Index(fields=['display_name']),
+            models.Index(fields=['parent_category']),
             models.Index(fields=['created_at']),
         ]
 
