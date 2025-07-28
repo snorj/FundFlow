@@ -26,6 +26,56 @@ const formatCurrencyAmount = (amount, currencyCode) => {
   return `${symbol}${formatted}`;
 };
 
+// Helper function to group transactions by year and month
+const groupTransactionsByPeriod = (transactions) => {
+  const groups = {};
+  
+  transactions.forEach(tx => {
+    const date = new Date(tx.transaction_date);
+    const year = date.getFullYear();
+    const month = date.getMonth(); // 0-11
+    const key = `${year}-${month}`;
+    
+    if (!groups[key]) {
+      groups[key] = {
+        year,
+        month,
+        monthName: date.toLocaleString('default', { month: 'long' }),
+        transactions: [],
+        totalAmount: 0,
+        totalDebit: 0,
+        totalCredit: 0,
+        count: 0
+      };
+    }
+    
+    groups[key].transactions.push(tx);
+    groups[key].count++;
+    
+    // Calculate totals for summary
+    const amount = parseFloat(tx.original_amount) || 0;
+    if (tx.direction === 'DEBIT') {
+      groups[key].totalDebit += amount;
+    } else {
+      groups[key].totalCredit += amount;
+    }
+    groups[key].totalAmount = groups[key].totalCredit - groups[key].totalDebit;
+  });
+  
+  // Sort groups by year and month (newest first)
+  const sortedGroups = Object.values(groups).sort((a, b) => {
+    if (a.year !== b.year) return b.year - a.year;
+    return b.month - a.month;
+  });
+  
+  // Sort transactions within each group by date (newest first)
+  sortedGroups.forEach(group => {
+    group.transactions.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date));
+  });
+  
+  return sortedGroups;
+};
+
 const NewDashboardPage = () => {
   const [balance, setBalance] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -35,9 +85,7 @@ const NewDashboardPage = () => {
   const [transactions, setTransactions] = useState([]);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
-  const [pageSize, setPageSize] = useState(10); // Assuming a page size, or get from API
+  // Removed pagination state since we now fetch all transactions in a scrollable container
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -45,6 +93,9 @@ const NewDashboardPage = () => {
   // Search state
   const [searchParams, setSearchParams] = useState(null);
   const [totalResultsCount, setTotalResultsCount] = useState(0);
+
+  // New state for group collapse/expand
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set());
 
   const availableCurrencies = ['AUD', 'USD', 'GBP', 'EUR']; // Define available currencies
 
@@ -70,10 +121,10 @@ const NewDashboardPage = () => {
     setTransactionsLoading(true);
     setTransactionsError(null);
     try {
-      // Build query parameters
+      // Build query parameters - Always fetch all transactions for scrollable grouping
       const queryParams = {
-        page: search ? 1 : page, // Always use page 1 when searching
-        page_size: search ? 1000 : pageSize, // Get more results when searching (ignore pagination)
+        page: 1, // Always use page 1
+        page_size: 10000, // Get all transactions (high limit)
       };
 
       // Add search parameters if provided
@@ -95,33 +146,22 @@ const NewDashboardPage = () => {
       console.log('📊 Dashboard: Fetching transactions with params:', queryParams);
       const response = await transactionService.getTransactions(queryParams);
       
-      // Handle DRF paginated response properly
+      // Handle response - we're now fetching all transactions
       if (response && response.results) {
         // Paginated response from DRF
         setTransactions(response.results || []); 
         setTotalResultsCount(response.count || 0);
-        
-        if (search) {
-          // When searching, ignore pagination
-          setTotalPages(1);
-          console.log('📋 Dashboard: Search results:', response.results.length, 'transactions, total matching:', response.count);
-        } else {
-          // Normal pagination
-          setTotalPages(Math.ceil(response.count / pageSize));
-          console.log('📋 Dashboard: Set', response.results.length, 'transactions, total pages:', Math.ceil(response.count / pageSize));
-        }
+        console.log('📋 Dashboard: Loaded', response.results.length, 'transactions, total available:', response.count);
       } else if (Array.isArray(response)) {
         // Direct array response (non-paginated)
         setTransactions(response);
         setTotalResultsCount(response.length);
-        setTotalPages(1);
-        console.log('📋 Dashboard: Set', response.length, 'transactions (non-paginated)');
+        console.log('📋 Dashboard: Loaded', response.length, 'transactions (non-paginated)');
       } else {
         // Unexpected response format
         console.warn('⚠️ Dashboard: Unexpected response format:', response);
         setTransactions([]);
         setTotalResultsCount(0);
-        setTotalPages(0);
       }
 
     } catch (err) {
@@ -129,24 +169,22 @@ const NewDashboardPage = () => {
       setTransactionsError(err.message || 'Failed to fetch transactions. Please try again.');
       setTransactions([]);
       setTotalResultsCount(0);
-      setTotalPages(0);
     } finally {
       setTransactionsLoading(false);
     }
-  }, [pageSize]);
+  }, []);
 
-  // Initial load and pagination changes (only when not searching)
+  // Initial load (no pagination needed since we fetch all transactions)
   useEffect(() => {
     if (!searchParams) {
-      fetchTransactionsData(currentPage, null);
+      fetchTransactionsData(1, null);
     }
-  }, [fetchTransactionsData, currentPage, searchParams]);
+  }, [fetchTransactionsData, searchParams]);
 
   // Handle search
   const handleSearch = useCallback((newSearchParams) => {
     console.log('🔍 Dashboard: Search params:', newSearchParams);
     setSearchParams(newSearchParams);
-    setCurrentPage(1); // Reset to first page when searching
     // Immediately fetch search results
     fetchTransactionsData(1, newSearchParams);
   }, [fetchTransactionsData]);
@@ -155,7 +193,6 @@ const NewDashboardPage = () => {
   const handleClearSearch = useCallback(() => {
     console.log('🧹 Dashboard: Clearing search');
     setSearchParams(null);
-    setCurrentPage(1); // Reset to first page when clearing
     // Immediately fetch normal results
     fetchTransactionsData(1, null);
   }, [fetchTransactionsData]);
@@ -176,7 +213,7 @@ const NewDashboardPage = () => {
       try {
         await transactionService.deleteTransaction(transactionId);
         // Refresh the transaction list
-        fetchTransactionsData(currentPage); 
+        fetchTransactionsData(1, searchParams); 
         // Potentially show a success message
       } catch (err) {
         console.error("Failed to delete transaction:", err);
@@ -191,7 +228,7 @@ const NewDashboardPage = () => {
       await transactionService.updateTransaction(id, updatedData);
       setIsEditModalOpen(false);
       setEditingTransaction(null);
-      fetchTransactionsData(currentPage); // Refresh transactions
+      fetchTransactionsData(1, searchParams); // Refresh transactions
       // Optionally, show a success message
     } catch (err) {
       console.error("Failed to update transaction:", err);
@@ -204,6 +241,19 @@ const NewDashboardPage = () => {
 
   const handleCurrencyChange = (event) => {
     setSelectedCurrency(event.target.value);
+  };
+
+  // Helper function to toggle group collapse/expand
+  const toggleGroupCollapse = (groupKey) => {
+    setCollapsedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupKey)) {
+        newSet.delete(groupKey);
+      } else {
+        newSet.add(groupKey);
+      }
+      return newSet;
+    });
   };
 
   return (
@@ -361,71 +411,169 @@ const NewDashboardPage = () => {
           </div>
         )}
 
-        {transactionsLoading && <p>Loading transactions...</p>}
-        {transactionsError && <p style={{ color: 'red' }}>Error: {transactionsError}</p>}
+        {transactionsLoading && <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>Loading transactions...</div>}
+        {transactionsError && <div style={{ padding: '20px', color: '#d32f2f', backgroundColor: '#ffebee', borderRadius: '6px', marginBottom: '15px' }}>Error: {transactionsError}</div>}
         {!transactionsLoading && !transactionsError && transactions.length === 0 && (
-          <p>No transactions found.</p>
+          <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No transactions found.</div>
         )}
         {!transactionsLoading && !transactionsError && transactions.length > 0 && (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #ddd' }}>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Date</th>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Description</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Amount</th>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Category</th>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map(tx => (
-                <tr key={tx.id} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '8px' }}>{new Date(tx.transaction_date).toLocaleDateString()}</td>
-                  <td style={{ padding: '8px' }}>{tx.description}</td>
-                  <td style={{
-                    padding: '8px', 
-                    textAlign: 'right', 
-                    color: tx.direction === 'DEBIT' ? 'red' : 'green' 
-                  }}>
-                    {tx.original_amount && tx.original_currency ? 
-                     `${tx.direction === 'DEBIT' ? '-' : ''}${getCurrencySymbol(tx.original_currency)}${parseFloat(tx.original_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 
-                     'N/A'}
-                  </td>
-                  <td style={{ padding: '8px' }}>{tx.category ? tx.category.name : 'Uncategorized'}</td>
-                  <td style={{ padding: '8px' }}>
-                    <button 
-                      onClick={() => handleEditTransaction(tx.id)} 
-                      style={{ marginRight: '5px' }}
-                    >
-                      Edit
-                    </button>
-                    <button onClick={() => handleDeleteTransaction(tx.id)}>
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {/* Pagination Controls - Hidden when searching */}
-        {!transactionsLoading && !transactionsError && totalPages > 0 && !searchParams && (
-          <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            <button 
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-              disabled={currentPage === 1}
-              style={{ marginRight: '10px' }}
-            >
-              Previous
-            </button>
-            <span>Page {currentPage} of {totalPages}</span>
-            <button 
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              disabled={currentPage === totalPages}
-              style={{ marginLeft: '10px' }}
-            >
-              Next
-            </button>
+          <div style={{ 
+            border: '1px solid #e0e0e0', 
+            borderRadius: '8px', 
+            backgroundColor: 'white',
+            maxHeight: '600px',
+            overflowY: 'auto'
+          }}>
+            {groupTransactionsByPeriod(transactions).map(group => {
+              const groupKey = `${group.year}-${group.month}`;
+              const isCollapsed = collapsedGroups.has(groupKey);
+              
+              return (
+                <div key={groupKey} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                  {/* Group Header */}
+                  <div 
+                    onClick={() => toggleGroupCollapse(groupKey)}
+                    style={{
+                      padding: '16px 20px',
+                      backgroundColor: '#fafafa',
+                      borderBottom: isCollapsed ? 'none' : '1px solid #e0e0e0',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      userSelect: 'none',
+                      ':hover': { backgroundColor: '#f5f5f5' }
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ 
+                        fontSize: '18px',
+                        transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.2s ease'
+                      }}>
+                        ▼
+                      </span>
+                      <div>
+                        <div style={{ fontSize: '16px', fontWeight: '600', color: '#333' }}>
+                          {group.monthName} {group.year}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
+                          {group.count} transaction{group.count !== 1 ? 's' : ''}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Summary when collapsed or always visible */}
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ 
+                        fontSize: '16px', 
+                        fontWeight: '600',
+                        color: group.totalAmount >= 0 ? '#2e7d32' : '#d32f2f'
+                      }}>
+                        {group.totalAmount >= 0 ? '+' : ''}
+                        {formatCurrencyAmount(Math.abs(group.totalAmount), selectedCurrency)}
+                      </div>
+                      {isCollapsed && (
+                        <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>
+                          In: {formatCurrencyAmount(group.totalCredit, selectedCurrency)} • 
+                          Out: {formatCurrencyAmount(group.totalDebit, selectedCurrency)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Group Content */}
+                  {!isCollapsed && (
+                    <div>
+                      {group.transactions.map(tx => (
+                        <div 
+                          key={tx.id} 
+                          style={{
+                            padding: '12px 20px',
+                            borderBottom: '1px solid #f5f5f5',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            ':hover': { backgroundColor: '#fafafa' }
+                          }}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
+                              <div style={{ fontSize: '14px', fontWeight: '500', color: '#333' }}>
+                                {tx.description}
+                              </div>
+                              <div style={{ 
+                                fontSize: '11px', 
+                                color: '#666',
+                                backgroundColor: '#f0f0f0',
+                                padding: '2px 6px',
+                                borderRadius: '3px'
+                              }}>
+                                {new Date(tx.transaction_date).toLocaleDateString()}
+                              </div>
+                            </div>
+                            <div style={{ 
+                              fontSize: '12px', 
+                              color: '#666',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}>
+                              <span>{tx.category ? tx.category.name : 'Uncategorized'}</span>
+                            </div>
+                          </div>
+                          
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              color: tx.direction === 'DEBIT' ? '#d32f2f' : '#2e7d32',
+                              minWidth: '80px',
+                              textAlign: 'right'
+                            }}>
+                              {tx.original_amount && tx.original_currency ? 
+                               `${tx.direction === 'DEBIT' ? '-' : '+'}${getCurrencySymbol(tx.original_currency)}${parseFloat(tx.original_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 
+                               'N/A'}
+                            </div>
+                            
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button 
+                                onClick={() => handleEditTransaction(tx.id)}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  border: '1px solid #ddd',
+                                  borderRadius: '4px',
+                                  backgroundColor: 'white',
+                                  color: '#666',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteTransaction(tx.id)}
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  border: '1px solid #ffcdd2',
+                                  borderRadius: '4px',
+                                  backgroundColor: '#ffebee',
+                                  color: '#d32f2f',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
