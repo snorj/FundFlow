@@ -49,9 +49,10 @@ const transactionService = {
         }
     },
 
-    uploadTransactions: async (file) => {
+    uploadTransactions: async (file, accountBaseCurrency = 'EUR') => {
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('account_base_currency', accountBaseCurrency);
         
         const response = await api.post('/transactions/upload/', formData, {
             headers: {

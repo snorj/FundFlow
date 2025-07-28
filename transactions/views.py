@@ -1033,11 +1033,13 @@ class TransactionCSVUploadView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
-    EXPECTED_HEADERS = [
-        "Date", "Name / Description", "Account", "Counterparty",
-        "Code", "Debit/credit", "Amount (EUR)", "Transaction type",
-        "Notifications"
-    ]
+    def get_expected_headers(self, currency_code):
+        """Generate expected headers based on the account currency"""
+        return [
+            "Date", "Name / Description", "Account", "Counterparty",
+            "Code", "Debit/credit", f"Amount ({currency_code})", "Transaction type",
+            "Notifications"
+        ]
 
     def post(self, request, *args, **kwargs):
         logger.info(f"CSV Upload initiated by user: {request.user.username} ({request.user.id})")
@@ -1054,6 +1056,8 @@ class TransactionCSVUploadView(APIView):
         
         # --- CSV Currency is now dynamic based on account ---
         CSV_FILE_CURRENCY = account_base_currency
+        # Get dynamic expected headers based on currency
+        EXPECTED_HEADERS = self.get_expected_headers(account_base_currency)
         # --- End Currency Setup ---
 
         if not file_obj: # ... (file validation as before) ...
@@ -1071,9 +1075,9 @@ class TransactionCSVUploadView(APIView):
                  return Response({'error': 'CSV file is empty or contains only headers.'}, status=status.HTTP_400_BAD_REQUEST)
             # ... (header validation logic remains the same) ...
             normalized_headers = [h.strip().lower() for h in headers]
-            normalized_expected = [h.strip().lower() for h in self.EXPECTED_HEADERS]
+            normalized_expected = [h.strip().lower() for h in EXPECTED_HEADERS]
             if normalized_headers != normalized_expected:
-                 error_detail = "CSV headers do not match expected format. Please ensure columns are: " + ", ".join(self.EXPECTED_HEADERS)
+                 error_detail = "CSV headers do not match expected format. Please ensure columns are: " + ", ".join(EXPECTED_HEADERS)
                  return Response({'error': error_detail}, status=status.HTTP_400_BAD_REQUEST)
 
             potential_transactions_data = []
@@ -1084,8 +1088,8 @@ class TransactionCSVUploadView(APIView):
             logger.info(f"User {current_user.id}: Phase 1 - Parsing CSV (Assumed Currency: {CSV_FILE_CURRENCY})...")
             for i, row in enumerate(reader, start=1):
                 processed_rows += 1
-                if len(row) != len(self.EXPECTED_HEADERS): # ... (skip row logic) ...
-                    errors.append(f"Row {i+1}: Incorrect number of columns ({len(row)}), expected {len(self.EXPECTED_HEADERS)}. Row skipped.")
+                if len(row) != len(EXPECTED_HEADERS): # ... (skip row logic) ...
+                    errors.append(f"Row {i+1}: Incorrect number of columns ({len(row)}), expected {len(EXPECTED_HEADERS)}. Row skipped.")
                     continue
                 try:
                     raw_date_str, raw_description, raw_account, raw_counterparty, raw_code, raw_debit_credit_str, raw_amount_str, raw_type, raw_notify = [r.strip() for r in row]
