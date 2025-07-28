@@ -333,7 +333,6 @@ const TransactionSearchBar = ({ onSearch, onClear }) => {
         <div className="search-field">
           <label className="search-label">Vendor</label>
           <div className="search-input-container">
-            <FiSearch className="search-icon" />
             <input
               ref={vendorInputRef}
               type="text"
@@ -373,7 +372,6 @@ const TransactionSearchBar = ({ onSearch, onClear }) => {
         <div className="search-field">
           <label className="search-label">Category</label>
           <div className="search-input-container">
-            <FiSearch className="search-icon" />
             <input
               ref={categoryInputRef}
               type="text"
@@ -424,39 +422,41 @@ const TransactionSearchBar = ({ onSearch, onClear }) => {
             ))}
           </select>
         </div>
+      </div>
 
-        {/* Custom Date Range */}
-        {searchState.datePreset === 'custom' && (
-          <>
-            <div className="search-field">
-              <label className="search-label">From</label>
-              <div className="search-input-container">
-                <FiCalendar className="search-icon" />
-                <input
-                  type="date"
-                  value={searchState.dateFrom}
-                  onChange={(e) => setSearchState(prev => ({ ...prev, dateFrom: e.target.value }))}
-                  className="search-input"
-                />
-              </div>
+      {/* Custom Date Range */}
+      {searchState.datePreset === 'custom' && (
+        <div className="date-range-group">
+          <div className="search-field">
+            <label className="search-label">From Date</label>
+            <div className="search-input-container">
+              <FiCalendar className="search-icon" />
+              <input
+                type="date"
+                value={searchState.dateFrom}
+                onChange={(e) => setSearchState(prev => ({ ...prev, dateFrom: e.target.value }))}
+                className="search-input"
+              />
             </div>
-            <div className="search-field">
-              <label className="search-label">To</label>
-              <div className="search-input-container">
-                <FiCalendar className="search-icon" />
-                <input
-                  type="date"
-                  value={searchState.dateTo}
-                  onChange={(e) => setSearchState(prev => ({ ...prev, dateTo: e.target.value }))}
-                  className="search-input"
-                />
-              </div>
+          </div>
+          <div className="search-field">
+            <label className="search-label">To Date</label>
+            <div className="search-input-container">
+              <FiCalendar className="search-icon" />
+              <input
+                type="date"
+                value={searchState.dateTo}
+                onChange={(e) => setSearchState(prev => ({ ...prev, dateTo: e.target.value }))}
+                className="search-input"
+              />
             </div>
-          </>
-        )}
+          </div>
+        </div>
+      )}
 
-        {/* Search Button */}
-        <div className="search-field">
+      {/* Search Actions */}
+      <div className="search-actions">
+        <div className="button-group">
           <button
             onClick={handleSearchClick}
             className="search-button"
@@ -465,21 +465,21 @@ const TransactionSearchBar = ({ onSearch, onClear }) => {
             <FiSearch />
             Search
           </button>
+          
+          {hasActiveFilters && (
+            <>
+              <div className="button-separator"></div>
+              <button
+                onClick={handleClear}
+                className="search-clear-button"
+                title="Clear all filters"
+              >
+                <FiX />
+                Clear
+              </button>
+            </>
+          )}
         </div>
-
-        {/* Clear Button */}
-        {hasActiveFilters && (
-          <div className="search-field">
-            <button
-              onClick={handleClear}
-              className="search-clear-button"
-              title="Clear all filters"
-            >
-              <FiX />
-              Clear
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

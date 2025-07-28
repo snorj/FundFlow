@@ -484,48 +484,58 @@ const CategoriseTransactionsPage = () => {
 
             {/* Selection Controls */}
             <div className="selection-controls">
-                <div className="bulk-controls">
-                    <button 
-                        className="select-all-button"
-                        onClick={handleSelectAll}
-                        disabled={isSubmitting}
-                    >
-                        {allSelected ? <FiCheckSquare /> : <FiSquare />}
-                        {allSelected ? 'Deselect All' : 'Select All'}
-                    </button>
-                    
-                    <span className="selection-count">
-                        {selectedTransactionIds.size} selected
-                    </span>
+                <div className="selection-header">
+                    <div className="bulk-controls">
+                        <button 
+                            className="select-all-button"
+                            onClick={handleSelectAll}
+                            disabled={isSubmitting}
+                        >
+                            {allSelected ? <FiCheckSquare /> : <FiSquare />}
+                            {allSelected ? 'Deselect All' : 'Select All'}
+                        </button>
+                        
+                        <span className="selection-count">
+                            {selectedTransactionIds.size} selected
+                        </span>
+                    </div>
                 </div>
 
-                <div className="categorization-controls">
-                    <button
-                        className="category-select-button"
-                        onClick={() => setIsCategoryModalOpen(true)}
-                        disabled={isSubmitting || selectedTransactionIds.size === 0}
-                    >
-                        <FiTag />
-                        {selectedCategory ? selectedCategory.name : 'Select Category'}
-                    </button>
-                    
-                    <button
-                        className="categorize-button"
-                        onClick={handleCategorizeSelected}
-                        disabled={isSubmitting || selectedTransactionIds.size === 0 || !selectedCategory}
-                    >
-                        {isSubmitting ? <FiLoader className="spinner-inline" /> : <FiCheck />}
-                        Categorize Selected
-                    </button>
+                <div className="categorization-actions">
+                    <div className="categorization-controls">
+                        <div className="action-group">
+                            <button
+                                className="category-select-button"
+                                onClick={() => setIsCategoryModalOpen(true)}
+                                disabled={isSubmitting || selectedTransactionIds.size === 0}
+                            >
+                                <FiTag />
+                                {selectedCategory ? selectedCategory.name : 'Select Category'}
+                            </button>
+                            
+                            <button
+                                className="categorize-button"
+                                onClick={handleCategorizeSelected}
+                                disabled={isSubmitting || selectedTransactionIds.size === 0 || !selectedCategory}
+                            >
+                                {isSubmitting ? <FiLoader className="spinner-inline" /> : <FiCheck />}
+                                Categorize Selected
+                            </button>
+                        </div>
 
-                    <button
-                        className="hide-button"
-                        onClick={handleHideSelected}
-                        disabled={isSubmitting || selectedTransactionIds.size === 0}
-                    >
-                        {isSubmitting ? <FiLoader className="spinner-inline" /> : <FiX />}
-                        Hide Transactions
-                    </button>
+                        <div className="action-separator"></div>
+
+                        <div className="action-group">
+                            <button
+                                className="hide-button"
+                                onClick={handleHideSelected}
+                                disabled={isSubmitting || selectedTransactionIds.size === 0}
+                            >
+                                {isSubmitting ? <FiLoader className="spinner-inline" /> : <FiX />}
+                                Hide Transactions
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
