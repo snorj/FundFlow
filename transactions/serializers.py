@@ -527,6 +527,7 @@ class VendorRuleSerializer(serializers.ModelSerializer):
             'vendor_name',
             'category_id', 
             'category_name',
+            'priority',
             'is_persistent',
             'created_at',
             'updated_at',

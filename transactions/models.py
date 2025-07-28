@@ -142,6 +142,14 @@ class VendorRule(models.Model):
     and unique vendor constraint for conflict-free rule management.
     """
     
+    PRIORITY_CHOICES = [
+        (1, 'Very High'),
+        (2, 'High'),
+        (3, 'Medium'),
+        (4, 'Low'),
+        (5, 'Very Low'),
+    ]
+    
     id = models.CharField(
         max_length=36,
         primary_key=True,
@@ -161,6 +169,12 @@ class VendorRule(models.Model):
         db_index=True,
         help_text="The category to assign when this rule matches."
     )
+    priority = models.IntegerField(
+        choices=PRIORITY_CHOICES,
+        default=3,
+        db_index=True,
+        help_text="Priority level for rule conflict resolution (1=highest, 5=lowest)."
+    )
     is_persistent = models.BooleanField(
         default=False,
         db_index=True,
@@ -172,8 +186,9 @@ class VendorRule(models.Model):
     class Meta:
         verbose_name = "Vendor Rule"
         verbose_name_plural = "Vendor Rules"
-        ordering = ['-created_at']  # Newest rule wins for conflicts
+        ordering = ['priority', '-created_at']  # Primary sort by priority, then by newest
         indexes = [
+            models.Index(fields=['vendor', 'priority']),
             models.Index(fields=['category']),
             models.Index(fields=['is_persistent']),
         ]

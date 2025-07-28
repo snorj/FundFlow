@@ -1,15 +1,42 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { DndProvider } from 'react-dnd';
-import { HTML5Backend } from 'react-dnd-html5-backend';
-import { useDrop } from 'react-dnd';
 import TreeNode from './TreeNode';
 import { filterTreeData } from '../../utils/categoryTransformUtils';
+import { FiFolder, FiX } from 'react-icons/fi';
 import './TreeView.css';
 
-const ItemTypes = {
-  CATEGORY: 'category',
-  VENDOR: 'vendor',
-  TRANSACTION: 'transaction'
+// Move Mode Banner Component
+const MoveBanner = ({ movingCategory, onCancel }) => {
+  if (!movingCategory) return null;
+
+  return (
+    <div className="move-mode-banner">
+      <div className="move-banner-content">
+        <FiFolder className="move-banner-icon" />
+        <span className="move-banner-text">
+          Moving "{movingCategory.name}" - Click on a destination or the root area
+        </span>
+        <button onClick={onCancel} className="move-cancel-button" title="Cancel move">
+          <FiX />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Root Drop Zone Component
+const RootMoveZone = ({ isInMoveMode, onMoveToRoot, movingCategory }) => {
+  if (!isInMoveMode) return null;
+
+  return (
+    <div className="root-move-zone" onClick={onMoveToRoot}>
+      <div className="root-move-zone-content">
+        <FiFolder className="root-move-icon" />
+        <span className="root-move-text">
+          Move "{movingCategory?.name}" to top level
+        </span>
+      </div>
+    </div>
+  );
 };
 
 const TreeView = ({ 
@@ -22,9 +49,8 @@ const TreeView = ({
   onCategoryCreate,
   onCategoryDelete,
   onCategoryRename,
-  onVendorEdit, // Add vendor editing prop
+  onVendorEdit,
   onCategoryMove,
-  onDropValidation,
   selectedCategoryId,
   selectedVendorId,
   selectedTransactionId,
@@ -35,7 +61,14 @@ const TreeView = ({
   onExpandedNodesChange
 }) => {
   const [internalExpandedNodes, setInternalExpandedNodes] = useState(new Set());
-  const [draggedItem, setDraggedItem] = useState(null);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set());
+  const [bulkOperationMode, setBulkOperationMode] = useState(false);
+  
+  // Move mode state
+  const [moveMode, setMoveMode] = useState({
+    isActive: false,
+    movingCategory: null
+  });
 
   // Use external expanded nodes if provided, otherwise use internal state
   const expandedNodes = externalExpandedNodes || internalExpandedNodes;
@@ -45,7 +78,7 @@ const TreeView = ({
   const filteredData = useMemo(() => {
     if (!searchTerm.trim() && !visibleItemIds) {
       return data;
-      }
+    }
     return filterTreeData(data, searchTerm, visibleItemIds);
   }, [data, searchTerm, visibleItemIds]);
 
@@ -61,70 +94,127 @@ const TreeView = ({
       return newSet;
     });
   }, [setExpandedNodes]);
-  
-  // Handle drag start
-  const handleDragStart = useCallback((item) => {
-    setDraggedItem(item);
+
+  // Move mode handlers
+  const handleStartMove = useCallback((category) => {
+    setMoveMode({
+      isActive: true,
+      movingCategory: category
+    });
+    
+    // Auto-expand all categories to show move destinations
+    setExpandedNodes(prev => {
+      const newSet = new Set(prev);
+      const expandAllCategories = (nodes) => {
+        nodes.forEach(node => {
+          if (node.type === 'category' && node.id !== category.id) {
+            newSet.add(node.id);
+            if (node.children) {
+              expandAllCategories(node.children);
+            }
+          }
+        });
+      };
+      expandAllCategories(filteredData);
+      return newSet;
+    });
+  }, [filteredData, setExpandedNodes]);
+
+  const handleCancelMove = useCallback(() => {
+    setMoveMode({
+      isActive: false,
+      movingCategory: null
+    });
   }, []);
 
-  // Handle drag end
-  const handleDragEnd = useCallback(() => {
-    setDraggedItem(null);
-  }, []);
-
-  // Handle drop operation
-  const handleDrop = useCallback((draggedNode, targetNode, position) => {
-    // Validate the drop operation
-    if (!draggedNode) {
-      onDropValidation?.(false, 'Invalid drop operation', { draggedNode, targetNode });
-      return;
-    }
-
-    // Handle root-level drops (making items top-level)
-    if (position === 'root' || !targetNode) {
+  const handleMoveToRoot = useCallback(() => {
+    if (!moveMode.movingCategory) return;
+    
+    const confirmMessage = `Move "${moveMode.movingCategory.name}" to the top level?`;
+    if (window.confirm(confirmMessage)) {
       if (onCategoryMove) {
-        onCategoryMove(draggedNode.id, null, 'root');
+        onCategoryMove(moveMode.movingCategory.id, null, 'root');
       }
+      handleCancelMove();
+    }
+  }, [moveMode.movingCategory, onCategoryMove, handleCancelMove]);
+
+  const handleMoveToCategory = useCallback((targetCategory, position) => {
+    if (!moveMode.movingCategory) return;
+    
+    // Prevent moving to self
+    if (moveMode.movingCategory.id === targetCategory.id) return;
+    
+    // Prevent circular dependencies
+    const isDescendant = (target, source) => {
+      if (!target.children || target.children.length === 0) return false;
+      return target.children.some(child => 
+        child.id === source.id || isDescendant(child, source)
+      );
+    };
+    
+    if (position === 'inside' && isDescendant(targetCategory, moveMode.movingCategory)) {
+      alert('Cannot move a category into its own subcategory.');
       return;
     }
-
-    // Prevent dropping on self
-    if (draggedNode.id === targetNode.id) {
-      onDropValidation?.(false, 'Cannot drop item on itself', { draggedNode, targetNode });
-      return;
-    }
-
-    // Prevent dropping parent into child (circular dependency)
-    if (position === 'inside' && isDescendant(targetNode, draggedNode)) {
-      onDropValidation?.(false, 'Cannot create circular dependency', { draggedNode, targetNode });
-      return;
-    }
-
-    // Only allow category moves for now
-    if (draggedNode.type !== 'category') {
-      onDropValidation?.(false, 'Only categories can be moved', { draggedNode, targetNode });
-      return;
-    }
-      
-    // Call the move handler with the position
-    if (onCategoryMove) {
-      onCategoryMove(draggedNode.id, targetNode.id, position);
-    }
-  }, [onCategoryMove, onDropValidation]);
-
-  // Helper function to check if target is a descendant of source
-  const isDescendant = useCallback((target, source) => {
-    if (!target.children || target.children.length === 0) {
-          return false;
-        }
-        
-    for (const child of target.children) {
-      if (child.id === source.id || isDescendant(child, source)) {
-        return true;
+    
+    const positionText = position === 'inside' ? 'inside' : position === 'before' ? 'above' : 'below';
+    const confirmMessage = `Move "${moveMode.movingCategory.name}" ${positionText} "${targetCategory.name}"?`;
+    
+    if (window.confirm(confirmMessage)) {
+      if (onCategoryMove) {
+        onCategoryMove(moveMode.movingCategory.id, targetCategory.id, position);
       }
+      handleCancelMove();
     }
-    return false;
+  }, [moveMode.movingCategory, onCategoryMove, handleCancelMove]);
+
+  // Enhanced bulk operations
+  const handleBulkSelect = useCallback((nodeId, selected) => {
+    setBulkSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (selected) {
+        newSet.add(nodeId);
+      } else {
+        newSet.delete(nodeId);
+      }
+      return newSet;
+    });
   }, []);
+
+  const handleBulkDelete = useCallback(() => {
+    if (bulkSelectedIds.size === 0) return;
+    
+    const message = `Are you sure you want to delete ${bulkSelectedIds.size} selected categories?`;
+    if (window.confirm(message)) {
+      Array.from(bulkSelectedIds).forEach(id => {
+        onCategoryDelete?.(id);
+      });
+      setBulkSelectedIds(new Set());
+      setBulkOperationMode(false);
+    }
+  }, [bulkSelectedIds, onCategoryDelete]);
+
+  const handleBulkExpand = useCallback(() => {
+    const allCategoryIds = new Set();
+    const collectCategoryIds = (nodes) => {
+      nodes.forEach(node => {
+        if (node.type === 'category') {
+          allCategoryIds.add(node.id);
+          if (node.children) {
+            collectCategoryIds(node.children);
+          }
+        }
+      });
+    };
+    
+    collectCategoryIds(filteredData);
+    setExpandedNodes(allCategoryIds);
+  }, [filteredData, setExpandedNodes]);
+
+  const handleBulkCollapse = useCallback(() => {
+    setExpandedNodes(new Set());
+  }, [setExpandedNodes]);
 
   // Expand all nodes that match search
   React.useEffect(() => {
@@ -135,74 +225,95 @@ const TreeView = ({
         return newSet;
       });
     }
-  }, [searchTerm, visibleItemIds]);
+  }, [searchTerm, visibleItemIds, setExpandedNodes]);
   
   return (
-    <DndProvider backend={HTML5Backend}>
-      <div className="tree-view">
+    <div className={`tree-view ${bulkOperationMode ? 'bulk-mode' : ''} ${moveMode.isActive ? 'move-mode' : ''}`}>
+      {/* Move mode banner */}
+      <MoveBanner 
+        movingCategory={moveMode.movingCategory}
+        onCancel={handleCancelMove}
+      />
+
+      {/* Bulk operations toolbar */}
+      {bulkOperationMode && (
+        <div className="bulk-operations-toolbar">
+          <div className="bulk-info">
+            <span>{bulkSelectedIds.size} items selected</span>
+          </div>
+          <div className="bulk-actions">
+            <button onClick={handleBulkExpand} className="bulk-action-btn">
+              Expand All
+            </button>
+            <button onClick={handleBulkCollapse} className="bulk-action-btn">
+              Collapse All  
+            </button>
+            <button 
+              onClick={handleBulkDelete} 
+              className="bulk-action-btn danger"
+              disabled={bulkSelectedIds.size === 0}
+            >
+              Delete Selected ({bulkSelectedIds.size})
+            </button>
+            <button 
+              onClick={() => {
+                setBulkOperationMode(false);
+                setBulkSelectedIds(new Set());
+              }} 
+              className="bulk-action-btn"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="tree-nodes">
+        {/* Root move zone */}
+        <RootMoveZone 
+          isInMoveMode={moveMode.isActive}
+          onMoveToRoot={handleMoveToRoot}
+          movingCategory={moveMode.movingCategory}
+        />
+
         {filteredData.length === 0 ? (
           <div className="tree-empty">
             {searchTerm ? 'No items match your search' : 'No categories available'}
           </div>
         ) : (
-          <RootDropZone onDrop={handleDrop}>
-            {filteredData.map(node => (
-              <TreeNode
-                key={node.id}
-                node={node}
-                level={0}
-                expanded={expandedNodes.has(node.id)}
-                expandedNodes={expandedNodes}
-                onToggleExpand={handleToggleExpand}
-                onCategorySelect={onCategorySelect}
-                onVendorSelect={onVendorSelect}
-                onTransactionSelect={onTransactionSelect}
-                onTransactionInfo={onTransactionInfo}
-                onCategoryCreate={onCategoryCreate}
-                onCategoryDelete={onCategoryDelete}
-                onCategoryRename={onCategoryRename}
-                onVendorEdit={onVendorEdit} // Pass vendor editing prop
-                onDrop={handleDrop}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                selectedCategoryId={selectedCategoryId}
-                selectedVendorId={selectedVendorId}
-                selectedTransactionId={selectedTransactionId}
-                deletingCategoryId={deletingCategoryId}
-                isCreating={isCreating}
-                draggedItem={draggedItem}
-                searchTerm={searchTerm}
-              />
-            ))}
-          </RootDropZone>
+          filteredData.map(node => (
+            <TreeNode
+              key={node.id}
+              node={node}
+              level={0}
+              expanded={expandedNodes.has(node.id)}
+              expandedNodes={expandedNodes}
+              onToggleExpand={handleToggleExpand}
+              onCategorySelect={onCategorySelect}
+              onVendorSelect={onVendorSelect}
+              onTransactionSelect={onTransactionSelect}
+              onTransactionInfo={onTransactionInfo}
+              onCategoryCreate={onCategoryCreate}
+              onCategoryDelete={onCategoryDelete}
+              onCategoryRename={onCategoryRename}
+              onVendorEdit={onVendorEdit}
+              selectedCategoryId={selectedCategoryId}
+              selectedVendorId={selectedVendorId}
+              selectedTransactionId={selectedTransactionId}
+              deletingCategoryId={deletingCategoryId}
+              isCreating={isCreating}
+              searchTerm={searchTerm}
+              bulkOperationMode={bulkOperationMode}
+              bulkSelectedIds={bulkSelectedIds}
+              onBulkSelect={handleBulkSelect}
+              // Move mode props
+              moveMode={moveMode}
+              onStartMove={handleStartMove}
+              onMoveToCategory={handleMoveToCategory}
+            />
+          ))
         )}
       </div>
-    </DndProvider>
-  );
-};
-
-// Root drop zone component for making items top-level
-const RootDropZone = ({ onDrop, children }) => {
-  const [{ isOver, canDrop }, drop] = useDrop({
-    accept: ItemTypes.CATEGORY,
-    drop: (item, monitor) => {
-      if (!monitor.didDrop()) {
-        // Drop on root means make it top-level (no parent)
-        onDrop?.(item.node, null, 'root');
-      }
-    },
-    collect: (monitor) => ({
-      isOver: monitor.isOver({ shallow: true }),
-      canDrop: monitor.canDrop(),
-    }),
-  });
-
-  return (
-    <div 
-      ref={drop}
-      className={`tree-nodes ${isOver && canDrop ? 'root-drop-target' : ''}`}
-    >
-      {children}
     </div>
   );
 };

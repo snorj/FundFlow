@@ -325,19 +325,9 @@ const TreeViewTestPage = () => {
         }
 
         setTreeData(newTreeData);
-        handleDropValidation(true, 'Category moved successfully!');
+        console.log('✅ Category moved successfully!');
       }
     }, 500);
-  };
-
-  const handleDropValidation = (success, message, details) => {
-    console.log('Drop validation:', { success, message, details });
-    if (success) {
-      console.log('✅', message);
-    } else {
-      console.error('❌', message);
-      alert(`Error: ${message}`);
-    }
   };
 
   // Helper function to get all IDs from tree
@@ -406,7 +396,6 @@ const TreeViewTestPage = () => {
           onCategoryDelete={handleCategoryDelete}
           onCategoryRename={handleCategoryRename}
           onCategoryMove={handleCategoryMove}
-          onDropValidation={handleDropValidation}
           selectedCategoryId={selectedCategoryId}
           selectedVendorId={selectedVendorId}
           selectedTransactionId={selectedTransactionId}

@@ -229,18 +229,7 @@ const CategorisePage = () => {
     }
   }, [fetchTransactions, fetchVendorMappings]);
 
-  // Handler for drag and drop validation feedback
-  const handleDropValidation = useCallback((success, message, details) => {
-    console.log('Drop validation:', { success, message, details });
-    
-    if (success) {
-      // Show success feedback without refreshing data (optimistic updates handle this)
-      console.log('Drag operation successful:', message);
-    } else {
-      // Show error message for failed operations
-      console.warn('Drag operation failed:', message);
-    }
-  }, []);
+
 
   // Handler for category move operations
   const handleCategoryMove = useCallback(async (draggedCategoryId, targetCategoryId, position) => {
@@ -300,13 +289,10 @@ const CategorisePage = () => {
       await fetchItems();
       
       // Show error feedback
-      handleDropValidation(false, error.message || 'Failed to move category', {
-        draggedCategoryId,
-        targetCategoryId,
-        position
-      });
+      console.error('Failed to move category:', error.message || 'Failed to move category');
+      alert('Failed to move category: ' + (error.message || 'Unknown error'));
     }
-  }, [allItems, categoryService, handleDropValidation, setAllItems, fetchItems]);
+  }, [allItems, categoryService, setAllItems, fetchItems]);
 
   const itemsById = useMemo(() => 
     new Map(allItems.map(item => [item.id, item]))
@@ -522,7 +508,6 @@ const CategorisePage = () => {
               onCategoryRename={handleCategoryRename}
               onVendorEdit={handleVendorEdit} // Pass vendor editing prop
               onCategoryMove={handleCategoryMove}
-              onDropValidation={handleDropValidation}
               selectedCategoryId={selectedCategoryId}
               selectedVendorId={selectedVendorId}
               selectedTransactionId={selectedTransactionId}

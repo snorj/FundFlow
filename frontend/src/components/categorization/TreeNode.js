@@ -1,5 +1,4 @@
 import React, { useRef, useState, useCallback } from 'react';
-import { useDrag, useDrop } from 'react-dnd';
 import { createPortal } from 'react-dom';
 import { 
   FiChevronRight, 
@@ -14,14 +13,63 @@ import {
   FiEdit3,
   FiMoreVertical,
   FiCheck,
-  FiX
+  FiX,
+  FiArrowDown,
+  FiArrowRight,
+  FiArrowUp
 } from 'react-icons/fi';
 
-const ItemTypes = {
-  CATEGORY: 'category',
-  VENDOR: 'vendor',
-  TRANSACTION: 'transaction'
+// Enhanced search highlighting component
+const HighlightText = ({ text, searchTerm }) => {
+  if (!searchTerm) return text;
+  
+  const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  const parts = text.split(regex);
+  
+  return (
+    <span>
+      {parts.map((part, index) => 
+        regex.test(part) ? (
+          <mark key={index} className="search-highlight">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      )}
+    </span>
+  );
 };
+
+// Move Destination Indicator Components
+const MoveDestinationBefore = ({ targetNode, onMove }) => (
+  <div className="move-destination move-destination-before" onClick={() => onMove(targetNode, 'before')}>
+    <div className="move-destination-line"></div>
+    <div className="move-destination-label">
+      <FiArrowUp className="move-destination-icon" />
+      <span>Move above "{targetNode.name}"</span>
+    </div>
+  </div>
+);
+
+const MoveDestinationAfter = ({ targetNode, onMove }) => (
+  <div className="move-destination move-destination-after" onClick={() => onMove(targetNode, 'after')}>
+    <div className="move-destination-line"></div>
+    <div className="move-destination-label">
+      <FiArrowDown className="move-destination-icon" />
+      <span>Move below "{targetNode.name}"</span>
+    </div>
+  </div>
+);
+
+const MoveDestinationInside = ({ targetNode, onMove }) => (
+  <div className="move-destination-inside-overlay" onClick={() => onMove(targetNode, 'inside')}>
+    <div className="move-destination-inside-content">
+      <FiArrowRight className="move-destination-icon" />
+      <span>Move inside "{targetNode.name}"</span>
+    </div>
+  </div>
+);
 
 const TreeNode = ({
   node,
@@ -36,23 +84,25 @@ const TreeNode = ({
   onCategoryCreate,
   onCategoryDelete,
   onCategoryRename,
-  onVendorEdit, // Add vendor editing prop
-  onDrop,
-  onDragStart,
-  onDragEnd,
+  onVendorEdit,
   selectedCategoryId,
   selectedVendorId,
   selectedTransactionId,
   deletingCategoryId,
   isCreating,
-  draggedItem,
-  searchTerm
+  searchTerm,
+  bulkOperationMode,
+  bulkSelectedIds,
+  onBulkSelect,
+  // Move mode props
+  moveMode,
+  onStartMove,
+  onMoveToCategory
 }) => {
   const ref = useRef(null);
   const [isHovered, setIsHovered] = useState(false);
   const [showCreateInput, setShowCreateInput] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [dropPosition, setDropPosition] = useState(null);
   const [mouseDownTime, setMouseDownTime] = useState(null);
   const [mouseDownPosition, setMouseDownPosition] = useState(null);
   
@@ -64,6 +114,81 @@ const TreeNode = ({
   // Context menu state
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ top: 0, left: 0 });
+  
+  // Animation state
+  const [isCollapsing, setIsCollapsing] = useState(false);
+  const [isExpanding, setIsExpanding] = useState(false);
+
+  // Calculate derived values
+  const hasChildren = node.children && node.children.length > 0;
+  const indentWidth = level * 20;
+  
+  // Check if this node is a valid move destination
+  const isValidMoveDestination = moveMode?.isActive && 
+    moveMode.movingCategory && 
+    node.type === 'category' &&
+    !node.is_system &&
+    node.id !== moveMode.movingCategory.id;
+
+  // Check if this is the node being moved
+  const isBeingMoved = moveMode?.isActive && 
+    moveMode.movingCategory && 
+    node.id === moveMode.movingCategory.id;
+
+  // Smart click handler that doesn't interfere with move mode
+  const handleMouseDown = (e) => {
+    if (moveMode?.isActive) return; // Don't handle clicks in move mode
+    setMouseDownTime(Date.now());
+    setMouseDownPosition({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseUp = (e) => {
+    if (moveMode?.isActive) return; // Don't handle clicks in move mode
+    if (!mouseDownTime || !mouseDownPosition) return;
+    
+    const clickDuration = Date.now() - mouseDownTime;
+    const distance = Math.sqrt(
+      Math.pow(e.clientX - mouseDownPosition.x, 2) + 
+      Math.pow(e.clientY - mouseDownPosition.y, 2)
+    );
+    
+    // Only treat as click if it was quick and didn't move much
+    if (clickDuration < 300 && distance < 5) {
+      handleClick();
+    }
+    
+    setMouseDownTime(null);
+    setMouseDownPosition(null);
+  };
+
+  const handleClick = () => {
+    if (moveMode?.isActive) return; // Don't handle selection in move mode
+    
+    if (node.type === 'category') {
+      onCategorySelect?.(node);
+    } else if (node.type === 'vendor') {
+      onVendorSelect?.(node);
+    } else if (node.type === 'transaction') {
+      onTransactionSelect?.(node);
+    }
+  };
+
+  // Enhanced toggle with animations
+  const handleToggle = (e) => {
+    if (e) e.stopPropagation();
+    
+    if (expanded) {
+      setIsCollapsing(true);
+      setTimeout(() => {
+        onToggleExpand?.(node.id);
+        setIsCollapsing(false);
+      }, 150);
+    } else {
+      setIsExpanding(true);
+      onToggleExpand?.(node.id);
+      setTimeout(() => setIsExpanding(false), 300);
+    }
+  };
 
   // Add click-outside handler for context menu
   React.useEffect(() => {
@@ -84,114 +209,7 @@ const TreeNode = ({
     }
   }, [showContextMenu]);
 
-  // Drag functionality (only for categories)
-  const [{ isDragging }, drag] = useDrag({
-    type: ItemTypes.CATEGORY,
-    item: () => {
-      onDragStart?.(node);
-      return { id: node.id, type: node.type, node };
-    },
-    end: () => {
-      onDragEnd?.();
-    },
-    collect: (monitor) => ({
-      isDragging: monitor.isDragging(),
-    }),
-    canDrag: () => {
-      // Only categories (not system) can be dragged
-      return node.type === 'category' && !node.is_system;
-    }
-  });
-
-  // Drop functionality - enhanced to support multiple drop positions
-  const [{ isOver, canDrop }, drop] = useDrop({
-    accept: ItemTypes.CATEGORY,
-    hover: (item, monitor) => {
-      if (!ref.current) return;
-      
-      const hoverBoundingRect = ref.current.getBoundingClientRect();
-      const hoverMiddleY = (hoverBoundingRect.bottom - hoverBoundingRect.top) / 2;
-      const clientOffset = monitor.getClientOffset();
-      const hoverClientY = clientOffset.y - hoverBoundingRect.top;
-      
-      // Determine drop position based on hover location
-      if (hoverClientY < hoverMiddleY * 0.3) {
-        setDropPosition('before');
-      } else if (hoverClientY > hoverMiddleY * 1.7) {
-        setDropPosition('after');
-      } else {
-        setDropPosition('inside');
-      }
-    },
-    drop: (item, monitor) => {
-      if (!monitor.didDrop()) {
-        onDrop?.(item.node, node, dropPosition);
-      }
-    },
-    collect: (monitor) => ({
-      isOver: monitor.isOver({ shallow: true }),
-      canDrop: monitor.canDrop(),
-    }),
-    canDrop: (item) => {
-      // Can't drop on self
-      if (item.id === node.id) return false;
-      
-      // Can only drop categories
-      if (item.type !== 'category') return false;
-      
-      // For 'inside' drops, target must be a category and not system
-      if (node.type !== 'category' || node.is_system) {
-        // But allow 'before' and 'after' drops if the parent allows it
-        return level > 0;
-      }
-      
-      return true;
-    }
-  });
-
-  // Combine drag and drop refs
-  const dragDropRef = drag(drop(ref));
-
-  // Smart click handler that doesn't interfere with drag
-  const handleMouseDown = (e) => {
-    setMouseDownTime(Date.now());
-    setMouseDownPosition({ x: e.clientX, y: e.clientY });
-  };
-
-  const handleMouseUp = (e) => {
-    if (!mouseDownTime || !mouseDownPosition) return;
-    
-    const clickDuration = Date.now() - mouseDownTime;
-    const distance = Math.sqrt(
-      Math.pow(e.clientX - mouseDownPosition.x, 2) + 
-      Math.pow(e.clientY - mouseDownPosition.y, 2)
-    );
-    
-    // Only treat as click if it was quick and didn't move much
-    if (clickDuration < 300 && distance < 5) {
-      handleClick();
-    }
-    
-    setMouseDownTime(null);
-    setMouseDownPosition(null);
-  };
-
-  const handleClick = () => {
-    if (node.type === 'category') {
-      onCategorySelect?.(node);
-    } else if (node.type === 'vendor') {
-      onVendorSelect?.(node);
-    } else if (node.type === 'transaction') {
-      onTransactionSelect?.(node);
-    }
-  };
-
-  const handleToggle = (e) => {
-    e.stopPropagation();
-    onToggleExpand?.(node.id);
-  };
-
-  // Category editing handlers
+  // All the existing handlers remain the same...
   const handleEditCategoryClick = (e) => {
     e?.stopPropagation();
     if (node.type !== 'category' || node.is_system) return;
@@ -230,36 +248,31 @@ const TreeNode = ({
     setCategoryEditError(null);
   };
 
-  // Vendor editing handler
   const handleEditVendorClick = (e) => {
     e?.stopPropagation();
     if (node.type !== 'vendor') return;
     
-    // Call the parent's onVendorEdit handler with the vendor name
     if (onVendorEdit) {
       onVendorEdit(node.name);
     }
   };
 
-  // Context menu handlers
   const handleContextMenuClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
     
     if (!showContextMenu) {
-      // Calculate position for fixed positioning
       const buttonRect = e.currentTarget.getBoundingClientRect();
       const position = {
         top: buttonRect.bottom + window.scrollY,
-        left: buttonRect.left + window.scrollX - 150 + buttonRect.width // Align right edge
+        left: buttonRect.left + window.scrollX - 150 + buttonRect.width
       };
       
-      // Ensure menu doesn't go off-screen
       if (position.left < 10) {
         position.left = 10;
       }
       if (position.top + 120 > window.innerHeight + window.scrollY) {
-        position.top = buttonRect.top + window.scrollY - 120; // Show above button
+        position.top = buttonRect.top + window.scrollY - 120;
       }
       
       setContextMenuPosition(position);
@@ -285,6 +298,9 @@ const TreeNode = ({
       case 'delete':
         handleDeleteCategory();
         break;
+      case 'move':
+        handleMoveClick();
+        break;
       case 'info':
         if (node.type === 'vendor') {
           onVendorSelect?.(node);
@@ -295,6 +311,12 @@ const TreeNode = ({
       default:
         console.warn('Unknown context menu action:', action);
     }
+  };
+
+  const handleMoveClick = (e) => {
+    e?.stopPropagation();
+    if (node.type !== 'category' || node.is_system) return;
+    onStartMove?.(node);
   };
 
   const handleCreateCategory = (e) => {
@@ -349,13 +371,13 @@ const TreeNode = ({
       classes.push('selected');
     }
     
-    if (isDragging) classes.push('dragging');
-    if (isOver && canDrop) {
-      classes.push('drop-target');
-      if (dropPosition) classes.push(`drop-${dropPosition}`);
-    }
-    if (isOver && !canDrop) classes.push('drop-invalid');
+    if (isBeingMoved) classes.push('being-moved');
+    if (isValidMoveDestination) classes.push('move-destination-node');
     if (deletingCategoryId === node.id) classes.push('deleting');
+    
+    // Add data attributes for styling
+    classes.push(`data-type-${node.type}`);
+    if (node.is_system) classes.push('data-system');
     
     return classes.join(' ');
   };
@@ -364,11 +386,17 @@ const TreeNode = ({
     switch (node.type) {
       case 'category':
         if (node.is_system) return [];
-        return [
+        const items = [
           { id: 'edit', label: 'Rename', icon: <FiEdit3 /> },
           { id: 'create', label: 'Add Subcategory', icon: <FiPlus /> },
+          { id: 'move', label: 'Move', icon: <FiMove /> },
           { id: 'delete', label: 'Delete', icon: <FiTrash2 /> }
         ];
+        // Disable move option if already in move mode
+        if (moveMode?.isActive) {
+          return items.filter(item => item.id !== 'move');
+        }
+        return items;
       case 'vendor':
         return [
           { id: 'edit', label: 'Edit Vendor Name', icon: <FiEdit3 /> },
@@ -383,29 +411,52 @@ const TreeNode = ({
     }
   };
 
-  const hasChildren = node.children && node.children.length > 0;
-  const indentWidth = level * 20;
   const contextMenuItems = getContextMenuItems();
 
   return (
     <React.Fragment>
-      {/* Drop zone before node */}
-      {isOver && canDrop && dropPosition === 'before' && (
-        <div className="drop-zone drop-zone-before" />
+      {/* Move destination before */}
+      {isValidMoveDestination && (
+        <MoveDestinationBefore 
+          targetNode={node} 
+          onMove={onMoveToCategory}
+        />
       )}
       
       <div
-        ref={dragDropRef}
+        ref={ref}
         className={getNodeClassName()}
         style={{ paddingLeft: `${indentWidth}px` }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => {
           setIsHovered(false);
-          // Don't immediately close context menu to allow moving cursor to menu
         }}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
+        data-node-id={node.id}
+        data-node-type={node.type}
+        data-node-system={node.is_system}
       >
+        {/* Move destination inside overlay */}
+        {isValidMoveDestination && (
+          <MoveDestinationInside 
+            targetNode={node} 
+            onMove={onMoveToCategory}
+          />
+        )}
+        
+        {/* Bulk selection checkbox */}
+        {bulkOperationMode && node.type === 'category' && !node.is_system && (
+          <div className="bulk-checkbox">
+            <input
+              type="checkbox"
+              checked={bulkSelectedIds?.has(node.id) || false}
+              onChange={(e) => onBulkSelect?.(node.id, e.target.checked)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        )}
+
         <div className="tree-node-content">
           {/* Expand/Collapse Toggle */}
           <div className="tree-node-toggle">
@@ -417,13 +468,6 @@ const TreeNode = ({
               <div className="toggle-spacer" />
             )}
           </div>
-
-          {/* Drag Handle (only for draggable categories) */}
-          {node.type === 'category' && !node.is_system && (
-            <div className="drag-handle">
-              <FiMove />
-            </div>
-          )}
 
           {/* Icon */}
           <div className="tree-node-icon">
@@ -465,7 +509,7 @@ const TreeNode = ({
               </div>
             ) : (
               <>
-                {node.name}
+                <HighlightText text={node.name} searchTerm={searchTerm} />
                 {node.type === 'vendor' && node.transactionCount && (
                   <span className="transaction-count">
                     ({node.transactionCount})
@@ -481,7 +525,7 @@ const TreeNode = ({
           </div>
 
           {/* Actions */}
-          {(isHovered || showContextMenu) && !isEditingCategory && contextMenuItems.length > 0 && (
+          {(isHovered || showContextMenu) && !isEditingCategory && contextMenuItems.length > 0 && !moveMode?.isActive && (
             <div className="tree-node-actions">
               <div className="context-menu-container">
                 <button
@@ -504,9 +548,12 @@ const TreeNode = ({
         </div>
       )}
 
-      {/* Drop zone after node */}
-      {isOver && canDrop && dropPosition === 'after' && (
-        <div className="drop-zone drop-zone-after" />
+      {/* Move destination after */}
+      {isValidMoveDestination && (
+        <MoveDestinationAfter 
+          targetNode={node} 
+          onMove={onMoveToCategory}
+        />
       )}
 
       {/* Create new category input */}
@@ -550,7 +597,7 @@ const TreeNode = ({
       )}
 
       {expanded && hasChildren && (
-        <div className="tree-node-children">
+        <div className={`tree-node-children ${isExpanding ? 'expanding' : ''} ${isCollapsing ? 'collapsing' : ''}`}>
           {node.children.map(child => (
             <TreeNode
               key={child.id}
@@ -566,23 +613,26 @@ const TreeNode = ({
               onCategoryCreate={onCategoryCreate}
               onCategoryDelete={onCategoryDelete}
               onCategoryRename={onCategoryRename}
-              onVendorEdit={onVendorEdit} // Pass vendor editing prop
-              onDrop={onDrop}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
+              onVendorEdit={onVendorEdit}
               selectedCategoryId={selectedCategoryId}
               selectedVendorId={selectedVendorId}
               selectedTransactionId={selectedTransactionId}
               deletingCategoryId={deletingCategoryId}
               isCreating={isCreating}
-              draggedItem={draggedItem}
               searchTerm={searchTerm}
+              bulkOperationMode={bulkOperationMode}
+              bulkSelectedIds={bulkSelectedIds}
+              onBulkSelect={onBulkSelect}
+              // Move mode props
+              moveMode={moveMode}
+              onStartMove={onStartMove}
+              onMoveToCategory={onMoveToCategory}
             />
           ))}
         </div>
       )}
 
-      {/* Portal-based context menu to avoid click interception */}
+      {/* Portal-based context menu */}
       {showContextMenu && createPortal(
         <div 
           className="context-menu"
