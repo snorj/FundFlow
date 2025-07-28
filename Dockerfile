@@ -19,7 +19,7 @@ COPY frontend/package*.json ./
 RUN npm config set fetch-retry-mintimeout 20000 && \
     npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 3 && \
-    npm install --network-timeout 600000
+    npm install --network-timeout=600000
 
 # Copy frontend source code
 COPY frontend/ ./
