@@ -11,7 +11,7 @@ import { formatDate, formatCurrency } from '../utils/formatting'; // Corrected p
 const Dashboard = () => {
   // --- Existing State ---
   const [transactions, setTransactions] = useState([]);
-  const [hasUncategorized, setHasUncategorized] = useState(false);
+  const [hasUncategorised, setHasUncategorised] = useState(false);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -41,36 +41,36 @@ const Dashboard = () => {
 
   // --- Combined Data Loading ---
   const loadDashboardData = useCallback(async (showLoading = true) => {
-    console.log("Loading dashboard data (transactions & uncategorized check)...");
+    console.log("Loading dashboard data (transactions & uncategorised check)...");
     if (showLoading) {
         setIsLoadingTransactions(true);
     }
     setFetchError(null);
-    setHasUncategorized(false); // Initial reset
+          setHasUncategorised(false); // Initial reset
 
     try {
       // checkResponse will be TRUE or FALSE directly from the service
-      const [categorizedData, checkResponse] = await Promise.all([
-        transactionService.getTransactions({ status: 'categorized' }),
+      const [categorisedData, checkResponse] = await Promise.all([
+        transactionService.getTransactions({ status: 'categorised' }),
         transactionService.checkUncategorizedExists()
       ]);
 
       // --- FIX: Use checkResponse directly ---
-      const uncategorizedExists = checkResponse; // It's already the boolean we need!
+      const uncategorisedExists = checkResponse; // It's already the boolean we need!
 
       // Log the actual value received and the (now correct) calculated value
       console.log(`[loadDashboardData] checkResponse value from Promise.all:`, checkResponse);
-      console.log(`[loadDashboardData] Calculated uncategorizedExists: ${uncategorizedExists}`);
+              console.log(`[loadDashboardData] Calculated uncategorisedExists: ${uncategorisedExists}`);
 
-      setTransactions(categorizedData || []);
-      setHasUncategorized(uncategorizedExists); // Use the correct boolean value
-      console.log(`[loadDashboardData] State *after* setHasUncategorized(${uncategorizedExists})`);
+              setTransactions(categorisedData || []);
+        setHasUncategorised(uncategorisedExists); // Use the correct boolean value
+        console.log(`[loadDashboardData] State *after* setHasUncategorised(${uncategorisedExists})`);
 
     } catch (err) {
       console.error("Fetch Dashboard Data Error:", err);
       setFetchError(err.message || 'Could not load dashboard data.');
       setTransactions([]);
-      setHasUncategorized(false);
+              setHasUncategorised(false);
       console.log("[loadDashboardData] State set to FALSE due to error.");
     } finally {
       if (showLoading) {
@@ -122,7 +122,7 @@ const Dashboard = () => {
   };
 
   // --- Existing Navigation Handler ---
-  const goToCategorize = () => navigate('/categorize');
+  const goToCategorise = () => navigate('/categorise');
 
   // --- NEW Up Integration Handlers ---
   const handlePatInputChange = (event) => {
@@ -189,7 +189,7 @@ const Dashboard = () => {
         setSyncSuccessMessage(result.message || "Sync completed successfully."); // Use backend message
         console.log("Sync successful:", result);
 
-        // Refresh dashboard data (transactions and uncategorized check)
+        // Refresh dashboard data (transactions and uncategorised check)
         // to show any newly imported transactions and update the prompt.
         // Pass false to prevent the main transaction list from showing a loading spinner.
         await loadDashboardData(false);
@@ -223,7 +223,7 @@ const Dashboard = () => {
 
 
   // --- Render Logic ---
-  const hasCategorizedData = transactions.length > 0;
+      const hasCategorisedData = transactions.length > 0;
   // Combine loading states for overall dashboard busy state if needed
   const isPageLoading = isLoadingTransactions || isLoadingUpStatus;
 
@@ -338,15 +338,15 @@ const Dashboard = () => {
        {/* --- End NEW Section --- */}
 
 
-      {/* --- Categorization Prompt (Keep as is) --- */}
-      {hasUncategorized && !isLoadingTransactions && (
-          <div className="categorization-prompt card-style">
+              {/* --- Categorisation Prompt (Keep as is) --- */}
+        {hasUncategorised && !isLoadingTransactions && (
+          <div className="categorisation-prompt card-style">
               <FiEdit className="prompt-icon"/>
               <div className="prompt-text">
-                 <p><strong>You have uncategorized transactions!</strong></p>
+                 <p><strong>You have uncategorised transactions!</strong></p>
                  <p>Review them now to complete your financial picture.</p>
               </div>
-              <button onClick={goToCategorize} className="action-button teal-button">
+              <button onClick={goToCategorise} className="action-button teal-button">
                   Review Now
               </button>
           </div>
@@ -355,22 +355,22 @@ const Dashboard = () => {
 
       {/* --- Transaction Display Section (Keep as is) --- */}
       <div className="transactions-section card-style">
-         <h2 className="section-title">Transaction History (Categorized)</h2>
+                   <h2 className="section-title">Transaction History (Categorised)</h2>
          {isPageLoading ? ( // Use combined loading state
            <div className="loading-transactions"><FiLoader className="spinner"/> Loading...</div>
          ) : fetchError ? (
            <div className="error-message"><FiAlertCircle /> Error: {fetchError}</div>
-         ) : !hasCategorizedData && !hasUncategorized ? (
+         ) : !hasCategorisedData && !hasUncategorised ? (
            <div className="empty-state-container minimal">
              <FiInbox />
              <p className="empty-state-text">
                No transactions found. Upload a CSV or link your bank account.
              </p>
            </div>
-         ) : !hasCategorizedData && hasUncategorized ? (
+         ) : !hasCategorisedData && hasUncategorised ? (
            <div className="empty-state-container minimal">
               <p className="empty-state-text">
-                  No categorized transactions to display yet. Please review your items using the prompt above.
+                  No categorised transactions to display yet. Please review your items using the prompt above.
               </p>
            </div>
          ) : (

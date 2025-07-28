@@ -190,7 +190,7 @@ const VendorAssignmentModal = ({
                       <strong>Rule Inheritance</strong>
                       <p>
                         Transactions with this vendor will inherit existing rules from "{selectedVendor}".
-                        Future transactions will be automatically categorized based on these rules.
+                        Future transactions will be automatically categorised based on these rules.
                       </p>
                     </div>
                   </div>

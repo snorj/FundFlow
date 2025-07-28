@@ -109,7 +109,7 @@ const VendorRulesPage = () => {
     <div className="vendor-rules-page">
       <div className="page-header">
         <h1>Vendor Rules Management</h1>
-        <p>Manage automatic categorization rules for vendors</p>
+                  <p>Manage automatic categorisation rules for vendors</p>
       </div>
 
       {/* Status Messages */}
@@ -215,7 +215,7 @@ const VendorRulesPage = () => {
                   <td colSpan="5" className="no-results">
                     {searchTerm || filterCategory 
                       ? 'No vendor rules found matching your criteria.' 
-                      : 'No vendor rules exist yet. Rules are created automatically when you categorize transactions.'}
+                      : 'No vendor rules exist yet. Rules are created automatically when you categorise transactions.'}
                   </td>
                 </tr>
               )}

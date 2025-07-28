@@ -519,7 +519,7 @@ const NewDashboardPage = () => {
                               alignItems: 'center',
                               gap: '8px'
                             }}>
-                              <span>{tx.category ? tx.category.name : 'Uncategorized'}</span>
+                              <span>{tx.category ? tx.category.name : 'Uncategorised'}</span>
                             </div>
                           </div>
                           

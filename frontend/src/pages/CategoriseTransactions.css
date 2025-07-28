@@ -346,7 +346,7 @@
   transform: none;
 }
 
-.categorize-button {
+.categorise-button {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -364,7 +364,7 @@
   overflow: hidden;
 }
 
-.categorize-button::before {
+.categorise-button::before {
   content: '';
   position: absolute;
   top: 0;
@@ -375,17 +375,17 @@
   transition: left 0.5s;
 }
 
-.categorize-button:hover::before {
+.categorise-button:hover::before {
   left: 100%;
 }
 
-.categorize-button:hover:not(:disabled) {
+.categorise-button:hover:not(:disabled) {
   background: linear-gradient(135deg, #0f766e 0%, #0e7490 100%);
   transform: translateY(-2px);
   box-shadow: 0 8px 32px rgba(20, 184, 166, 0.4);
 }
 
-.categorize-button:disabled {
+.categorise-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
@@ -1011,7 +1011,7 @@
   }
 
   .category-select-button,
-  .categorize-button,
+  .categorise-button,
   .hide-button {
     min-width: auto;
     justify-content: center;

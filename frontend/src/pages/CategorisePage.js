@@ -593,7 +593,7 @@ const CategorisePage = () => {
       <div className="categorise-header-bar">
         <h1>Manage Categories & Vendors</h1>
         <button onClick={goToCategoriseTransactions} className="action-button teal-button navigate-button" disabled={isPageBusy}>
-            <FiEdit className="button-icon"/> Review Uncategorized Transactions <FiArrowRight className="button-icon-right"/>
+            <FiEdit className="button-icon"/> Review Uncategorised Transactions <FiArrowRight className="button-icon-right"/>
         </button>
       </div>
 

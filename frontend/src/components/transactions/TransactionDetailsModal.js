@@ -63,7 +63,7 @@ const TransactionDetailsModal = ({
                                     <span>Category</span>
                                 </div>
                                 <div className="detail-value">
-                                    {transaction.category?.name || 'Categorized'}
+                                    {transaction.category?.name || 'Categorised'}
                                 </div>
                             </div>
                         )}

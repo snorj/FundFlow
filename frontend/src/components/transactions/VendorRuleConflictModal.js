@@ -72,7 +72,7 @@ const VendorRuleConflictModal = ({
               <strong>Vendor:</strong> {vendor?.name}
             </p>
             <p className="current-rule-info">
-              <strong>Current Rule:</strong> Automatically categorize as 
+                              <strong>Current Rule:</strong> Automatically categorise as 
               <span className="category-tag">
                 <FiTag className="tag-icon" />
                 {currentRule?.category_name}
@@ -120,7 +120,7 @@ const VendorRuleConflictModal = ({
                   />
                   <div className="option-content">
                     <strong>Inherit from New Parent</strong>
-                    <p>Change rule to categorize transactions as <em>{newParentCategory.name}</em></p>
+                    <p>Change rule to categorise transactions as <em>{newParentCategory.name}</em></p>
                   </div>
                 </label>
               )}

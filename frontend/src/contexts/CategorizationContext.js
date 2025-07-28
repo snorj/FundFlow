@@ -9,7 +9,7 @@ const ACTIONS = {
   UPDATE_CATEGORY: 'UPDATE_CATEGORY',
   CREATE_RULE: 'CREATE_RULE',
   UPDATE_RULE: 'UPDATE_RULE',
-  CATEGORIZE_TRANSACTION_GROUP: 'CATEGORIZE_TRANSACTION_GROUP',
+  CATEGORISE_TRANSACTION_GROUP: 'CATEGORISE_TRANSACTION_GROUP',
   MERGE_TRANSACTION_GROUPS: 'MERGE_TRANSACTION_GROUPS',
   SPLIT_TRANSACTION_GROUP: 'SPLIT_TRANSACTION_GROUP',
   SET_LOADING: 'SET_LOADING',
@@ -103,7 +103,7 @@ function categorizationReducer(state, action) {
         )
       };
     
-    case ACTIONS.CATEGORIZE_TRANSACTION_GROUP:
+    case ACTIONS.CATEGORISE_TRANSACTION_GROUP:
       const { groupId, categoryId } = action.payload;
       return {
         ...state,
@@ -230,9 +230,9 @@ export const CategorizationProvider = ({ children, initialData = {} }) => {
   }, []);
 
   // Transaction group actions
-  const categorizeTransactionGroup = useCallback((groupId, categoryId) => {
-    dispatch({ 
-      type: ACTIONS.CATEGORIZE_TRANSACTION_GROUP, 
+    const categoriseTransactionGroup = useCallback((groupId, categoryId) => {
+    dispatch({
+      type: ACTIONS.CATEGORISE_TRANSACTION_GROUP, 
       payload: { groupId, categoryId } 
     });
   }, []);
@@ -387,7 +387,7 @@ export const CategorizationProvider = ({ children, initialData = {} }) => {
     updateCategory,
     createRule,
     updateRule,
-    categorizeTransactionGroup,
+    categoriseTransactionGroup,
     mergeTransactionGroups,
     splitTransactionGroup,
     setLoading,

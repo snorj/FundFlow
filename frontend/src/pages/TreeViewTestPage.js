@@ -375,7 +375,7 @@ const TreeViewTestPage = () => {
       <div className="test-instructions">
         <h3>🎯 Test Instructions:</h3>
         <ul>
-          <li><strong>Drag & Drop:</strong> Drag custom categories (not system ones) to reorganize</li>
+                      <li><strong>Drag & Drop:</strong> Drag custom categories (not system ones) to reorganise</li>
           <li><strong>Expand/Collapse:</strong> Click chevron icons to expand/collapse categories</li>
           <li><strong>Selection:</strong> Click on any item to select it</li>
           <li><strong>Actions:</strong> Hover over categories to see add/delete buttons</li>

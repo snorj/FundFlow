@@ -269,10 +269,10 @@ describe('CategorisePage', () => {
     renderCategoriesPage();
     
     await waitFor(() => {
-      expect(screen.getByText('Review Uncategorized Transactions')).toBeInTheDocument();
+      expect(screen.getByText('Review Uncategorised Transactions')).toBeInTheDocument();
     });
     
-    const navigateButton = screen.getByText('Review Uncategorized Transactions');
+    const navigateButton = screen.getByText('Review Uncategorised Transactions');
     fireEvent.click(navigateButton);
     
     expect(mockNavigate).toHaveBeenCalledWith('/categorise/transactions');

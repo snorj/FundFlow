@@ -6,11 +6,10 @@ import {
   FiUpload, 
   FiTag, 
   FiBarChart,
-  FiSettings, 
   FiLogOut, 
-  FiUsers,
   FiCpu
 } from 'react-icons/fi';
+import logoLight from '../../assets/logoLight.svg';
 import './Sidebar.css';
 
 const Sidebar = () => {
@@ -28,14 +27,12 @@ const Sidebar = () => {
     { path: '/categorise', icon: FiTag, label: 'Categorise' },
     { path: '/visualise', icon: FiBarChart, label: 'Visualise' },
     { path: '/vendor-rules', icon: FiCpu, label: 'Vendor Rules' },
-    { path: '/admin', icon: FiUsers, label: 'Admin' },
-    { path: '/settings', icon: FiSettings, label: 'Settings' },
   ];
 
   return (
     <div className="sidebar">
       <div className="sidebar-header">
-        <h1 className="sidebar-title">FundFlow</h1>
+        <img src={logoLight} alt="FundFlow Logo" className="sidebar-logo" />
       </div>
       
       <nav className="sidebar-nav">

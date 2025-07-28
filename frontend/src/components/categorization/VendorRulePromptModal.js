@@ -134,9 +134,9 @@ const VendorRulePromptModal = ({ isOpen, onClose, onDismiss, vendors, category, 
               {selectedVendors.size === 0 ? (
                 "No vendors selected. No rules will be created."
               ) : selectedVendors.size === 1 ? (
-                "This will create a vendor rule that will automatically categorize future transactions from this vendor."
+                "This will create a vendor rule that will automatically categorise future transactions from this vendor."
               ) : (
-                `This will create ${selectedVendors.size} vendor rules that will automatically categorize future transactions from the selected vendors.`
+                                  `This will create ${selectedVendors.size} vendor rules that will automatically categorise future transactions from the selected vendors.`
               )}
             </p>
           </div>

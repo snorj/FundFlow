@@ -80,7 +80,7 @@ describe('CategoriseTransactionsPage', () => {
     jest.clearAllMocks();
     
     // Default mock implementations
-    transactionService.getUncategorizedGroups.mockResolvedValue([
+    transactionService.getUncategorisedGroups.mockResolvedValue([
       {
         description: 'JUMBO Oosterstraat, GRONINGEN',
         count: 3,
@@ -99,7 +99,7 @@ describe('CategoriseTransactionsPage', () => {
     ]);
     
     vendorRuleService.getVendorRulesByVendor.mockResolvedValue([]);
-    transactionService.batchCategorizeTransactions.mockResolvedValue({ success: true });
+    transactionService.batchCategoriseTransactions.mockResolvedValue({ success: true });
   });
 
   test('automatically applies vendor rules when vendor is merged with existing vendor that has rules', async () => {
@@ -138,9 +138,9 @@ describe('CategoriseTransactionsPage', () => {
       expect(vendorRuleService.getVendorRulesByVendor).toHaveBeenCalledWith('Jumbo');
     });
 
-    // Verify that transactions were categorized using the vendor rule
+    // Verify that transactions were categorised using the vendor rule
     await waitFor(() => {
-      expect(transactionService.batchCategorizeTransactions).toHaveBeenCalledWith(
+      expect(transactionService.batchCategoriseTransactions).toHaveBeenCalledWith(
         [1, 2, 3], // transaction IDs
         1, // category ID from the vendor rule (Grocery)
         'Jumbo' // target vendor name
@@ -148,7 +148,7 @@ describe('CategoriseTransactionsPage', () => {
     });
 
     // Verify that the page refreshed the data
-    expect(transactionService.getUncategorizedGroups).toHaveBeenCalledTimes(2); // Once on load, once after merge
+          expect(transactionService.getUncategorisedGroups).toHaveBeenCalledTimes(2); // Once on load, once after merge
   });
 
   test('handles vendor merge when target vendor has no rules', async () => {

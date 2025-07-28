@@ -139,7 +139,7 @@ const VisualisePage = () => {
   const handleCategoryClick = (categoryData) => {
     console.log('🔍 Category clicked:', categoryData);
     // Navigate to transactions for that category
-    navigate(`/categorize?category=${categoryData.id}`);
+          navigate(`/categorise?category=${categoryData.id}`);
   };
 
   const handleMonthClick = (month, monthData) => {
@@ -157,7 +157,7 @@ const VisualisePage = () => {
   return (
     <div className="visualise-page">
       <div className="page-header">
-        <h1>Financial Visualizations</h1>
+        <h1>Financial Visualisations</h1>
         <p>Interactive charts and insights into your financial data</p>
       </div>
 

@@ -425,7 +425,7 @@ const CategoriseTransactionsPage = () => {
         return (
             <div className="categorization-page loading-state">
                 <FiLoader className="spinner" />
-                <p>Loading transactions to categorize...</p>
+                <p>Loading transactions to categorise...</p>
             </div>
         );
     }
@@ -461,7 +461,7 @@ const CategoriseTransactionsPage = () => {
     return (
         <div className="categorization-page">
             <div className="categorization-header">
-                <h1>Review Uncategorized Transactions</h1> 
+                <h1>Review Uncategorised Transactions</h1> 
                 <p className="transaction-count">{totalTransactions} transactions in {groupedTransactions.length} groups</p>
                 <button onClick={() => navigate('/categorise/hidden')} className="action-button teal-button navigate-button" disabled={isSubmitting}>
                     <FiEye className="button-icon"/> View Hidden Transactions <FiArrowRight className="button-icon-right"/>
@@ -514,12 +514,12 @@ const CategoriseTransactionsPage = () => {
                             </button>
                             
                             <button
-                                className="categorize-button"
+                                className="categorise-button"
                                 onClick={handleCategorizeSelected}
                                 disabled={isSubmitting || selectedTransactionIds.size === 0 || !selectedCategory}
                             >
                                 {isSubmitting ? <FiLoader className="spinner-inline" /> : <FiCheck />}
-                                Categorize Selected
+                                Categorise Selected
                             </button>
                         </div>
 

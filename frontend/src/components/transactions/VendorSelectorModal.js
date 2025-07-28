@@ -106,7 +106,7 @@ const VendorSelectorModal = ({
     }
   }, []);
 
-  // Filter and organize vendors
+  // Filter and organise vendors
   const processedVendors = useMemo(() => {
     const allVendors = dataState.vendors;
     

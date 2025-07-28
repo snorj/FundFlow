@@ -172,7 +172,7 @@ const HiddenTransactionsPage = () => {
 
     if (isLoading) {
         return (
-            <div className="categorization-page loading-state">
+            <div className="categorisation-page loading-state">
                 <FiLoader className="spinner" />
                 <p>Loading hidden transactions...</p>
             </div>
@@ -181,7 +181,7 @@ const HiddenTransactionsPage = () => {
 
     if (error && !isLoading) {
          return (
-            <div className="categorization-page error-state">
+            <div className="categorisation-page error-state">
                 <FiAlertCircle />
                 <p>Error loading data: {error}</p>
                 <button onClick={fetchData} className="retry-button">Retry</button>
@@ -191,7 +191,7 @@ const HiddenTransactionsPage = () => {
 
     if (!isLoading && !error && totalTransactions === 0) {
          return (
-            <div className="categorization-page empty-state">
+            <div className="categorisation-page empty-state">
                  <FiInbox />
                  <h2>No Hidden Transactions</h2>
                  <p>There are no hidden transactions to display.</p>
@@ -205,8 +205,8 @@ const HiddenTransactionsPage = () => {
     }
 
     return (
-        <div className="categorization-page">
-            <div className="categorization-header">
+            <div className="categorisation-page">
+      <div className="categorisation-header">
                 <div className="header-with-back">
                     <button 
                         onClick={() => navigate('/categorise/transactions')} 
@@ -223,13 +223,13 @@ const HiddenTransactionsPage = () => {
             </div>
 
              {submitError && (
-                <div className="categorization-error error-message">
+                <div className="categorisation-error error-message">
                    <FiAlertCircle /> {submitError}
                 </div>
              )}
 
              {successMessage && (
-                <div className="categorization-success success-message">
+                <div className="categorisation-success success-message">
                    <FiCheck /> {successMessage}
                 </div>
              )}
@@ -251,7 +251,7 @@ const HiddenTransactionsPage = () => {
                     </span>
                 </div>
 
-                <div className="categorization-controls">
+                <div className="categorisation-controls">
                     <button
                         className="unhide-button"
                         onClick={handleUnhideSelected}

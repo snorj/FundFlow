@@ -34,7 +34,7 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
 
     // --- Calculate selectedCategoryName BEFORE early return ---
     const selectedCategoryName = useMemo(() => {
-        if (!selectedCategoryId) return "Uncategorized";
+        if (!selectedCategoryId) return "Uncategorised";
         const selectedIdNum = parseInt(selectedCategoryId, 10);
         // Use optional chaining just in case availableCategories is momentarily null/undefined
         const foundCategory = availableCategories?.find(cat => cat.id === selectedIdNum);
@@ -229,7 +229,7 @@ const CategorizationCard = forwardRef(({ group, onCategorize, onSkip, availableC
                     {/* Display Current Selection & Button to Change */}
                     <div className="category-selection-display">
                         <span className="category-label">Selected Category:</span>
-                        <span className={`selected-category-name ${!selectedCategoryId ? 'is-uncategorized' : ''}`}>
+                        <span className={`selected-category-name ${!selectedCategoryId ? 'is-uncategorised' : ''}`}>
                             {selectedCategoryName}
                         </span>
                         <button onClick={openCategoryModal} className="select-category-button" disabled={isLoading}>

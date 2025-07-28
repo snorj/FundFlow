@@ -316,7 +316,7 @@ const CategoryTreeNode = ({
 
     const confirmDelete = window.confirm(
       `Are you sure you want to delete the category "${item.name}"?\n\n` +
-      `- Transactions in this category will become uncategorized.\n` +
+              `- Transactions in this category will become uncategorised.\n` +
       `- Sub-categories will be moved up one level.\n` +
       `- Mapping rules pointing to this category will be unassigned.`
     );

@@ -140,7 +140,7 @@ const IncomeVsExpensesChart = ({ data, currency = 'AUD', loading = false, onMont
         </BarChart>
       </ResponsiveContainer>
 
-      {/* Monthly savings rate visualization */}
+                {/* Monthly savings rate visualisation */}
       <div className="savings-rate-section">
         <h4>Monthly Savings Rate</h4>
         <div className="savings-rate-bars">

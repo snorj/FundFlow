@@ -20,7 +20,7 @@ import paypalLogo from '../assets/bank_logos/PayPal_Symbol_Alternative_1.png';
 import wiseLogo from '../assets/bank_logos/Wise_Logo_1.png';
 
 const UploadPage = () => {
-  const [hasUncategorized, setHasUncategorized] = useState(false);
+  const [hasUncategorised, setHasUncategorised] = useState(false);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
   
   // Modal states
@@ -87,12 +87,12 @@ const UploadPage = () => {
     if (showLoading) {
       setIsLoadingTransactions(true);
     }
-    setHasUncategorized(false);
+          setHasUncategorised(false);
 
     try {
-      // Check for uncategorized transactions
-      const uncategorizedExists = await transactionService.checkUncategorizedExists();
-      setHasUncategorized(uncategorizedExists);
+      // Check for uncategorised transactions
+      const uncategorisedExists = await transactionService.checkUncategorizedExists();
+      setHasUncategorised(uncategorisedExists);
       
       // Check UP connection status
       try {
@@ -105,7 +105,7 @@ const UploadPage = () => {
 
     } catch (err) {
       console.error("Fetch Upload Page Data Error:", err);
-      setHasUncategorized(false);
+      setHasUncategorised(false);
     } finally {
       if (showLoading) {
         setIsLoadingTransactions(false);
@@ -172,7 +172,7 @@ const UploadPage = () => {
   };
 
   // Navigation handler
-  const goToCategorizeTransactions = () => navigate('/categorise/transactions');
+  const goToCategoriseTransactions = () => navigate('/categorise/transactions');
 
   return (
     <div className="dashboard-page">
@@ -423,15 +423,15 @@ const UploadPage = () => {
         </button>
       </div>
 
-      {/* Categorization Prompt */}
-      {hasUncategorized && !isLoadingTransactions && (
-        <div className="categorization-prompt card-style">
+              {/* Categorisation Prompt */}
+        {hasUncategorised && !isLoadingTransactions && (
+          <div className="categorisation-prompt card-style">
           <FiEdit className="prompt-icon"/>
           <div className="prompt-text">
-            <p><strong>You have uncategorized transactions!</strong></p>
+            <p><strong>You have uncategorised transactions!</strong></p>
             <p>Review them now to complete your financial picture.</p>
           </div>
-          <button onClick={goToCategorizeTransactions} className="action-button teal-button">
+                      <button onClick={goToCategoriseTransactions} className="action-button teal-button">
             Review Now 
           </button>
         </div>

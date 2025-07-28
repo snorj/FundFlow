@@ -155,7 +155,7 @@
     flex-grow: 1; /* Take up space */
     text-align: left; /* Align name left */
   }
-  .category-selection-display .selected-category-name.is-uncategorized {
+  .category-selection-display .selected-category-name.is-uncategorised {
     color: var(--text-muted-dark);
     font-style: italic;
     font-weight: 400;
