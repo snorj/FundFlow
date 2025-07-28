@@ -20,6 +20,10 @@
     to { opacity: 1; }
 }
 
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 .transaction-modal-content {
     background-color: var(--white);
     border-radius: 8px;
@@ -304,11 +308,6 @@
 /* --- Loading Spinner --- */
 .spinner {
     animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
 }
 
 /* --- Responsive Design --- */
