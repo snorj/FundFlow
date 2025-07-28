@@ -85,13 +85,7 @@ services:
           memory: 512M
     
     # Custom command: run migrations then start Gunicorn
-    command: >
-      sh -c "
-        echo 'Waiting for database to be ready...' &&
-        python manage.py migrate --noinput &&
-        echo 'Starting Gunicorn server...' &&
-        gunicorn --bind 0.0.0.0:8000 --workers 4 --timeout 120 FundFlow.wsgi:application
-      "
+    command: ["./startup.sh"]
 
 # =============================================================================
 # Named Volumes for Data Persistence
