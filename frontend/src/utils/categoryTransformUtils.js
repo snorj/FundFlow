@@ -128,7 +128,7 @@ const addVendorNodesFromAPI = (categoryTree, vendorNodes) => {
   console.log('  categoryMap keys:', Array.from(categoryMap.keys()));
   
   // Add vendor nodes to their parent categories
-  // Only include vendors that have a parent category
+  // Backend now only sends vendors that have been assigned to categories
   vendorNodes.forEach(vendor => {
     const parentId = vendor.parent;
     console.log(`  Processing vendor ${vendor.name}: parent=${parentId}, hasParent=${categoryMap.has(parentId)}`);
@@ -147,7 +147,7 @@ const addVendorNodesFromAPI = (categoryTree, vendorNodes) => {
       let foundParent = false;
       
       for (const altId of alternativeIds) {
-        if (altId !== parentId && categoryMap.has(altId)) {
+        if (altId !== parentId && !isNaN(altId) && categoryMap.has(altId)) {
           const parentCategory = categoryMap.get(altId);
           if (!parentCategory.children) {
             parentCategory.children = [];

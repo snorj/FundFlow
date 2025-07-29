@@ -22,8 +22,7 @@
         <div class="container">
             <div class="nav">
                 <div class="logo">
-                    <img src="logoLight.svg" alt="FundFlow Logo">
-                    <h2>FundFlow</h2>
+                    <h2>🏦 FundFlow</h2>
                 </div>
                 <nav class="nav-links">
                     <a href="#features">Features</a>

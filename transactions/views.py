@@ -693,8 +693,8 @@ class CategoryListCreateView(generics.ListCreateAPIView):
             for cat_data in categories_data:
                 cat_data['type'] = 'category'
             
-            # Add vendor nodes to the tree
-            vendors = Vendor.objects.filter(user=user)
+            # Add vendor nodes to the tree - only include vendors assigned to categories
+            vendors = Vendor.objects.filter(user=user, parent_category__isnull=False)
             vendor_nodes = []
             for vendor in vendors:
                 vendor_nodes.append({
@@ -720,8 +720,8 @@ class CategoryListCreateView(generics.ListCreateAPIView):
         categories_data = category_serializer.data
         for cat_data in categories_data:
             cat_data['type'] = 'category'
-        # Add vendor nodes for non-paginated response
-        vendors = Vendor.objects.filter(user=user)
+        # Add vendor nodes for non-paginated response - only include vendors assigned to categories
+        vendors = Vendor.objects.filter(user=user, parent_category__isnull=False)
         vendor_nodes = []
         for vendor in vendors:
             vendor_nodes.append({
