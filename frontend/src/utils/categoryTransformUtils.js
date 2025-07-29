@@ -44,6 +44,15 @@ export const transformCategoryData = (categories = [], transactions = [], option
   console.log('  Vendor nodes:', vendorNodes.length, vendorNodes);
   console.log('  includeVendors:', includeVendors);
 
+  // Validate vendor nodes structure and log detailed info
+  vendorNodes.forEach((vendor, index) => {
+    if (!vendor.id || !vendor.name || vendor.type !== 'vendor') {
+      console.warn(`⚠️  Invalid vendor node at index ${index}:`, vendor);
+    } else {
+      console.log(`📝 Vendor ${index}: ${vendor.name} (ID: ${vendor.id}, Parent: ${vendor.parent})`);
+    }
+  });
+
   // Build category tree
   const categoryTree = buildCategoryTree(filteredCategories);
 
@@ -51,12 +60,15 @@ export const transformCategoryData = (categories = [], transactions = [], option
   if (includeVendors || includeTransactions) {
     // First add vendor nodes from API if they exist
     if (vendorNodes.length > 0) {
+      console.log('  Adding vendor nodes from API...');
       addVendorNodesFromAPI(categoryTree, vendorNodes);
     }
     
     // Then add vendor/transaction children from transaction data
+    // Note: We always include transaction-derived vendors if no API vendors exist,
+    // but we can also include both if needed (they serve different purposes)
     addVendorAndTransactionChildren(categoryTree, transactionsArray, {
-      includeVendors: vendorNodes.length === 0, // Only create from transactions if no API vendors
+      includeVendors: includeVendors && vendorNodes.length === 0, // Only create transaction-derived vendors if no API vendors
       includeTransactions,
       categorySpendingTotals,
       vendorMappings
@@ -81,7 +93,29 @@ const addVendorNodesFromAPI = (categoryTree, vendorNodes) => {
   
   const mapCategories = (nodes) => {
     nodes.forEach(node => {
-      categoryMap.set(node.id, node);
+      // Store both string and integer versions of the ID to handle type mismatches
+      const id = node.id;
+      
+      // Skip if no valid ID
+      if (id === null || id === undefined) {
+        console.warn('⚠️  Category node missing ID:', node);
+        return;
+      }
+      
+      categoryMap.set(id, node);
+      
+      // Only add string/number versions if they're different from the original
+      const stringId = String(id);
+      const numberId = Number(id);
+      
+      if (stringId !== id) {
+        categoryMap.set(stringId, node);
+      }
+      
+      if (!isNaN(numberId) && numberId !== id) {
+        categoryMap.set(numberId, node);
+      }
+      
       if (node.children) {
         mapCategories(node.children);
       }
@@ -99,7 +133,7 @@ const addVendorNodesFromAPI = (categoryTree, vendorNodes) => {
     const parentId = vendor.parent;
     console.log(`  Processing vendor ${vendor.name}: parent=${parentId}, hasParent=${categoryMap.has(parentId)}`);
     
-    if (parentId && categoryMap.has(parentId)) {
+    if (parentId !== null && parentId !== undefined && categoryMap.has(parentId)) {
       // Add to specific parent category
       const parentCategory = categoryMap.get(parentId);
       if (!parentCategory.children) {
@@ -108,7 +142,27 @@ const addVendorNodesFromAPI = (categoryTree, vendorNodes) => {
       parentCategory.children.push({...vendor});
       console.log(`    ✅ Added ${vendor.name} to ${parentCategory.name}`);
     } else {
-      console.log(`    ❌ Skipped ${vendor.name} - no valid parent (${parentId})`);
+      // Try alternative ID formats if the direct lookup failed
+      const alternativeIds = [String(parentId), Number(parentId)];
+      let foundParent = false;
+      
+      for (const altId of alternativeIds) {
+        if (altId !== parentId && categoryMap.has(altId)) {
+          const parentCategory = categoryMap.get(altId);
+          if (!parentCategory.children) {
+            parentCategory.children = [];
+          }
+          parentCategory.children.push({...vendor});
+          console.log(`    ✅ Added ${vendor.name} to ${parentCategory.name} (using alt ID: ${altId})`);
+          foundParent = true;
+          break;
+        }
+      }
+      
+      if (!foundParent) {
+        console.log(`    ❌ Skipped ${vendor.name} - no valid parent (${parentId})`);
+        console.log(`    Available category IDs:`, Array.from(categoryMap.keys()).slice(0, 10));
+      }
     }
   });
 };

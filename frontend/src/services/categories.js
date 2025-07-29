@@ -10,7 +10,16 @@ const categoryService = {
       const response = await api.get('/categories/');
       // The backend list view returns paginated data by default
       // Adjust if you disable pagination or change the response structure
-      return response.data.results || response.data;
+      const data = response.data.results || response.data;
+      
+      // DEBUG: Log the data to see if vendor nodes are included
+      console.log('🐛 DEBUG - categoryService.getCategories response:');
+      console.log('  Total items:', data.length);
+      console.log('  Categories:', data.filter(item => !item.type || item.type === 'category').length);
+      console.log('  Vendors:', data.filter(item => item.type === 'vendor').length);
+      console.log('  Sample items:', data.slice(0, 5));
+      
+      return data;
     } catch (error) {
       console.error('Error fetching categories:', error.response || error);
       throw error.response?.data || new Error('Failed to fetch categories.');

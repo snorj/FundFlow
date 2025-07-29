@@ -319,9 +319,11 @@ const NewDashboardPage = () => {
                   {balance.holdings_breakdown.map((holding) => (
                     <div key={holding.currency} style={{
                       padding: '15px',
-                      backgroundColor: holding.is_target_currency ? '#e8f5e8' : '#f5f5f5',
+                      backgroundColor: holding.is_target_currency ? '#e8f5e8' : (holding.conversion_failed ? '#fff3cd' : '#f5f5f5'),
                       borderRadius: '6px',
-                      border: holding.is_target_currency ? '2px solid #4caf50' : '1px solid #ddd',
+                      border: holding.is_target_currency 
+                        ? '2px solid #4caf50' 
+                        : (holding.conversion_failed ? '2px solid #ffc107' : '1px solid #ddd'),
                       textAlign: 'center'
                     }}>
                       <div style={{
@@ -339,6 +341,7 @@ const NewDashboardPage = () => {
                       }}>
                         {holding.currency} Account
                         {holding.is_target_currency && ' (Display Currency)'}
+                        {holding.conversion_failed && ' (No Rate Available)'}
                       </div>
                       <div style={{
                         fontSize: '12px',
@@ -346,7 +349,7 @@ const NewDashboardPage = () => {
                       }}>
                         {holding.transaction_count} transaction{holding.transaction_count !== 1 ? 's' : ''}
                       </div>
-                      {!holding.is_target_currency && (
+                      {!holding.is_target_currency && !holding.conversion_failed && (
                         <div style={{
                           fontSize: '12px',
                           color: '#666',
@@ -354,6 +357,16 @@ const NewDashboardPage = () => {
                           fontStyle: 'italic'
                         }}>
                           ≈ {formatCurrencyAmount(holding.converted_amount, selectedCurrency)}
+                        </div>
+                      )}
+                      {holding.conversion_failed && (
+                        <div style={{
+                          fontSize: '11px',
+                          color: '#856404',
+                          marginTop: '5px',
+                          fontStyle: 'italic'
+                        }}>
+                          Cannot convert to {selectedCurrency}
                         </div>
                       )}
                     </div>
@@ -366,13 +379,15 @@ const NewDashboardPage = () => {
             <div style={{ marginTop: '15px', fontSize: '12px', color: '#666' }}>
               {balance.warning && <p style={{ color: '#f57c00', marginBottom: '5px' }}>⚠️ {balance.warning}</p>}
               <p style={{ margin: '0' }}>
-                Based on {balance.converted_transactions_count} out of {balance.total_transactions_count} transactions.
-                {balance.unconverted_transactions_count > 0 && 
-                 ` ${balance.unconverted_transactions_count} transaction(s) could not be converted to ${selectedCurrency}.`}
+                Based on {balance.total_transactions} total transactions.
+                {balance.conversion_failures && balance.conversion_failures.length > 0 && 
+                 ` ${balance.conversion_failures.length} currenc${balance.conversion_failures.length !== 1 ? 'ies' : 'y'} could not be converted to ${selectedCurrency}.`}
               </p>
               {balance.account_count && (
                 <p style={{ margin: '5px 0 0 0' }}>
                   Holdings across {balance.account_count} account currenc{balance.account_count !== 1 ? 'ies' : 'y'}.
+                  {balance.conversion_failures && balance.conversion_failures.length > 0 && 
+                   ` ${balance.account_count - balance.conversion_failures.length} currenc${balance.account_count - balance.conversion_failures.length !== 1 ? 'ies' : 'y'} included in total.`}
                 </p>
               )}
             </div>

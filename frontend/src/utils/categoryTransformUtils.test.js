@@ -322,3 +322,85 @@ describe('categoryTransformUtils', () => {
     });
   });
 }); 
+
+// Test data that simulates the issue
+const testCategories = [
+  { id: 1, name: 'Food & Dining', parent: null, is_custom: false, type: 'category' },
+  { id: 2, name: 'Restaurants', parent: 1, is_custom: false, type: 'category' },
+  { id: '3', name: 'Shopping', parent: null, is_custom: false, type: 'category' }, // String ID
+];
+
+const testVendors = [
+  { id: 'vendor-1', name: 'McDonalds', type: 'vendor', parent: 2, is_custom: true }, // Parent as number
+  { id: 'vendor-2', name: 'Walmart', type: 'vendor', parent: '3', is_custom: true }, // Parent as string
+];
+
+describe('categoryTransformUtils - Vendor Node Assignment Fix', () => {
+  test('should correctly assign vendors to categories despite ID type mismatches', () => {
+    // Mock console methods to capture debug output
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    
+    const result = transformCategoryData([...testCategories, ...testVendors], [], {
+      includeVendors: true,
+      includeTransactions: false
+    });
+    
+    // Find the "Restaurants" category (should have McDonalds as child)
+    const findNodeById = (nodes, id) => {
+      for (const node of nodes) {
+        if (node.id === id) return node;
+        if (node.children) {
+          const found = findNodeById(node.children, id);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    
+    const restaurantsCategory = findNodeById(result, 2);
+    const shoppingCategory = findNodeById(result, '3');
+    
+    // Verify that McDonalds was assigned to Restaurants category
+    expect(restaurantsCategory).toBeTruthy();
+    expect(restaurantsCategory.children).toHaveLength(1);
+    expect(restaurantsCategory.children[0].name).toBe('McDonalds');
+    
+    // Verify that Walmart was assigned to Shopping category
+    expect(shoppingCategory).toBeTruthy();
+    expect(shoppingCategory.children).toHaveLength(1);
+    expect(shoppingCategory.children[0].name).toBe('Walmart');
+    
+    consoleSpy.mockRestore();
+  });
+  
+  test('should handle missing parent categories gracefully', () => {
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    
+    const vendorWithMissingParent = [
+      { id: 'vendor-3', name: 'Orphan Vendor', type: 'vendor', parent: 999, is_custom: true }
+    ];
+    
+    const result = transformCategoryData([...testCategories, ...vendorWithMissingParent], [], {
+      includeVendors: true,
+      includeTransactions: false
+    });
+    
+    // The vendor should be skipped (not appear in the tree) since parent doesn't exist
+    const allVendors = [];
+    const collectVendors = (nodes) => {
+      nodes.forEach(node => {
+        if (node.type === 'vendor') {
+          allVendors.push(node);
+        }
+        if (node.children) {
+          collectVendors(node.children);
+        }
+      });
+    };
+    
+    collectVendors(result);
+    expect(allVendors).toHaveLength(0); // No vendors should be in the tree
+    
+    consoleSpy.mockRestore();
+  });
+}); 

@@ -503,33 +503,26 @@ const CategorisePage = () => {
     return visibleIds;
   }, [allItems, searchTerm, itemsById]);
 
-  // Transform data for TreeView
+  // Transform the data for TreeView consumption with debugging
   const treeData = useMemo(() => {
-    // Filter categories based on search
-    let filteredCategories = allItems.filter(item => 
-      item.type === 'category' &&
-      (visibleItemIds === null || visibleItemIds.has(item.id))
-    );
-
-    // Filter vendor nodes based on search
-    let filteredVendors = allItems.filter(item => 
-      item.type === 'vendor' &&
-      (visibleItemIds === null || visibleItemIds.has(item.id))
-    );
-
-    // Pass both categories and vendors to the transform function
-    // The transform function will build the tree structure correctly
-    const combinedItems = [...filteredCategories, ...filteredVendors];
+    console.log('🐛 DEBUG - CategorisePage treeData transformation:');
+    console.log('  allItems count:', allItems.length);
+    console.log('  transactions count:', transactions.length);
     
-    return transformCategoryData(combinedItems, transactions, {
+    const transformed = transformCategoryData(allItems, transactions, {
       includeVendors: true,
-      includeTransactions: true,
+      includeTransactions: false, // We don't need transaction-level items in this view
       showSystemCategories: true,
       showUserCategories: true,
       categorySpendingTotals,
-      vendorMappings // Pass vendor mappings to apply vendor name resolution
+      vendorMappings
     });
-  }, [allItems, transactions, categorySpendingTotals, vendorMappings, visibleItemIds]);
+    
+    console.log('  transformed tree count:', transformed.length);
+    console.log('  transformed tree sample:', transformed.slice(0, 3));
+    
+    return transformed;
+  }, [allItems, transactions, categorySpendingTotals, vendorMappings]);
 
   // Categories are now handled directly in treeData - no need to separate system/user
 
