@@ -3,6 +3,8 @@ URL configuration for FundFlow project.
 """
 from django.contrib import admin
 from django.urls import path, include, re_path
+from django.conf import settings
+from django.conf.urls.static import static
 # Remove: from finance.views import dashboard_view
 # Import the specific URL lists from accounts.urls
 from accounts.urls import api_urlpatterns as accounts_api_urls
@@ -32,3 +34,10 @@ urlpatterns = [
     re_path(r'^.*/$', index, name='react-app'),
     path('', index, name='react-app-root'),
 ]
+
+# Add static file serving (WhiteNoise handles this in production)
+if settings.DEBUG:
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+else:
+    # In production, ensure static files are properly configured for WhiteNoise
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
