@@ -2,13 +2,17 @@
 
 # =============================================================================
 # FundFlow One-Command Installer
-# curl -sSL https://fundflow.app/run.sh | bash
+# Intended usage:
+#   curl -fsSL https://fundflow.dev/install | bash
+# or fallback:
+#   curl -fsSL https://raw.githubusercontent.com/snorj/FundFlow/main/run.sh | bash
 # =============================================================================
 
 set -e  # Exit on any error
 
 # Configuration
-FUNDFLOW_REPO="https://raw.githubusercontent.com/yourusername/fundflow/main"  # Will be updated
+# Canonical raw repo location for fetching installer assets
+FUNDFLOW_REPO="https://raw.githubusercontent.com/snorj/FundFlow/main"
 INSTALL_DIR="$HOME/fundflow"
 SCRIPT_NAME="fundflow.sh"
 
@@ -55,38 +59,41 @@ print_info() {
 
 check_requirements() {
     print_info "Checking system requirements..."
-    
-    # Check if curl is available (should be, since we're running via curl)
-    if ! command -v curl &> /dev/null; then
+
+    # curl must exist (we're executing via curl | bash)
+    if ! command -v curl >/dev/null 2>&1; then
         print_error "curl is required but not installed"
         exit 1
     fi
-    
-    # Check if we can create the install directory
+
+    # Create install directory
     if ! mkdir -p "$INSTALL_DIR" 2>/dev/null; then
         print_error "Cannot create directory: $INSTALL_DIR"
         print_info "You may need to run: mkdir -p $INSTALL_DIR"
         exit 1
     fi
-    
+
     print_success "System requirements met"
 }
 
 download_files() {
     print_info "Downloading FundFlow setup files..."
-    
+
     cd "$INSTALL_DIR"
-    
-    # For now, use local development files (in production, these would come from GitHub)
-    if [ -f "/home/peter/Desktop/Projects/FundFlow/fundflow.sh" ]; then
-        print_info "Setting up FundFlow from development files..."
-        
-        # Copy only the essential files needed for Docker Hub deployment
-        cp "/home/peter/Desktop/Projects/FundFlow/fundflow.sh" .
-        cp "/home/peter/Desktop/Projects/FundFlow/docker-compose.yml" .
-        
-        # Create a minimal .env.example for users
-        cat > .env.example << 'EOF'
+
+    # Fetch required assets from the canonical repository
+    if ! curl -fsSL "$FUNDFLOW_REPO/fundflow.sh" -o fundflow.sh; then
+        print_error "Failed to download fundflow.sh from $FUNDFLOW_REPO"
+        exit 1
+    fi
+
+    if ! curl -fsSL "$FUNDFLOW_REPO/docker-compose.yml" -o docker-compose.yml; then
+        print_error "Failed to download docker-compose.yml from $FUNDFLOW_REPO"
+        exit 1
+    fi
+
+    # Create a minimal .env.example for users
+    cat > .env.example << 'EOF'
 # FundFlow Configuration
 # Copy this file to .env and modify as needed
 
@@ -104,17 +111,8 @@ CORS_ALLOWED_ORIGINS=http://localhost:8000
 
 DOCKER_IMAGE=fundfl0w/fundflow:latest
 EOF
-        
-        print_success "Essential files downloaded"
-    else
-        print_error "Development files not found"
-        print_info "In production, this would download from GitHub releases"
-        exit 1
-    fi
-    
-    # Make script executable
+
     chmod +x fundflow.sh
-    
     print_success "Files downloaded successfully"
 }
 
