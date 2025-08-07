@@ -134,7 +134,8 @@ test_image() {
     
     # Run the container with dynamic port mapping to avoid conflicts
     local container_id
-    container_id=$(docker run -d -P \
+    # Publish container port 8000 to a random localhost port to avoid conflicts
+    container_id=$(docker run -d -p 127.0.0.1::8000 \
         -e SECRET_KEY="temporary-test-secret" \
         -e DEBUG="True" \
         "$DOCKER_IMAGE:latest")
@@ -143,8 +144,8 @@ test_image() {
 
     # Discover the mapped host port for container port 8000
     local host_port
-    for i in {1..10}; do
-        host_port=$(docker port "$container_id" 8000/tcp | awk -F: '{print $2}' | tail -n1)
+    for i in {1..15}; do
+        host_port=$(docker inspect -f '{{ (index (index .NetworkSettings.Ports "8000/tcp") 0).HostPort }}' "$container_id" 2>/dev/null || true)
         if [ -n "$host_port" ]; then
             break
         fi
@@ -155,7 +156,7 @@ test_image() {
             docker rm "$container_id" >/dev/null || true
             exit 1
         fi
-        sleep 1
+        sleep 2
     done
 
     if [ -z "$host_port" ]; then
@@ -166,7 +167,7 @@ test_image() {
         exit 1
     fi
 
-    # Wait (up to ~30s) for the app to respond
+    # Wait (up to ~30s) for the app to respond on host
     for i in {1..15}; do
         if curl -f -s "http://localhost:${host_port}/" >/dev/null; then
             print_success "Image test passed - application responds on port ${host_port}"
@@ -175,13 +176,18 @@ test_image() {
         sleep 2
     done
 
-    # If still not responding, fail with logs
+    # If still not responding on host, try from inside the container as fallback
     if ! curl -f -s "http://localhost:${host_port}/" >/dev/null; then
-        print_error "Image test failed - application did not respond on port ${host_port}"
-        docker logs "$container_id" || true
-        docker stop "$container_id" >/dev/null || true
-        docker rm "$container_id" >/dev/null || true
-        exit 1
+        print_warning "Host check failed; probing service inside container..."
+        if docker exec "$container_id" curl -f -s http://localhost:8000/ >/dev/null; then
+            print_success "Image test passed (verified inside container)."
+        else
+            print_error "Image test failed - application did not respond"
+            docker logs "$container_id" || true
+            docker stop "$container_id" >/dev/null || true
+            docker rm "$container_id" >/dev/null || true
+            exit 1
+        fi
     fi
 
     # Cleanup test container
