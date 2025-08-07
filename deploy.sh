@@ -134,13 +134,29 @@ test_image() {
     
     # Run the container with dynamic port mapping to avoid conflicts
     local container_id
-    container_id=$(docker run -d -P "$DOCKER_IMAGE:latest")
+    container_id=$(docker run -d -P \
+        -e SECRET_KEY="temporary-test-secret" \
+        -e DEBUG="True" \
+        "$DOCKER_IMAGE:latest")
 
     print_info "Started test container: $container_id"
 
     # Discover the mapped host port for container port 8000
     local host_port
-    host_port=$(docker port "$container_id" 8000/tcp | awk -F: '{print $2}' | tail -n1)
+    for i in {1..10}; do
+        host_port=$(docker port "$container_id" 8000/tcp | awk -F: '{print $2}' | tail -n1)
+        if [ -n "$host_port" ]; then
+            break
+        fi
+        # If container exited, bail out with logs
+        if [ "$(docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null)" != "true" ]; then
+            print_error "Test container exited prematurely"
+            docker logs "$container_id" || true
+            docker rm "$container_id" >/dev/null || true
+            exit 1
+        fi
+        sleep 1
+    done
 
     if [ -z "$host_port" ]; then
         print_error "Could not determine mapped host port for test container"
