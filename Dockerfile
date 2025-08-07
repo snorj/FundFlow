@@ -60,7 +60,7 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --timeout 1000 --retries 3 -r requirements.txt
 
 # Copy Django application code
 COPY . .
