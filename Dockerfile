@@ -9,17 +9,30 @@
 # =============================================================================
 FROM node:22-alpine AS frontend-builder
 
+# Allow overriding the npm registry during build (helps in CI or with mirrors)
+ARG NPM_REGISTRY=https://registry.npmjs.org
+
 # Set working directory for frontend build
 WORKDIR /frontend
 
 # Copy package files first (for better layer caching)
 COPY frontend/package*.json ./
 
-# Install npm dependencies (including dev deps needed for build)
-RUN npm config set fetch-retry-mintimeout 20000 && \
+# Install npm dependencies using a resilient strategy
+# - Explicitly set registry
+# - Use npm ci for deterministic installs
+# - Retry on transient registry failures (e.g., 503)
+RUN npm config set registry "$NPM_REGISTRY" && \
+    npm config set fetch-retry-mintimeout 20000 && \
     npm config set fetch-retry-maxtimeout 120000 && \
-    npm config set fetch-retries 3 && \
-    npm install --network-timeout=600000
+    npm config set fetch-retries 5 && \
+    sh -c 'for i in 1 2 3 4 5; do \
+      npm ci --no-audit --no-fund --network-timeout=600000 && exit 0; \
+      echo "npm ci failed (attempt $i), retrying in 10s..."; \
+      sleep 10; \
+    done; \
+    echo "npm ci failed after multiple attempts" >&2; \
+    exit 1'
 
 # Copy frontend source code
 COPY frontend/ ./
