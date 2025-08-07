@@ -190,6 +190,23 @@ test_image() {
         fi
     fi
 
+    # Additional validation: ensure React bundle is referenced and loadable
+    index_html=$(curl -s "http://localhost:${host_port}/")
+    static_js_path=$(printf "%s" "$index_html" | sed -n 's/.*<script[^>]*src=\"\([^\"]*\/static\/[^\"]*\.js\)\".*>.*/\1/p' | head -n1)
+    if [ -z "$static_js_path" ]; then
+        print_warning "Could not find a /static/*.js reference in index.html; static may be misconfigured"
+    else
+        if curl -f -s "http://localhost:${host_port}${static_js_path}" >/dev/null; then
+            print_success "Static JS asset is accessible: ${static_js_path}"
+        else
+            print_error "Static JS asset not accessible: ${static_js_path}"
+            docker logs "$container_id" || true
+            docker stop "$container_id" >/dev/null || true
+            docker rm "$container_id" >/dev/null || true
+            exit 1
+        fi
+    fi
+
     # Cleanup test container
     docker stop "$container_id" >/dev/null || true
     docker rm "$container_id" >/dev/null || true

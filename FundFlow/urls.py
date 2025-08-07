@@ -9,7 +9,7 @@ from django.conf.urls.static import static
 # Import the specific URL lists from accounts.urls
 from accounts.urls import api_urlpatterns as accounts_api_urls
 from accounts.urls import password_urls as accounts_password_urls
-from .views import index, health_check
+from .views import index, health_check, raw_index, manifest, favicon, logo192, logo512
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -28,6 +28,15 @@ urlpatterns = [
     
     # Health check endpoint
     path('api/health/', health_check, name='health-check'),
+
+    # Debug endpoint to view raw React index without injection
+    path('debug/raw-index', raw_index, name='raw-index'),
+
+    # Ensure CRA public assets resolve at root (avoid 404/HTML for JSON)
+    path('manifest.json', manifest, name='manifest'),
+    path('favicon.ico', favicon, name='favicon'),
+    path('logo192.png', logo192, name='logo192'),
+    path('logo512.png', logo512, name='logo512'),
     
     # Catch-all route to serve React app for client-side routing
     # This should be last to avoid overriding API routes

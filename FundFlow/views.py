@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, FileResponse, Http404
 from django.conf import settings
 import os
 from pathlib import Path
@@ -44,3 +44,33 @@ def index(request):
             html += demo_script
 
     return HttpResponse(html) 
+
+
+def raw_index(request):
+    """Serve the React build index.html without any injection (for debugging)."""
+    react_index_path = Path(settings.REACT_BUILD_DIR) / 'index.html'
+    if react_index_path.exists():
+        try:
+            return HttpResponse(react_index_path.read_text(encoding='utf-8'))
+        except Exception as exc:
+            return JsonResponse({"error": "failed_to_read_index", "detail": str(exc)}, status=500)
+    return JsonResponse({"error": "index_not_found", "path": str(react_index_path)}, status=404)
+
+def _serve_build_file(filename: str):
+    path = Path(settings.REACT_BUILD_DIR) / filename
+    if not path.exists():
+        raise Http404(f"{filename} not found")
+    # Use FileResponse for efficient file serving via WhiteNoise/Gunicorn
+    return FileResponse(open(path, 'rb'))
+
+def manifest(request):
+    return _serve_build_file('manifest.json')
+
+def favicon(request):
+    return _serve_build_file('favicon.ico')
+
+def logo192(request):
+    return _serve_build_file('logo192.png')
+
+def logo512(request):
+    return _serve_build_file('logo512.png')
