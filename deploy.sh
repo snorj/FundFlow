@@ -132,29 +132,45 @@ build_image() {
 test_image() {
     print_info "Testing built image..."
     
-    # Basic test - check if image runs and responds
+    # Run the container with dynamic port mapping to avoid conflicts
     local container_id
-    container_id=$(docker run -d -p 8001:8000 "$DOCKER_IMAGE:latest")
-    
+    container_id=$(docker run -d -P "$DOCKER_IMAGE:latest")
+
     print_info "Started test container: $container_id"
-    
-    # Wait for container to be ready
-    sleep 10
-    
-    # Test if the application responds
-    if curl -f -s http://localhost:8001/ > /dev/null; then
-        print_success "Image test passed - application responds correctly"
-    else
-        print_error "Image test failed - application not responding"
-        docker logs "$container_id"
-        docker stop "$container_id" > /dev/null
-        docker rm "$container_id" > /dev/null
+
+    # Discover the mapped host port for container port 8000
+    local host_port
+    host_port=$(docker port "$container_id" 8000/tcp | awk -F: '{print $2}' | tail -n1)
+
+    if [ -z "$host_port" ]; then
+        print_error "Could not determine mapped host port for test container"
+        docker logs "$container_id" || true
+        docker stop "$container_id" >/dev/null || true
+        docker rm "$container_id" >/dev/null || true
         exit 1
     fi
-    
+
+    # Wait (up to ~30s) for the app to respond
+    for i in {1..15}; do
+        if curl -f -s "http://localhost:${host_port}/" >/dev/null; then
+            print_success "Image test passed - application responds on port ${host_port}"
+            break
+        fi
+        sleep 2
+    done
+
+    # If still not responding, fail with logs
+    if ! curl -f -s "http://localhost:${host_port}/" >/dev/null; then
+        print_error "Image test failed - application did not respond on port ${host_port}"
+        docker logs "$container_id" || true
+        docker stop "$container_id" >/dev/null || true
+        docker rm "$container_id" >/dev/null || true
+        exit 1
+    fi
+
     # Cleanup test container
-    docker stop "$container_id" > /dev/null
-    docker rm "$container_id" > /dev/null
+    docker stop "$container_id" >/dev/null || true
+    docker rm "$container_id" >/dev/null || true
     print_info "Test container cleaned up"
 }
 
