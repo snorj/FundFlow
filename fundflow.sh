@@ -6,6 +6,7 @@
 # =============================================================================
 
 set -e  # Exit on any error
+set -o pipefail
 
 # Script configuration
 SCRIPT_VERSION="1.0.0"
@@ -128,15 +129,26 @@ check_port() {
 # =============================================================================
 
 generate_secrets() {
-    # Generate Django secret key
-    DJANGO_SECRET=$(python3 -c "import secrets, string; print(''.join(secrets.choice(string.ascii_letters + string.digits + '!@#$%^&*') for _ in range(50)))" 2>/dev/null || \
-                   openssl rand -base64 32 | tr -d "=+/" | cut -c1-50 || \
-                   date +%s | sha256sum | base64 | head -c 50)
+    # Generate Django secret key using URL-safe characters (no $ to avoid compose expansion)
+    DJANGO_SECRET=$(python3 - <<'PY' 2>/dev/null || true
+import secrets
+print(secrets.token_urlsafe(64))
+PY
+)
+    if [ -z "${DJANGO_SECRET}" ]; then
+        DJANGO_SECRET=$(openssl rand -base64 48 | tr '+/' '-_' | tr -d '=' | cut -c1-86)
+    fi
     
     # Generate database password
-    DB_PASSWORD=$(python3 -c "import secrets, string; print(''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(20)))" 2>/dev/null || \
-                 openssl rand -base64 20 | tr -d "=+/" | cut -c1-20 || \
-                 date +%s | sha256sum | base64 | head -c 20)
+    DB_PASSWORD=$(python3 - <<'PY' 2>/dev/null || true
+import secrets, string
+alphabet = string.ascii_letters + string.digits
+print(''.join(secrets.choice(alphabet) for _ in range(24)))
+PY
+)
+    if [ -z "${DB_PASSWORD}" ]; then
+        DB_PASSWORD=$(openssl rand -base64 24 | tr -d '=+/' | cut -c1-24)
+    fi
     
     # Generate Fernet key
     FERNET_KEY=$(python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" 2>/dev/null || \
@@ -208,17 +220,14 @@ build_image_fallback() {
 start_services() {
     print_info "Starting FundFlow services..."
     
-    # Update port in docker-compose if needed
-    if [ "$FUNDFLOW_PORT" != "8000" ]; then
-        print_info "Configuring custom port: $FUNDFLOW_PORT"
-        # Create override file for custom port
-        cat > docker-compose.override.yml << EOF
+    # Write override file for host port mapping (base compose does not map host port)
+    print_info "Configuring custom port: $FUNDFLOW_PORT"
+    cat > docker-compose.override.yml << EOF
 services:
   web:
     ports:
       - "${FUNDFLOW_PORT}:8000"
 EOF
-    fi
     
     if $DOCKER_COMPOSE up -d; then
         print_success "Services started"
@@ -296,11 +305,27 @@ cmd_start() {
     print_header
     print_info "Starting FundFlow..."
     
+    # Always operate from the script directory so compose finds files
+    local script_dir
+    script_dir="$(cd "$(dirname "$0")" && pwd)"
+    cd "$script_dir"
+    export COMPOSE_PROJECT_NAME
+
     check_docker
     check_port
     
     # Create .env if it doesn't exist
     if [ ! -f .env ]; then
+        # Detect existing data volume; abort to avoid password mismatch
+        if docker volume inspect fundflow_postgres_data >/dev/null 2>&1; then
+            print_error "Existing database volume 'fundflow_postgres_data' detected."
+            echo "This indicates a previous FundFlow install with its own DB password."
+            echo "To proceed, either:"
+            echo "  1) Remove old data (irreversible):"
+            echo "     docker compose down && docker volume rm fundflow_postgres_data"
+            echo "  2) Restore the previous .env used with that volume and rerun start."
+            exit 1
+        fi
         create_env_file
     fi
     

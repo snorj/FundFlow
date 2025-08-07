@@ -102,7 +102,7 @@ DATABASE_USER=fundflow_user
 DATABASE_PASSWORD=fundflow_password
 DATABASE_URL=postgresql://fundflow_user:fundflow_password@db:5432/fundflow_db
 
-DJANGO_SECRET_KEY=your-secret-key-here
+SECRET_KEY=your-secret-key-here
 DJANGO_DEBUG=False
 DJANGO_SETTINGS_MODULE=FundFlow.settings
 
